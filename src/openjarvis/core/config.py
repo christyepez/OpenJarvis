@@ -1555,6 +1555,8 @@ class GovernanceConfig:
     prefer_free: bool = True
     require_approval_for_unapproved_paid: bool = True
     approved_paid: str = "codex,commander,remote desktop commander"
+    primary_machine: str = "trabajo"
+    fallback_machines: str = "MarketingIndo"
 
 
 @dataclass(slots=True)

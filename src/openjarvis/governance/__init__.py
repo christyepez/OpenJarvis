@@ -6,6 +6,11 @@ from openjarvis.governance.cost_policy import (
     CostPolicy,
     ProviderDescriptor,
 )
+from openjarvis.governance.machine_router import (
+    MachineDescriptor,
+    MachineRequirement,
+    MachineRouter,
+)
 from openjarvis.governance.model_selection import (
     LocalModelCandidate,
     discover_local_candidates,
@@ -18,6 +23,9 @@ __all__ = [
     "CostDecision",
     "CostPolicy",
     "ProviderDescriptor",
+    "MachineDescriptor",
+    "MachineRequirement",
+    "MachineRouter",
     "LocalModelCandidate",
     "discover_local_candidates",
     "recommend_local_model",
