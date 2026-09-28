@@ -1,5 +1,11 @@
 """Governance primitives for provider cost and execution policy."""
 
+from openjarvis.governance.capability_decision import (
+    CapabilityAssessment,
+    CapabilityDecision,
+    CapabilityDecisionEngine,
+    CapabilityResolution,
+)
 from openjarvis.governance.cost_policy import (
     CostClass,
     CostDecision,
@@ -24,6 +30,10 @@ from openjarvis.governance.quality_pipeline import (
 from openjarvis.governance.tool_guard import ProviderPolicyGuard
 
 __all__ = [
+    "CapabilityAssessment",
+    "CapabilityDecision",
+    "CapabilityDecisionEngine",
+    "CapabilityResolution",
     "CostClass",
     "CostDecision",
     "CostPolicy",
