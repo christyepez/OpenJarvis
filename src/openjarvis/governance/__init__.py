@@ -16,6 +16,11 @@ from openjarvis.governance.model_selection import (
     discover_local_candidates,
     recommend_local_model,
 )
+from openjarvis.governance.quality_pipeline import (
+    QualityPipelinePlanner,
+    QualityPlan,
+    QualityStage,
+)
 from openjarvis.governance.tool_guard import ProviderPolicyGuard
 
 __all__ = [
@@ -29,5 +34,8 @@ __all__ = [
     "LocalModelCandidate",
     "discover_local_candidates",
     "recommend_local_model",
+    "QualityPlan",
+    "QualityPipelinePlanner",
+    "QualityStage",
     "ProviderPolicyGuard",
 ]
