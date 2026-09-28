@@ -8,6 +8,7 @@ and configured via the ``[memory]`` section of ``config.toml``.
 
 from __future__ import annotations
 
+from openjarvis.memory.context_router import ContextRoute, ContextRouter, MemoryDomain
 from openjarvis.memory.extractor import FactExtractor
 from openjarvis.memory.service import (
     MemoryService,
@@ -23,6 +24,9 @@ from openjarvis.memory.store import (
 )
 
 __all__ = [
+    "ContextRoute",
+    "ContextRouter",
+    "MemoryDomain",
     "Fact",
     "FactStore",
     "FactExtractor",
