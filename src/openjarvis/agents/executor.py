@@ -542,6 +542,10 @@ class AgentExecutor:
         # before construction instead.
         if sys_prompt is not None and _accepts("system_prompt"):
             agent_kwargs["system_prompt"] = sys_prompt
+        if _accepts("max_advertised_tools"):
+            compact_limit = int(config.get("max_advertised_tools", 0) or 0)
+            if compact_limit > 0:
+                agent_kwargs["max_advertised_tools"] = compact_limit
         agent_kwargs = {
             name: value for name, value in agent_kwargs.items() if _accepts(name)
         }
