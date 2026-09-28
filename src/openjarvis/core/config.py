@@ -1547,6 +1547,17 @@ def apply_security_profile(
 
 
 @dataclass(slots=True)
+class GovernanceConfig:
+    """Cost and execution governance settings."""
+
+    enabled: bool = True
+    prefer_local: bool = True
+    prefer_free: bool = True
+    require_approval_for_unapproved_paid: bool = True
+    approved_paid: str = "codex,commander,remote desktop commander"
+
+
+@dataclass(slots=True)
 class SandboxConfig:
     """Container sandbox settings."""
 
@@ -1776,6 +1787,7 @@ class JarvisConfig:
     traces: TracesConfig = field(default_factory=TracesConfig)
     channel: ChannelConfig = field(default_factory=ChannelConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
+    governance: GovernanceConfig = field(default_factory=GovernanceConfig)
     sandbox: SandboxConfig = field(default_factory=SandboxConfig)
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)

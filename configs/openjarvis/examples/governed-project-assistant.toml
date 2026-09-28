@@ -1,0 +1,27 @@
+# Governed Project Assistant
+# Local-first implementation with explicit paid-provider governance.
+#
+# Optional machine execution:
+#   jarvis add desktop-commander
+#
+# Then start with the project-orchestrator agent/template.
+
+[engine]
+default = "ollama"
+
+[intelligence]
+default_model = "qwen3.5:9b"
+
+[agent]
+default_agent = "orchestrator"
+max_turns = 25
+
+[governance]
+enabled = true
+prefer_local = true
+prefer_free = true
+require_approval_for_unapproved_paid = true
+approved_paid = "codex,commander,remote desktop commander"
+
+[tools]
+enabled = ["file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "web_search", "think"]

@@ -11,6 +11,7 @@ from openjarvis.governance.model_selection import (
     discover_local_candidates,
     recommend_local_model,
 )
+from openjarvis.governance.tool_guard import ProviderPolicyGuard
 
 __all__ = [
     "CostClass",
@@ -20,4 +21,5 @@ __all__ = [
     "LocalModelCandidate",
     "discover_local_candidates",
     "recommend_local_model",
+    "ProviderPolicyGuard",
 ]

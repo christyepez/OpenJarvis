@@ -56,6 +56,12 @@ class CostPolicy:
         approved = approved_paid or self.DEFAULT_APPROVED_PAID
         self._approved_paid = frozenset(name.strip().lower() for name in approved)
 
+    @classmethod
+    def from_config(cls, governance_config: object) -> "CostPolicy":
+        raw = str(getattr(governance_config, "approved_paid", "") or "")
+        approved = [part.strip() for part in raw.split(",") if part.strip()]
+        return cls(approved_paid=approved or None)
+
     @property
     def approved_paid(self) -> frozenset[str]:
         return self._approved_paid
