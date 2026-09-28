@@ -38,6 +38,16 @@ class TestAddCmd:
             assert data["command"] == "npx"
             assert "@modelcontextprotocol/server-filesystem" in data["args"]
 
+    def test_add_desktop_commander(self, tmp_path: Path) -> None:
+        mcp_dir = tmp_path / "mcp"
+        with mock.patch("openjarvis.cli.add_cmd._MCP_CONFIG_DIR", mcp_dir):
+            result = CliRunner().invoke(add, ["desktop-commander"])
+            assert result.exit_code == 0
+
+            data = json.loads((mcp_dir / "desktop-commander.json").read_text())
+            assert data["command"] == "npx"
+            assert "@wonderwhy-er/desktop-commander@latest" in data["args"]
+
     def test_add_with_key(self, tmp_path: Path) -> None:
         mcp_dir = tmp_path / "mcp"
         with mock.patch("openjarvis.cli.add_cmd._MCP_CONFIG_DIR", mcp_dir):

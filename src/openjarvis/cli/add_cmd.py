@@ -27,6 +27,12 @@ _MCP_TEMPLATES = {
         "env_key": None,
         "description": "Local filesystem operations",
     },
+    "desktop-commander": {
+        "command": "npx",
+        "args": ["-y", "@wonderwhy-er/desktop-commander@latest"],
+        "env_key": None,
+        "description": "Desktop Commander local machine execution",
+    },
     "slack": {
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-slack"],
@@ -84,8 +90,8 @@ def add(server_name: str, key: str | None, extra_args: str | None) -> None:
       jarvis add filesystem
       jarvis add slack --key TOKEN
 
-    Known servers: github, filesystem, slack, postgres, brave-search,
-    memory, puppeteer, google-maps
+    Known servers: github, filesystem, desktop-commander, slack, postgres,
+    brave-search, memory, puppeteer, google-maps
     """
     console = Console(stderr=True)
 
