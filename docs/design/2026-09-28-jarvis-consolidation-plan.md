@@ -14,20 +14,24 @@ and extension points over invasive rewrites of OpenJarvis core.
 
 ## Non-negotiable execution policy
 
-1. ChatGPT/Codex is the principal implementer and reasoning coordinator.
+1. ChatGPT GPT-5.6 Sol is the principal implementer and reasoning coordinator when work is performed through ChatGPT.
 2. Commander is the preferred execution plane for authorized computers.
-3. Always search for a suitable local/free/open-source model before a new paid service.
-4. Codex and Commander are the only currently pre-approved paid services.
-5. Every other paid model, API, SaaS, or tool requires explicit user approval before use.
+3. Local/free/open-source models are preferred for delegated, repetitive, private, parallel, or low-cost execution.
+4. Always search for a suitable local/free/open-source model before introducing a new paid service.
+5. Codex and Commander are the currently pre-approved paid execution services.
+6. ChatGPT GPT-5.6 Sol in the user's existing ChatGPT session does not imply approval to call a separately billed OpenAI API.
+7. Every other paid model, API, SaaS, or tool requires explicit user approval before use.
 ## Routing order
 
-Default preference for model/tool selection:
+Default execution preference:
 
-1. Already-installed local model or deterministic local tool.
-2. Free/open-source model that can run locally on detected hardware.
-3. Free service/free tier when local execution is not suitable.
-4. Codex or Commander when their capabilities are required.
-5. Any other paid provider only after explicit approval.
+1. ChatGPT GPT-5.6 Sol coordinates and implements the primary task in the interactive ChatGPT workflow.
+2. Deterministic local tools and Commander execute concrete machine actions.
+3. Already-installed local models handle suitable delegated work.
+4. Free/open-source models that can run locally may be discovered and used for delegated work.
+5. Free services/free tiers may be used when local execution is not suitable.
+6. Codex may be used for approved coding workflows.
+7. Any other paid provider requires explicit approval before use.
 
 Cost policy must be enforced in code, not only in prompts.
 

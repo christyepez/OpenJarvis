@@ -22,6 +22,7 @@ prefer_local = true
 prefer_free = true
 require_approval_for_unapproved_paid = true
 approved_paid = "codex,commander,remote desktop commander"
+primary_implementer = "chatgpt:gpt-5.6-sol"
 
 [tools]
 enabled = ["file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "web_search", "think"]

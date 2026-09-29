@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Sequence
 
 from openjarvis.core.config import HardwareInfo
 from openjarvis.core.types import ModelSpec
@@ -41,10 +41,23 @@ def estimated_model_memory_gb(spec: ModelSpec) -> float:
     return max(min_vram, estimated)
 
 
+def _preference_rank(model_id: str, preferred_models: Sequence[str]) -> int:
+    normalized = model_id.casefold()
+    for index, preferred in enumerate(preferred_models):
+        token = preferred.strip().casefold()
+        if token and (
+            normalized == token or token in normalized or normalized in token
+        ):
+            return index
+    return len(preferred_models)
+
+
 def discover_local_candidates(
     hw: HardwareInfo,
     engine: str,
     models: Iterable[ModelSpec] | None = None,
+    *,
+    preferred_models: Sequence[str] = (),
 ) -> list[LocalModelCandidate]:
     """Return compatible local candidates ordered from strongest fitting model."""
     if models is None:
@@ -76,6 +89,7 @@ def discover_local_candidates(
     # Stable tie-breakers keep routing deterministic.
     candidates.sort(
         key=lambda item: (
+            _preference_rank(str(getattr(item.spec, "model_id", "")), preferred_models),
             -float(
                 getattr(item.spec, "active_parameter_count_b", 0.0)
                 or getattr(item.spec, "parameter_count_b", 0.0)
@@ -88,9 +102,18 @@ def discover_local_candidates(
     return candidates
 
 
-def recommend_local_model(hw: HardwareInfo, engine: str) -> ModelSpec | None:
-    """Choose the strongest catalogued model that fits local hardware."""
-    candidates = discover_local_candidates(hw, engine)
+def recommend_local_model(
+    hw: HardwareInfo,
+    engine: str,
+    *,
+    preferred_models: Sequence[str] = (),
+) -> ModelSpec | None:
+    """Choose the preferred strongest catalogued model that fits local hardware."""
+    candidates = discover_local_candidates(
+        hw,
+        engine,
+        preferred_models=preferred_models,
+    )
     return candidates[0].spec if candidates else None
 
 

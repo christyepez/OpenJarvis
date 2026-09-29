@@ -12,6 +12,12 @@ from openjarvis.governance.cost_policy import (
     CostPolicy,
     ProviderDescriptor,
 )
+from openjarvis.governance.execution_router import (
+    EngineModelCandidate,
+    EngineModelRoute,
+    EngineModelRouter,
+    match_catalog_model,
+)
 from openjarvis.governance.machine_router import (
     MachineDescriptor,
     MachineRequirement,
@@ -38,6 +44,10 @@ __all__ = [
     "CostDecision",
     "CostPolicy",
     "ProviderDescriptor",
+    "EngineModelCandidate",
+    "EngineModelRoute",
+    "EngineModelRouter",
+    "match_catalog_model",
     "MachineDescriptor",
     "MachineRequirement",
     "MachineRouter",

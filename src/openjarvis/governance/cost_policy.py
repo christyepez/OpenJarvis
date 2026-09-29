@@ -49,7 +49,7 @@ class CostPolicy:
     """Apply the user's local-first, free-first provider policy."""
 
     DEFAULT_APPROVED_PAID = frozenset(
-        {"codex", "commander", "remote desktop commander"}
+        {"codex", "openai-codex", "commander", "remote desktop commander"}
     )
 
     def __init__(self, approved_paid: Iterable[str] | None = None) -> None:
@@ -72,7 +72,13 @@ class CostPolicy:
             return CostClass.LOCAL
         if provider.free or provider.cost_class is CostClass.FREE:
             return CostClass.FREE
-        if provider.normalized_name in self._approved_paid:
+        normalized_name = provider.normalized_name
+        aliases = {"openai-codex": "codex"}
+        canonical_name = aliases.get(normalized_name, normalized_name)
+        if (
+            normalized_name in self._approved_paid
+            or canonical_name in self._approved_paid
+        ):
             return CostClass.APPROVED_PAID
         return CostClass.REQUIRES_APPROVAL
 

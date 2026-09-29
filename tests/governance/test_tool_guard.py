@@ -10,7 +10,9 @@ from openjarvis.governance import (
 def test_governance_config_is_settable() -> None:
     cfg = GovernanceConfig()
     assert cfg.prefer_local is True
+    assert cfg.primary_implementer == "chatgpt:gpt-5.6-sol"
     assert validate_config_key("governance.approved_paid") is str
+    assert validate_config_key("governance.primary_implementer") is str
 
 
 def test_policy_can_be_built_from_config() -> None:

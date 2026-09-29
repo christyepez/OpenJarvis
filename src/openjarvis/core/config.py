@@ -1555,8 +1555,12 @@ class GovernanceConfig:
     prefer_free: bool = True
     require_approval_for_unapproved_paid: bool = True
     approved_paid: str = "codex,commander,remote desktop commander"
+    primary_implementer: str = "chatgpt:gpt-5.6-sol"
     primary_machine: str = "trabajo"
     fallback_machines: str = "MarketingIndo"
+    preferred_models: str = (
+        "qwen3.5:4b,granite-code:3b,ministral-3:3b,llama3.2:3b"
+    )
 
 
 @dataclass(slots=True)

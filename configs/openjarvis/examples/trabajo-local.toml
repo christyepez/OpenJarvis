@@ -1,0 +1,37 @@
+# Local-first runtime preset for the authorized "trabajo" machine.
+# Hardware baseline: 16 GB RAM, Intel i7-1355U, integrated Intel graphics.
+# ChatGPT GPT-5.6 Sol remains the principal interactive implementer; this
+# preset is for delegated local execution only.
+
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://127.0.0.1:11434"
+
+[intelligence]
+default_model = "qwen3.5:4b"
+model_chat = "qwen3.5:4b"
+model_short = "qwen3.5:4b"
+fallback_model = "llama3.2:3b"
+preferred_engine = "ollama"
+temperature = 0.2
+max_tokens = 2048
+
+[agent]
+default_agent = "orchestrator"
+max_turns = 25
+
+[governance]
+enabled = true
+prefer_local = true
+prefer_free = true
+require_approval_for_unapproved_paid = true
+approved_paid = "codex,commander,remote desktop commander"
+primary_implementer = "chatgpt:gpt-5.6-sol"
+primary_machine = "trabajo"
+fallback_machines = "MarketingIndo"
+preferred_models = "qwen3.5:4b,granite-code:3b,ministral-3:3b,llama3.2:3b"
+
+[tools]
+enabled = ["file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "web_search", "think"]
