@@ -55,8 +55,14 @@ class AgentSpawnTool(BaseTool):
                     "agent_type": {
                         "type": "string",
                         "description": (
-                            "Agent registry key (e.g. 'simple',"
-                            " 'orchestrator', 'native_react')."
+                            "Agent registry key when not spawning from a template."
+                        ),
+                    },
+                    "template": {
+                        "type": "string",
+                        "description": (
+                            "Optional managed-agent template id, e.g. "
+                            "'qwen_mm_reviewer' or 'anti_slop_reviewer'."
                         ),
                     },
                     "query": {
@@ -94,67 +100,109 @@ class AgentSpawnTool(BaseTool):
                         ),
                     },
                 },
-                "required": ["agent_type"],
+                "anyOf": [
+                    {"required": ["agent_type"]},
+                    {"required": ["template"]},
+                ],
             },
             category="agents",
             required_capabilities=["system:admin"],
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_type = params.get("agent_type", "")
-        if not agent_type:
+        agent_type = str(params.get("agent_type", "") or "").strip()
+        template = str(params.get("template", "") or "").strip()
+        if not agent_type and not template:
             return ToolResult(
                 tool_name="agent_spawn",
-                content="No agent_type provided.",
+                content="Provide agent_type or template.",
+                success=False,
+            )
+        if template and self._manager is None:
+            return ToolResult(
+                tool_name="agent_spawn",
+                content="Template spawn requires an AgentManager.",
                 success=False,
             )
 
         agent_id = params.get("agent_id") or uuid.uuid4().hex[:12]
         query = str(params.get("query", "") or "")
         tools = str(params.get("tools", "") or "")
-        capability = str(params.get("capability", "") or "").strip().casefold()
+        capability_param = str(
+            params.get("capability", "") or ""
+        ).strip().casefold()
         model = str(params.get("model", "") or "").strip()
         name = str(params.get("name", "") or "").strip()
 
-        if not capability and query:
-            try:
-                from openjarvis.governance.execution_router import (
-                    classify_task_capability,
-                )
-
-                capability = classify_task_capability(query)
-            except Exception:
-                capability = "general"
-        capability = capability or "general"
-
         status = "running"
         managed = False
+        capability = capability_param
+        record: Dict[str, Any] | None = None
         if self._manager is not None:
-            config: Dict[str, Any] = {"capability": capability}
+            overrides: Dict[str, Any] = {}
+            if capability_param:
+                overrides["capability"] = capability_param
             if query:
-                config["instruction"] = query
+                overrides["instruction"] = query
             if tools:
-                config["tools"] = [
+                overrides["tools"] = [
                     item.strip() for item in tools.split(",") if item.strip()
                 ]
             if model:
-                config["model"] = model
+                overrides["model"] = model
 
             try:
-                record = self._manager.create_agent(
-                    name=name or f"{agent_type}-{agent_id[:6]}",
-                    agent_type=agent_type,
-                    config=config,
-                    agent_id=agent_id,
-                )
+                if template:
+                    record = self._manager.create_from_template(
+                        template,
+                        name or template.replace("_", " ").title(),
+                        overrides=overrides,
+                        agent_id=agent_id,
+                    )
+                else:
+                    if not capability and query:
+                        try:
+                            from openjarvis.governance.execution_router import (
+                                classify_task_capability,
+                            )
+
+                            capability = classify_task_capability(query)
+                        except Exception:
+                            capability = "general"
+                    capability = capability or "general"
+                    config = dict(overrides)
+                    config["capability"] = capability
+                    record = self._manager.create_agent(
+                        name=name or f"{agent_type}-{str(agent_id)[:6]}",
+                        agent_type=agent_type,
+                        config=config,
+                        agent_id=agent_id,
+                    )
             except Exception as exc:
                 return ToolResult(
                     tool_name="agent_spawn",
                     content=f"Failed to create managed agent: {exc}",
                     success=False,
                 )
+
+            config = record.get("config", {}) or {}
+            capability = str(
+                config.get("capability", capability or "general")
+            ).strip().casefold() or "general"
+            agent_type = str(record.get("agent_type", agent_type))
             status = str(record.get("status", "idle"))
             managed = True
+        else:
+            if not capability and query:
+                try:
+                    from openjarvis.governance.execution_router import (
+                        classify_task_capability,
+                    )
+
+                    capability = classify_task_capability(query)
+                except Exception:
+                    capability = "general"
+            capability = capability or "general"
 
         entry: Dict[str, Any] = {
             "agent_id": agent_id,

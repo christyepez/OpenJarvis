@@ -621,7 +621,11 @@ class AgentManager:
         return templates
 
     def create_from_template(
-        self, template_id: str, name: str, overrides: Optional[Dict[str, Any]] = None
+        self,
+        template_id: str,
+        name: str,
+        overrides: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create an agent from a template with optional overrides."""
         templates = self.list_templates()
@@ -642,7 +646,12 @@ class AgentManager:
                 instruction=instruction or "(No specific instruction provided)",
             )
 
-        return self.create_agent(name=name, agent_type=agent_type, config=config)
+        return self.create_agent(
+            name=name,
+            agent_type=agent_type,
+            config=config,
+            agent_id=agent_id,
+        )
 
     # ── Message queue ─────────────────────────────────────────────
 

@@ -27,7 +27,8 @@ class TestAgentSpawnTool:
         assert spec.name == "agent_spawn"
         assert spec.category == "agents"
         assert "system:admin" in spec.required_capabilities
-        assert "agent_type" in spec.parameters["required"]
+        assert {"required": ["agent_type"]} in spec.parameters["anyOf"]
+        assert {"required": ["template"]} in spec.parameters["anyOf"]
 
     def test_spawn_creates_agent_entry(self):
         tool = AgentSpawnTool()
@@ -330,3 +331,41 @@ def test_tool_resolver_injects_agent_manager(tmp_path):
         assert tool._manager is manager
     finally:
         manager.close()
+
+
+def test_manager_backed_spawn_from_qwen_mm_template(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        result = AgentSpawnTool(manager=manager).execute(
+            template="qwen_mm_reviewer",
+            agent_id="visual-agent-1",
+            name="Visual QA",
+            query="Review the admissions dashboard screenshot",
+            model="smart",
+        )
+
+        assert result.success is True
+        payload = json.loads(result.content)
+        assert payload["agent_id"] == "visual-agent-1"
+        assert payload["agent_type"] == "orchestrator"
+        assert payload["capability"] == "multimodal"
+        assert payload["managed"] is True
+
+        record = manager.get_agent("visual-agent-1")
+        assert record is not None
+        assert record["config"]["capability"] == "multimodal"
+        assert record["config"]["model"] == "smart"
+        assert "admissions dashboard screenshot" in record["config"]["system_prompt"]
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_template_spawn_without_manager_is_rejected():
+    result = AgentSpawnTool().execute(template="qwen_mm_reviewer")
+
+    assert result.success is False
+    assert "AgentManager" in result.content

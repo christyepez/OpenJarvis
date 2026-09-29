@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class AgentCreateRequest(BaseModel):
-    agent_type: str
+    agent_type: Optional[str] = None
+    template: Optional[str] = None
     tools: Optional[List[str]] = None
     agent_id: Optional[str] = None
     name: Optional[str] = None
@@ -167,7 +168,11 @@ async def create_agent(req: AgentCreateRequest, request: Request):
 
         manager = getattr(request.app.state, "agent_manager", None)
         tool = AgentSpawnTool(manager=manager)
-        params = {"agent_type": req.agent_type}
+        params: Dict[str, Any] = {}
+        if req.agent_type:
+            params["agent_type"] = req.agent_type
+        if req.template:
+            params["template"] = req.template
         if req.tools:
             params["tools"] = ",".join(req.tools)
         if req.agent_id:

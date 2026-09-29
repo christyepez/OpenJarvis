@@ -446,3 +446,42 @@ def test_manager_backed_agent_api_lifecycle(tmp_path):
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
+
+
+def test_manager_backed_agent_api_spawns_template(tmp_path):
+    import json
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.tools.agent_tools import _SPAWNED_AGENTS
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    app = _make_app()
+    app.state.agent_manager = manager
+    client = TestClient(app)
+    _SPAWNED_AGENTS.clear()
+
+    try:
+        response = client.post(
+            "/v1/agents",
+            json={
+                "template": "qwen_mm_reviewer",
+                "agent_id": "api-visual-1",
+                "name": "API Visual QA",
+                "query": "Review this dashboard screenshot",
+                "model": "smart",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = json.loads(response.json()["content"])
+        assert payload["agent_type"] == "orchestrator"
+        assert payload["capability"] == "multimodal"
+        assert payload["managed"] is True
+
+        record = manager.get_agent("api-visual-1")
+        assert record is not None
+        assert record["config"]["capability"] == "multimodal"
+        assert "dashboard screenshot" in record["config"]["system_prompt"]
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
