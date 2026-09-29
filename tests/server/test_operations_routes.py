@@ -140,3 +140,81 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         "thermos",
         "release",
     ]
+
+
+def test_quality_summary_reports_persistent_pipeline(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server.operations_routes import _quality_summary
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        coordinator = manager.create_agent(
+            name="Quality Pipeline abc123",
+            agent_type="orchestrator",
+            config={
+                "quality_pipeline_id": "abc123",
+                "instruction": "Validate dashboard release",
+                "model": "smart",
+            },
+            agent_id="quality-abc123",
+        )
+        reviewer = manager.create_agent(
+            name="Quality anti-slop",
+            agent_type="orchestrator",
+            config={
+                "quality_pipeline_id": "abc123",
+                "quality_stage": "anti-slop",
+                "model": "smart",
+            },
+            agent_id="reviewer-1",
+        )
+
+        build = manager.create_task(
+            coordinator["id"],
+            "build-tests: Validate dashboard release",
+            status="completed",
+        )
+        manager.update_task(
+            build["id"],
+            progress={
+                "pipeline_id": "abc123",
+                "stage": "build-tests",
+                "kind": "gate",
+            },
+        )
+        review = manager.create_task(
+            coordinator["id"],
+            "anti-slop: Validate dashboard release",
+            status="active",
+        )
+        manager.update_task(
+            review["id"],
+            progress={
+                "pipeline_id": "abc123",
+                "stage": "anti-slop",
+                "kind": "agent",
+                "reviewer_agent_id": reviewer["id"],
+                "template": "anti_slop_reviewer",
+            },
+            findings=["One finding"],
+        )
+
+        summary = _quality_summary(manager)
+
+        assert summary["total"] == 1
+        assert summary["by_status"] == {"active": 1}
+        pipeline = summary["pipelines"][0]
+        assert pipeline["pipeline_id"] == "abc123"
+        assert pipeline["status"] == "active"
+        assert pipeline["objective"] == "Validate dashboard release"
+        assert {stage["stage"] for stage in pipeline["stages"]} == {
+            "build-tests",
+            "anti-slop",
+        }
+        anti_slop = next(
+            stage for stage in pipeline["stages"] if stage["stage"] == "anti-slop"
+        )
+        assert anti_slop["reviewer_agent_id"] == "reviewer-1"
+        assert anti_slop["findings_count"] == 1
+    finally:
+        manager.close()

@@ -308,6 +308,25 @@ export interface OperationsStatus {
     backend: string;
     documents: number | null;
   };
+  quality: {
+    total: number;
+    by_status: Record<string, number>;
+    pipelines: Array<{
+      pipeline_id: string;
+      coordinator_agent_id: string;
+      objective: string;
+      status: string;
+      stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
+    }>;
+  };
   agents: {
     total: number;
     by_status: Record<string, number>;

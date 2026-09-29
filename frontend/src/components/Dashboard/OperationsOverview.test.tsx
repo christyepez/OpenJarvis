@@ -4,6 +4,7 @@ import {
   AgentRoutingSummary,
   MemorySummary,
   ModelRoleSummary,
+  QualityRunSummary,
 } from './OperationsOverview';
 
 describe('OperationsOverview model role routing', () => {
@@ -95,5 +96,62 @@ describe('OperationsOverview agent routing', () => {
     expect(html).toContain('Code Reviewer');
     expect(html).toContain('coding');
     expect(html).toContain('granite-code:3b');
+  });
+});
+
+
+describe('OperationsOverview quality runs', () => {
+  it('renders persisted pipeline status and stages', () => {
+    const html = renderToStaticMarkup(
+      <QualityRunSummary
+        quality={{
+          total: 1,
+          by_status: { active: 1 },
+          pipelines: [
+            {
+              pipeline_id: 'abc123',
+              coordinator_agent_id: 'quality-abc123',
+              objective: 'Validate dashboard release',
+              status: 'active',
+              stages: [
+                {
+                  task_id: 't1',
+                  stage: 'build-tests',
+                  kind: 'gate',
+                  status: 'completed',
+                  reviewer_agent_id: '',
+                  template: '',
+                  findings_count: 0,
+                },
+                {
+                  task_id: 't2',
+                  stage: 'anti-slop',
+                  kind: 'agent',
+                  status: 'active',
+                  reviewer_agent_id: 'reviewer-1',
+                  template: 'anti_slop_reviewer',
+                  findings_count: 1,
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain('Validate dashboard release');
+    expect(html).toContain('active');
+    expect(html).toContain('build-tests: completed');
+    expect(html).toContain('anti-slop: active');
+  });
+
+  it('renders an empty state when there are no quality runs', () => {
+    const html = renderToStaticMarkup(
+      <QualityRunSummary
+        quality={{ total: 0, by_status: {}, pipelines: [] }}
+      />,
+    );
+
+    expect(html).toContain('No quality runs');
   });
 });

@@ -316,6 +316,7 @@ class QualityPipelineTool(BaseTool):
                 "instruction": objective,
                 "model": "smart",
                 "quality_pipeline_id": pipeline_id,
+                "quality_pipeline_role": "coordinator",
             },
             agent_id=f"quality-{pipeline_id}",
         )
@@ -372,6 +373,7 @@ class QualityPipelineTool(BaseTool):
                 reviewer_config.update(
                     {
                         "quality_pipeline_id": pipeline_id,
+                        "quality_pipeline_role": "reviewer",
                         "quality_task_id": task["id"],
                         "quality_stage": stage.value,
                     }

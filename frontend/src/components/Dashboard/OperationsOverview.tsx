@@ -107,6 +107,46 @@ export function MemorySummary({
   );
 }
 
+export function QualityRunSummary({
+  quality,
+}: {
+  quality: OperationsStatus['quality'];
+}) {
+  if (!quality.pipelines.length) {
+    return (
+      <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        No quality runs
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {quality.pipelines.slice(0, 3).map((pipeline) => (
+        <div key={pipeline.pipeline_id}>
+          <div className="flex items-center justify-between gap-3">
+            <div
+              className="truncate text-xs font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {pipeline.objective || pipeline.pipeline_id}
+            </div>
+            <Badge>{pipeline.status}</Badge>
+          </div>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {pipeline.stages.map((stage) => (
+              <Badge key={stage.task_id}>
+                {stage.stage}: {stage.status}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 function Card({
   title,
   children,
@@ -339,9 +379,12 @@ export function OperationsOverview() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 mt-3">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mt-3">
         <Card title="Agent routing">
           <AgentRoutingSummary agents={status.agents.agents} />
+        </Card>
+        <Card title="Quality runs">
+          <QualityRunSummary quality={status.quality} />
         </Card>
       </div>
     </div>

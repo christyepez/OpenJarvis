@@ -119,6 +119,84 @@ def _memory_summary(state: Any) -> dict[str, Any]:
     }
 
 
+def _quality_summary(manager: Any) -> dict[str, Any]:
+    if manager is None:
+        return {"total": 0, "by_status": {}, "pipelines": []}
+
+    try:
+        agents = list(manager.list_agents())
+    except Exception:
+        return {"total": 0, "by_status": {}, "pipelines": []}
+
+    pipelines: list[dict[str, Any]] = []
+    by_status: dict[str, int] = {}
+
+    for agent in agents:
+        config = agent.get("config", {}) or {}
+        pipeline_id = str(config.get("quality_pipeline_id", "") or "")
+        pipeline_role = str(
+            config.get("quality_pipeline_role", "") or ""
+        ).casefold()
+        agent_id = str(agent.get("id", ""))
+        is_coordinator = pipeline_role == "coordinator" or (
+            not pipeline_role and agent_id.startswith("quality-")
+        )
+        if not pipeline_id or not is_coordinator:
+            continue
+
+        try:
+            tasks = list(manager.list_tasks(agent_id))
+        except Exception:
+            tasks = []
+
+        stage_rows: list[dict[str, Any]] = []
+        for task in tasks:
+            progress = task.get("progress", {}) or {}
+            stage_rows.append(
+                {
+                    "task_id": str(task.get("id", "")),
+                    "stage": str(progress.get("stage", "") or ""),
+                    "kind": str(progress.get("kind", "") or ""),
+                    "status": str(task.get("status", "unknown")),
+                    "reviewer_agent_id": str(
+                        progress.get("reviewer_agent_id", "") or ""
+                    ),
+                    "template": str(progress.get("template", "") or ""),
+                    "findings_count": len(task.get("findings", []) or []),
+                }
+            )
+
+        statuses = {row["status"] for row in stage_rows}
+        if "failed" in statuses:
+            status = "failed"
+        elif "needs_attention" in statuses:
+            status = "needs_attention"
+        elif "active" in statuses:
+            status = "active"
+        elif stage_rows and statuses == {"completed"}:
+            status = "completed"
+        else:
+            status = "pending"
+
+        by_status[status] = by_status.get(status, 0) + 1
+        pipelines.append(
+            {
+                "pipeline_id": pipeline_id,
+                "coordinator_agent_id": agent_id,
+                "objective": str(config.get("instruction", "") or ""),
+                "status": status,
+                "stages": stage_rows,
+            }
+        )
+
+    pipelines.sort(key=lambda row: row["pipeline_id"])
+    return {
+        "total": len(pipelines),
+        "by_status": by_status,
+        "pipelines": pipelines,
+    }
+
+
 def _agent_summary(
     manager: Any,
     role_models: dict[str, str | None] | None = None,
@@ -246,6 +324,7 @@ def operations_status(request: Request) -> dict[str, Any]:
         )
         for capability in ("general", "coding", "multimodal")
     }
+    manager = getattr(state, "agent_manager", None)
 
     return {
         "primary_implementer": primary_implementer,
@@ -289,10 +368,8 @@ def operations_status(request: Request) -> dict[str, Any]:
                 for name in fallback_machines
             ],
         },
-        "agents": _agent_summary(
-            getattr(state, "agent_manager", None),
-            role_models,
-        ),
+        "agents": _agent_summary(manager, role_models),
+        "quality": _quality_summary(manager),
         "memory": _memory_summary(state),
         "tools": tooling["tools"],
         "skills": tooling["skills"],
