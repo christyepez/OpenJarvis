@@ -9,6 +9,7 @@ schedule_value = "3600"
 tools = ["file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_commit", "git_log", "apply_patch", "code_interpreter", "memory_store", "memory_retrieve", "think"]
 max_turns = 15
 temperature = 0.1
+capability = "coding"
 memory_extraction = "scratchpad"
 observation_compression = "summarize"
 retrieval_strategy = "sqlite"

@@ -83,15 +83,28 @@ def _resolve_managed_worker_model(
     use_smart = explicit.casefold() == "smart"
     if use_smart or _prefer_local_workers(system):
         try:
-            from openjarvis.governance.execution_router import recommend_model_for_task
+            from openjarvis.governance.execution_router import (
+                local_runtime_models,
+                recommend_installed_model,
+                recommend_model_for_task,
+            )
             from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
 
-            selected, _capability = recommend_model_for_task(
-                engine,
-                task_text,
-                BUILTIN_MODELS,
-                preferred_models=_preferred_worker_models(system),
-            )
+            capability_hint = str(config.get("capability") or "").strip()
+            if capability_hint:
+                selected = recommend_installed_model(
+                    local_runtime_models(engine),
+                    BUILTIN_MODELS,
+                    capability=capability_hint,
+                    preferred_models=_preferred_worker_models(system),
+                )
+            else:
+                selected, _capability = recommend_model_for_task(
+                    engine,
+                    task_text,
+                    BUILTIN_MODELS,
+                    preferred_models=_preferred_worker_models(system),
+                )
             if selected:
                 return selected
         except Exception as exc:

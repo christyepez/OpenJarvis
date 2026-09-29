@@ -38,3 +38,27 @@ def test_create_from_template_preserves_icon(tmp_path):
     config = agent["config"]
     assert config.get("icon") == "🔬"
     mgr.close()
+
+
+def test_common_agent_templates_expose_capability_hints(tmp_path):
+    mgr = AgentManager(db_path=str(tmp_path / "test.db"))
+    templates = {item["id"]: item for item in mgr.list_templates()}
+
+    assert templates["project_orchestrator"]["capability"] == "general"
+    assert templates["qwen_mm_reviewer"]["capability"] == "multimodal"
+    assert templates["anti_slop_reviewer"]["capability"] == "coding"
+    assert templates["thermos_reviewer"]["capability"] == "coding"
+    mgr.close()
+
+
+def test_create_qwen_mm_template_preserves_multimodal_capability(tmp_path):
+    mgr = AgentManager(db_path=str(tmp_path / "test.db"))
+    agent = mgr.create_from_template(
+        "qwen_mm_reviewer",
+        "Visual QA",
+        overrides={"instruction": "Review the dashboard screenshot"},
+    )
+
+    assert agent["config"]["capability"] == "multimodal"
+    assert "dashboard screenshot" in agent["config"]["system_prompt"]
+    mgr.close()

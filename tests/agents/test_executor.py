@@ -317,3 +317,19 @@ def test_smart_managed_worker_never_falls_back_to_cloud_default() -> None:
     )
 
     assert selected == ""
+
+
+def test_managed_worker_honors_explicit_capability_hint() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {
+            "capability": "multimodal",
+            "instruction": "Review the Python code shown in this screenshot",
+        },
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Review the Python code shown in this screenshot",
+    )
+
+    assert selected == "qwen3.5:4b"
