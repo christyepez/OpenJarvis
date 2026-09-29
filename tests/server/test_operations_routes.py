@@ -13,6 +13,10 @@ class _Engine:
         return True
 
 
+class _CommanderTool:
+    tool_id = "remote_desktop_commander.shell"
+
+
 class _MemoryBackend:
     backend_id = "sqlite"
 
@@ -81,6 +85,7 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         config=config,
         agent_manager=_Manager(),
         memory_backend=_MemoryBackend(),
+        mcp_tools=[_CommanderTool()],
     )
     response = TestClient(app).get("/v1/operations/status")
 
@@ -94,6 +99,10 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         "general": "qwen3.5:4b",
         "coding": "granite-code:3b",
         "multimodal": "qwen3.5:4b",
+    }
+    assert data["execution"] == {
+        "preferred_plane": "commander",
+        "commander_connected": True,
     }
     assert data["memory"] == {
         "enabled": True,

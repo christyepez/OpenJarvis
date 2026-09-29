@@ -209,7 +209,20 @@ export function OperationsOverview() {
         </Card>
 
         <Card title="Machine routing">
-          <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span style={{ color: 'var(--color-text)' }}>
+              {status.execution.preferred_plane}
+            </span>
+            <Badge>
+              {status.execution.commander_connected
+                ? 'connected'
+                : 'not detected'}
+            </Badge>
+          </div>
+          <div
+            className="flex items-center gap-2 text-sm mt-3"
+            style={{ color: 'var(--color-text)' }}
+          >
             <span>{status.machines.primary.name}</span>
             <Badge>{status.machines.primary.status}</Badge>
           </div>

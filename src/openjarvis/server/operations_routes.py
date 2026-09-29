@@ -180,6 +180,10 @@ def operations_status(request: Request) -> dict[str, Any]:
         getattr(governance, "fallback_machines", "MarketingIndo")
     )
     tooling = _tooling_summary(state)
+    mcp_names = tooling["tools"]["mcp"]
+    commander_connected = any(
+        "commander" in name.casefold() for name in mcp_names
+    )
     engine = getattr(state, "engine", None)
     local_models = _safe_models(engine)
     runtime_available = _safe_health(engine)
@@ -227,6 +231,10 @@ def operations_status(request: Request) -> dict[str, Any]:
                 )
             ),
             "preferred_models": preferred_models,
+        },
+        "execution": {
+            "preferred_plane": "commander",
+            "commander_connected": commander_connected,
         },
         "machines": {
             "primary": {

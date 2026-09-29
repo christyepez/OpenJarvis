@@ -295,6 +295,10 @@ export interface OperationsStatus {
     approved_paid: string[];
     preferred_models: string[];
   };
+  execution: {
+    preferred_plane: string;
+    commander_connected: boolean;
+  };
   machines: {
     primary: { name: string; status: string };
     fallbacks: Array<{ name: string; status: string }>;
