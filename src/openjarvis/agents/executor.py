@@ -103,6 +103,45 @@ def _resolve_managed_worker_model(
     return _resolve_tick_model(config, system)
 
 
+def _construct_ephemeral_agent(
+    agent_cls: Any,
+    *,
+    engine: Any,
+    model: str,
+    system_prompt: str,
+    bus: Any,
+) -> Any:
+    """Construct an ephemeral agent using only parameters it actually accepts."""
+    import inspect
+
+    signature = inspect.signature(agent_cls.__init__)
+    accepts_var_kw = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+    def accepts(name: str) -> bool:
+        return accepts_var_kw or name in signature.parameters
+
+    kwargs: dict[str, Any] = {}
+    if accepts("engine"):
+        kwargs["engine"] = engine
+    if accepts("model"):
+        kwargs["model"] = model
+    if accepts("bus"):
+        kwargs["bus"] = bus
+    if system_prompt and accepts("system_prompt"):
+        kwargs["system_prompt"] = system_prompt
+    elif system_prompt and accepts("prompt_builder"):
+        from openjarvis.prompt.builder import SystemPromptBuilder
+
+        kwargs["prompt_builder"] = SystemPromptBuilder(
+            agent_template=system_prompt,
+        )
+
+    return agent_cls(**kwargs)
+
+
 def _available_tick_models(engine: Any, resolved_model: str) -> list[str]:
     """Return every model the active engine can actually route to.
 
@@ -206,9 +245,20 @@ class AgentExecutor:
             if self._system is not None
             else getattr(self._manager, "_engine", None)
         )
+        routed_model = _resolve_managed_worker_model(
+            {},
+            self._system,
+            engine,
+            input_text,
+        )
+        if not routed_model:
+            routed_model = _resolve_tick_model({}, self._system)
+
         if not tools:
-            agent = agent_cls(
+            agent = _construct_ephemeral_agent(
+                agent_cls,
                 engine=engine,
+                model=routed_model,
                 system_prompt=system_prompt,
                 bus=self._bus,
             )
@@ -241,7 +291,7 @@ class AgentExecutor:
         system = self._system
         agent = execution_cls(
             engine=engine,
-            model=getattr(system, "model", "") or _AGENT_TICK_DEFAULT_MODEL,
+            model=routed_model,
             system_prompt=system_prompt,
             tools=instances,
             bus=self._bus,
