@@ -170,6 +170,56 @@ export function OperationsOverview() {
           </div>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mt-3">
+        <Card title="Tasks">
+          <div className="text-2xl font-semibold" style={{ color: 'var(--color-text)' }}>
+            {status.agents.tasks.total}
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {Object.entries(status.agents.tasks.by_status).map(([name, count]) => (
+              <Badge key={name}>{name}: {count}</Badge>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Tools / MCP">
+          <div className="flex items-end gap-5">
+            <div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--color-text)' }}>
+                {status.tools.native_count}
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                native
+              </div>
+            </div>
+            <div>
+              <div className="text-xl font-semibold" style={{ color: 'var(--color-text)' }}>
+                {status.tools.mcp_count}
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                MCP
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {status.tools.mcp.slice(0, 4).map((tool) => (
+              <Badge key={tool}>{tool}</Badge>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Skills">
+          <div className="text-2xl font-semibold" style={{ color: 'var(--color-text)' }}>
+            {status.skills.count}
+          </div>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {status.skills.items.slice(0, 5).map((skill) => (
+              <Badge key={skill}>{skill}</Badge>
+            ))}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

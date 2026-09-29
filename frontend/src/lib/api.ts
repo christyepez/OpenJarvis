@@ -303,6 +303,26 @@ export interface OperationsStatus {
       status: string;
       activity: string;
     }>;
+    tasks: {
+      total: number;
+      by_status: Record<string, number>;
+      items: Array<{
+        id: string;
+        agent_id: string;
+        description: string;
+        status: string;
+      }>;
+    };
+  };
+  tools: {
+    native_count: number;
+    mcp_count: number;
+    native: string[];
+    mcp: string[];
+  };
+  skills: {
+    count: number;
+    items: string[];
   };
   quality_pipeline: string[];
 }

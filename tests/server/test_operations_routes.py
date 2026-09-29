@@ -28,6 +28,25 @@ class _Manager:
                 "current_activity": "reviewing",
             },
         ]
+
+    def list_tasks(self, agent_id: str):
+        if agent_id == "a1":
+            return [
+                {
+                    "id": "t1",
+                    "description": "Validate runtime",
+                    "status": "completed",
+                }
+            ]
+        return [
+            {
+                "id": "t2",
+                "description": "Review dashboard",
+                "status": "active",
+            }
+        ]
+
+
 def test_operations_status_aggregates_runtime_and_governance() -> None:
     governance = SimpleNamespace(
         primary_implementer="chatgpt:gpt-5.6-sol",
@@ -63,6 +82,14 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["machines"]["primary"]["status"] == "configured"
     assert data["agents"]["total"] == 2
     assert data["agents"]["by_status"] == {"idle": 1, "running": 1}
+    assert data["agents"]["tasks"]["total"] == 2
+    assert data["agents"]["tasks"]["by_status"] == {
+        "active": 1,
+        "completed": 1,
+    }
+    assert "native_count" in data["tools"]
+    assert "mcp_count" in data["tools"]
+    assert "count" in data["skills"]
     assert data["quality_pipeline"] == [
         "build-tests",
         "multimodal-review",

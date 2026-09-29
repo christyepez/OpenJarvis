@@ -31,31 +31,98 @@ def _safe_models(engine: Any) -> list[str]:
     return sorted(set(result))
 
 
+def _tooling_summary(state: Any) -> dict[str, Any]:
+    native_tools: list[str] = []
+    skills: list[str] = []
+    try:
+        from openjarvis.core.registry import SkillRegistry, ToolRegistry
+
+        native_tools = sorted(ToolRegistry.keys())
+        skills = sorted(SkillRegistry.keys())
+    except Exception:
+        pass
+
+    mcp_tools: list[str] = []
+    for tool in getattr(state, "mcp_tools", []) or []:
+        name = (
+            getattr(tool, "tool_id", None)
+            or getattr(tool, "name", None)
+            or tool.__class__.__name__
+        )
+        mcp_tools.append(str(name))
+
+    return {
+        "tools": {
+            "native_count": len(native_tools),
+            "mcp_count": len(mcp_tools),
+            "native": native_tools[:40],
+            "mcp": sorted(set(mcp_tools))[:40],
+        },
+        "skills": {
+            "count": len(skills),
+            "items": skills[:40],
+        },
+    }
+
+
 def _agent_summary(manager: Any) -> dict[str, Any]:
     if manager is None:
-        return {"total": 0, "by_status": {}, "agents": []}
+        return {
+            "total": 0,
+            "by_status": {},
+            "agents": [],
+            "tasks": {"total": 0, "by_status": {}, "items": []},
+        }
     try:
         agents = list(manager.list_agents())
     except Exception:
-        return {"total": 0, "by_status": {}, "agents": []}
+        return {
+            "total": 0,
+            "by_status": {},
+            "agents": [],
+            "tasks": {"total": 0, "by_status": {}, "items": []},
+        }
     by_status: dict[str, int] = {}
     compact: list[dict[str, Any]] = []
+    task_by_status: dict[str, int] = {}
+    task_items: list[dict[str, Any]] = []
     for agent in agents:
         status = str(agent.get("status", "unknown"))
         by_status[status] = by_status.get(status, 0) + 1
+        agent_id = str(agent.get("id", ""))
         compact.append(
             {
-                "id": str(agent.get("id", "")),
+                "id": agent_id,
                 "name": str(agent.get("name", "")),
                 "type": str(agent.get("agent_type", "")),
                 "status": status,
                 "activity": str(agent.get("current_activity", "") or ""),
             }
         )
+        try:
+            tasks = manager.list_tasks(agent_id)
+        except Exception:
+            tasks = []
+        for task in tasks:
+            task_status = str(task.get("status", "unknown"))
+            task_by_status[task_status] = task_by_status.get(task_status, 0) + 1
+            task_items.append(
+                {
+                    "id": str(task.get("id", "")),
+                    "agent_id": agent_id,
+                    "description": str(task.get("description", "")),
+                    "status": task_status,
+                }
+            )
     return {
         "total": len(compact),
         "by_status": by_status,
         "agents": compact,
+        "tasks": {
+            "total": len(task_items),
+            "by_status": task_by_status,
+            "items": task_items[:20],
+        },
     }
 
 
@@ -75,6 +142,8 @@ def operations_status(request: Request) -> dict[str, Any]:
     fallback_machines = _csv(
         getattr(governance, "fallback_machines", "MarketingIndo")
     )
+    tooling = _tooling_summary(state)
+
     return {
         "primary_implementer": primary_implementer,
         "runtime": {
@@ -114,6 +183,8 @@ def operations_status(request: Request) -> dict[str, Any]:
             ],
         },
         "agents": _agent_summary(getattr(state, "agent_manager", None)),
+        "tools": tooling["tools"],
+        "skills": tooling["skills"],
         "quality_pipeline": [
             "build-tests",
             "multimodal-review",
