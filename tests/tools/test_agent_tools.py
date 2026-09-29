@@ -10,6 +10,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    QualityGateUpdateTool,
     QualityPipelineTool,
 )
 
@@ -421,6 +422,13 @@ def test_quality_pipeline_spawns_visual_code_reviewers(tmp_path):
         assert len(tasks) == 4
         assert {task["status"] for task in tasks} == {"pending"}
 
+        previous_task_id = ""
+        for stage in payload["stages"]:
+            task = manager.get_task(stage["task_id"])
+            assert task is not None
+            assert task["progress"]["depends_on_task_id"] == previous_task_id
+            previous_task_id = stage["task_id"]
+
         reviewer_ids = {stage["agent_id"] for stage in agent_stages}
         for reviewer_id in reviewer_ids:
             reviewer = manager.get_agent(reviewer_id)
@@ -453,3 +461,51 @@ def test_quality_pipeline_release_keeps_release_as_gate(tmp_path):
         assert payload["stages"][-1]["kind"] == "gate"
     finally:
         manager.close()
+
+
+def test_quality_gate_update_requires_evidence_and_cannot_override_reviewer(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        planned = QualityPipelineTool(manager=manager).execute(
+            objective="Validate code before release",
+            has_code_changes=True,
+            has_visual_changes=False,
+            material_change=True,
+            release_candidate=True,
+        )
+        payload = json.loads(planned.content)
+        pipeline_id = payload["pipeline_id"]
+
+        missing_evidence = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="build-tests",
+            status="completed",
+        )
+        assert missing_evidence.success is False
+        assert "requires evidence" in missing_evidence.content
+
+        completed = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="build-tests",
+            status="completed",
+            evidence="pytest: 120 passed; ruff: clean",
+        )
+        assert completed.success is True
+        completed_payload = json.loads(completed.content)
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["evidence"] == ["pytest: 120 passed; ruff: clean"]
+
+        reviewer_override = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="anti-slop",
+            status="completed",
+            evidence="manual override",
+        )
+        assert reviewer_override.success is False
+        assert "reviewer-managed" in reviewer_override.content
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()

@@ -489,6 +489,14 @@ class AgentManager:
         return [self._row_to_task(r) for r in rows]
 
     @_db_locked
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Return one persisted agent task by id."""
+        row = self._conn.execute(
+            "SELECT * FROM agent_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        return self._row_to_task(row) if row else None
+
+    @_db_locked
     def update_task(self, task_id: str, **kwargs: Any) -> Dict[str, Any]:
         sets: List[str] = []
         vals: List[Any] = []

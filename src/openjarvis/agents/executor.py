@@ -242,6 +242,42 @@ class AgentExecutor:
         except Exception:
             pass  # Non-critical
 
+    def _quality_dependency_ready(self, agent_id: str) -> tuple[bool, str]:
+        """Return whether a quality reviewer may execute its current stage."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return True, ""
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("quality_task_id", "") or "")
+            if not task_id:
+                return True, ""
+
+            task = self._manager.get_task(task_id)
+            if not task:
+                return True, ""
+            progress = task.get("progress", {}) or {}
+            dependency_id = str(progress.get("depends_on_task_id", "") or "")
+            if not dependency_id:
+                return True, ""
+
+            dependency = self._manager.get_task(dependency_id)
+            if dependency and str(dependency.get("status", "")) == "completed":
+                return True, dependency_id
+            dependency_status = (
+                str(dependency.get("status", "missing"))
+                if dependency is not None
+                else "missing"
+            )
+            return False, f"{dependency_id}:{dependency_status}"
+        except Exception:
+            logger.debug(
+                "Failed to resolve quality dependency for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+            return False, "dependency-check-error"
+
     def _update_quality_task(
         self,
         agent_id: str,
@@ -260,11 +296,17 @@ class AgentExecutor:
             if not task_id:
                 return
 
-            progress = {
-                "pipeline_id": str(config.get("quality_pipeline_id", "") or ""),
-                "stage": str(config.get("quality_stage", "") or ""),
-                "reviewer_agent_id": agent_id,
-            }
+            task = self._manager.get_task(task_id)
+            progress = dict((task or {}).get("progress", {}) or {})
+            progress.update(
+                {
+                    "pipeline_id": str(
+                        config.get("quality_pipeline_id", "") or ""
+                    ),
+                    "stage": str(config.get("quality_stage", "") or ""),
+                    "reviewer_agent_id": agent_id,
+                }
+            )
             kwargs: dict[str, Any] = {
                 "status": status,
                 "progress": progress,
@@ -369,6 +411,23 @@ class AgentExecutor:
         guard — bailing out with no end_tick(), leaving the agent stuck in
         ``status='running'`` forever.
         """
+        dependency_ready, dependency_detail = self._quality_dependency_ready(agent_id)
+        if not dependency_ready:
+            self._set_activity(
+                agent_id,
+                f"Waiting for quality dependency {dependency_detail}",
+            )
+            if lock_already_held:
+                try:
+                    self._manager.end_tick(agent_id)
+                except Exception:
+                    logger.debug(
+                        "Failed to release blocked quality-agent tick %s",
+                        agent_id,
+                        exc_info=True,
+                    )
+            return
+
         if lock_already_held:
             self._set_activity(agent_id, "Preparing tick...")
         else:

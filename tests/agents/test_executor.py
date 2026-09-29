@@ -389,3 +389,60 @@ def test_quality_task_failure_is_persisted(executor, manager):
     assert updated["progress"]["pipeline_id"] == "pipeline-2"
     assert updated["progress"]["stage"] == "thermos"
     assert updated["findings"] == ["review failed"]
+
+
+def test_quality_reviewer_waits_for_previous_stage(executor, manager):
+    coordinator = manager.create_agent(
+        name="quality coordinator",
+        agent_type="orchestrator",
+        config={"quality_pipeline_id": "pipeline-chain"},
+    )
+    dependency = manager.create_task(
+        coordinator["id"],
+        "build-tests",
+        status="pending",
+    )
+    reviewer = manager.create_agent(
+        name="visual reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-chain",
+            "quality_pipeline_role": "reviewer",
+            "quality_stage": "multimodal-review",
+        },
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "multimodal-review",
+        status="pending",
+    )
+    manager.update_task(
+        task["id"],
+        progress={
+            "pipeline_id": "pipeline-chain",
+            "stage": "multimodal-review",
+            "kind": "agent",
+            "depends_on_task_id": dependency["id"],
+            "reviewer_agent_id": reviewer["id"],
+        },
+    )
+    config = dict(reviewer["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(reviewer["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        return_value=AgentResult(content="visual review complete"),
+    ) as invoke:
+        executor.execute_tick(reviewer["id"])
+        invoke.assert_not_called()
+        assert manager.get_task(task["id"])["status"] == "pending"
+
+        manager.update_task(dependency["id"], status="completed")
+        executor.execute_tick(reviewer["id"])
+
+        invoke.assert_called_once()
+        updated = manager.get_task(task["id"])
+        assert updated["status"] == "completed"
+        assert updated["progress"]["depends_on_task_id"] == dependency["id"]

@@ -323,6 +323,7 @@ class QualityPipelineTool(BaseTool):
 
         spawn = AgentSpawnTool(manager=self._manager)
         stages: list[dict[str, Any]] = []
+        previous_task_id = ""
 
         for stage in plan.stages:
             template = templates.get(stage)
@@ -336,7 +337,9 @@ class QualityPipelineTool(BaseTool):
                 "pipeline_id": pipeline_id,
                 "stage": stage.value,
                 "kind": kind,
+                "depends_on_task_id": previous_task_id,
             }
+            previous_task_id = task["id"]
 
             if template is None:
                 self._manager.update_task(task["id"], progress=progress)
@@ -406,6 +409,142 @@ class QualityPipelineTool(BaseTool):
                     "coordinator_agent_id": coordinator["id"],
                     "objective": objective,
                     "stages": stages,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("quality_gate_update")
+class QualityGateUpdateTool(BaseTool):
+    """Update a deterministic quality gate with concrete evidence."""
+
+    tool_id = "quality_gate_update"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Update a deterministic quality gate such as build-tests or release. "
+                "Reviewer stages cannot be overridden with this tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string"},
+                    "stage": {
+                        "type": "string",
+                        "description": "Gate stage, e.g. build-tests or release.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "needs_attention"],
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete validation evidence or failure detail."
+                        ),
+                    },
+                },
+                "required": ["pipeline_id", "stage", "status"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality gate update requires an AgentManager.",
+                success=False,
+            )
+
+        pipeline_id = str(params.get("pipeline_id", "") or "").strip()
+        stage = str(params.get("stage", "") or "").strip()
+        status = str(params.get("status", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+
+        if not pipeline_id or not stage:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="pipeline_id and stage are required.",
+                success=False,
+            )
+        if status not in {"completed", "failed", "needs_attention"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported gate status: {status}",
+                success=False,
+            )
+        if status == "completed" and not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Completing a quality gate requires evidence.",
+                success=False,
+            )
+
+        coordinator = None
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if (
+                str(config.get("quality_pipeline_id", "") or "") == pipeline_id
+                and str(config.get("quality_pipeline_role", "") or "").casefold()
+                == "coordinator"
+            ):
+                coordinator = record
+                break
+        if coordinator is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality pipeline not found: {pipeline_id}",
+                success=False,
+            )
+
+        target = None
+        for task in self._manager.list_tasks(coordinator["id"]):
+            progress = task.get("progress", {}) or {}
+            if str(progress.get("stage", "") or "") == stage:
+                target = task
+                break
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality stage not found: {stage}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        if str(progress.get("kind", "") or "") != "gate":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    f"Stage '{stage}' is reviewer-managed and cannot be overridden."
+                ),
+                success=False,
+            )
+
+        findings = [evidence] if evidence else list(target.get("findings", []) or [])
+        updated = self._manager.update_task(
+            target["id"],
+            status=status,
+            progress=progress,
+            findings=findings,
+        )
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "stage": stage,
+                    "task_id": target["id"],
+                    "status": updated["status"],
+                    "evidence": findings,
                 }
             ),
             success=True,
@@ -691,5 +830,6 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "QualityGateUpdateTool",
     "QualityPipelineTool",
 ]
