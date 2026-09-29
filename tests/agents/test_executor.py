@@ -238,3 +238,82 @@ def test_new_agent_without_model_keeps_system_default_unpinned(manager) -> None:
     agent = manager.create_agent("inherits-system-model", config={})
 
     assert "model" not in agent["config"]
+
+
+class _LocalWorkerEngine:
+    engine_id = "ollama"
+
+    def list_models(self):
+        return ["qwen3.5:4b", "granite-code:3b"]
+
+
+def _local_first_system():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        model="cloud-default",
+        config=SimpleNamespace(
+            governance=SimpleNamespace(
+                prefer_local=True,
+                preferred_models="qwen3.5:4b,granite-code:3b",
+            )
+        ),
+    )
+
+
+def test_managed_worker_preserves_explicit_model() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"model": "explicit-model", "instruction": "Write Python code"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Write Python code",
+    )
+
+    assert selected == "explicit-model"
+
+
+def test_managed_worker_routes_coding_instruction_locally() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"instruction": "Refactor this Python service and add unit tests"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Refactor this Python service and add unit tests",
+    )
+
+    assert selected == "granite-code:3b"
+
+
+def test_managed_worker_routes_general_instruction_locally() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"instruction": "Summarize the latest project notes"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Summarize the latest project notes",
+    )
+
+    assert selected == "qwen3.5:4b"
+
+
+def test_smart_managed_worker_never_falls_back_to_cloud_default() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    class _CloudOnlyEngine:
+        engine_id = "cloud"
+
+        def list_models(self):
+            return ["gpt-4o"]
+
+    selected = _resolve_managed_worker_model(
+        {"model": "smart", "instruction": "Summarize this"},
+        _local_first_system(),
+        _CloudOnlyEngine(),
+        "Summarize this",
+    )
+
+    assert selected == ""

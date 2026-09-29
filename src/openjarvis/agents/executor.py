@@ -52,6 +52,57 @@ def _resolve_tick_model(config: dict[str, Any], system: Any) -> str:
     )
 
 
+def _preferred_worker_models(system: Any) -> tuple[str, ...]:
+    """Read governed local-worker preferences without assuming config presence."""
+    cfg = getattr(system, "config", None) if system is not None else None
+    governance = getattr(cfg, "governance", None) if cfg is not None else None
+    raw = getattr(governance, "preferred_models", "") if governance is not None else ""
+    if not isinstance(raw, str):
+        return ()
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _prefer_local_workers(system: Any) -> bool:
+    """Return True only for an explicitly enabled local-first governance flag."""
+    cfg = getattr(system, "config", None) if system is not None else None
+    governance = getattr(cfg, "governance", None) if cfg is not None else None
+    return getattr(governance, "prefer_local", False) is True
+
+
+def _resolve_managed_worker_model(
+    config: dict[str, Any],
+    system: Any,
+    engine: Any,
+    task_text: str,
+) -> str:
+    """Resolve a managed-agent model while preserving explicit user choices."""
+    explicit = str(config.get("model") or "").strip()
+    if explicit and explicit.casefold() != "smart":
+        return explicit
+
+    use_smart = explicit.casefold() == "smart"
+    if use_smart or _prefer_local_workers(system):
+        try:
+            from openjarvis.governance.execution_router import recommend_model_for_task
+            from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
+
+            selected, _capability = recommend_model_for_task(
+                engine,
+                task_text,
+                BUILTIN_MODELS,
+                preferred_models=_preferred_worker_models(system),
+            )
+            if selected:
+                return selected
+        except Exception as exc:
+            logger.warning("Managed-agent local worker routing failed: %s", exc)
+
+    if use_smart:
+        return ""
+
+    return _resolve_tick_model(config, system)
+
+
 def _available_tick_models(engine: Any, resolved_model: str) -> list[str]:
     """Return every model the active engine can actually route to.
 
@@ -377,9 +428,18 @@ class AgentExecutor:
         engine = self._system.engine if self._system else None
         if engine is None:
             raise FatalError("No engine available in JarvisSystem")
-        model = _resolve_tick_model(config, self._system)
+        model = _resolve_managed_worker_model(
+            config,
+            self._system,
+            engine,
+            str(config.get("instruction", "") or ""),
+        )
         if not model:
-            raise FatalError("No model configured for agent")
+            raise FatalError(
+                "No local model available for smart managed-agent routing"
+                if str(config.get("model", "") or "").casefold() == "smart"
+                else "No model configured for agent"
+            )
 
         logger.info(
             "Agent %s [%s]: using model=%s, engine=%s",
