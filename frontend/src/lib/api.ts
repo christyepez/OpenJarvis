@@ -275,6 +275,44 @@ export async function fetchServerInfo(): Promise<ServerInfo> {
   return res.json();
 }
 
+export interface OperationsStatus {
+  primary_implementer: string;
+  runtime: {
+    engine: string;
+    model: string;
+    local_models: string[];
+  };
+  governance: {
+    prefer_local: boolean;
+    prefer_free: boolean;
+    require_approval_for_unapproved_paid: boolean;
+    approved_paid: string[];
+    preferred_models: string[];
+  };
+  machines: {
+    primary: { name: string; status: string };
+    fallbacks: Array<{ name: string; status: string }>;
+  };
+  agents: {
+    total: number;
+    by_status: Record<string, number>;
+    agents: Array<{
+      id: string;
+      name: string;
+      type: string;
+      status: string;
+      activity: string;
+    }>;
+  };
+  quality_pipeline: string[];
+}
+
+export async function fetchOperationsStatus(): Promise<OperationsStatus> {
+  const res = await apiFetch(`/v1/operations/status`);
+  if (!res.ok) throw new Error(`Failed to fetch operations status: ${res.status}`);
+  return res.json();
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {

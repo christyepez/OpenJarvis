@@ -1,0 +1,72 @@
+from types import SimpleNamespace
+
+from fastapi.testclient import TestClient
+
+from openjarvis.server.app import create_app
+
+
+class _Engine:
+    def list_models(self):
+        return ["qwen3.5:4b", "granite-code:3b"]
+
+
+class _Manager:
+    def list_agents(self):
+        return [
+            {
+                "id": "a1",
+                "name": "Project Orchestrator",
+                "agent_type": "orchestrator",
+                "status": "idle",
+                "current_activity": "",
+            },
+            {
+                "id": "a2",
+                "name": "Qwen-MM",
+                "agent_type": "reviewer",
+                "status": "running",
+                "current_activity": "reviewing",
+            },
+        ]
+def test_operations_status_aggregates_runtime_and_governance() -> None:
+    governance = SimpleNamespace(
+        primary_implementer="chatgpt:gpt-5.6-sol",
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+        prefer_local=True,
+        prefer_free=True,
+        require_approval_for_unapproved_paid=True,
+        approved_paid="codex,commander,remote desktop commander",
+        preferred_models="qwen3.5:4b,granite-code:3b",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=_Manager(),
+    )
+    response = TestClient(app).get("/v1/operations/status")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["primary_implementer"] == "chatgpt:gpt-5.6-sol"
+    assert data["runtime"]["engine"] == "ollama"
+    assert data["runtime"]["local_models"] == ["granite-code:3b", "qwen3.5:4b"]
+    assert data["machines"]["primary"]["name"] == "trabajo"
+    assert data["machines"]["primary"]["status"] == "configured"
+    assert data["agents"]["total"] == 2
+    assert data["agents"]["by_status"] == {"idle": 1, "running": 1}
+    assert data["quality_pipeline"] == [
+        "build-tests",
+        "multimodal-review",
+        "anti-slop",
+        "thermos",
+        "release",
+    ]
