@@ -143,13 +143,31 @@ def operations_status(request: Request) -> dict[str, Any]:
         getattr(governance, "fallback_machines", "MarketingIndo")
     )
     tooling = _tooling_summary(state)
+    local_models = _safe_models(getattr(state, "engine", None))
+    preferred_models = _csv(getattr(governance, "preferred_models", ""))
+
+    from openjarvis.governance.execution_router import (
+        recommend_installed_model,
+    )
+    from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
+
+    role_models = {
+        capability: recommend_installed_model(
+            local_models,
+            BUILTIN_MODELS,
+            capability=capability,
+            preferred_models=preferred_models,
+        )
+        for capability in ("general", "coding", "multimodal")
+    }
 
     return {
         "primary_implementer": primary_implementer,
         "runtime": {
             "engine": str(getattr(state, "engine_name", "") or ""),
             "model": str(getattr(state, "model", "") or ""),
-            "local_models": _safe_models(getattr(state, "engine", None)),
+            "local_models": local_models,
+            "role_models": role_models,
         },
         "governance": {
             "prefer_local": bool(getattr(governance, "prefer_local", True)),
@@ -168,9 +186,7 @@ def operations_status(request: Request) -> dict[str, Any]:
                     "codex,commander,remote desktop commander",
                 )
             ),
-            "preferred_models": _csv(
-                getattr(governance, "preferred_models", "")
-            ),
+            "preferred_models": preferred_models,
         },
         "machines": {
             "primary": {

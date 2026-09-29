@@ -25,7 +25,7 @@ def test_cross_engine_router_prefers_local_over_codex() -> None:
     route = router.route(
         models_by_engine={
             "llamacpp": ["bartowski/Llama-3.2-1B-Instruct-GGUF"],
-            "cloud": ["codex/gpt-5.6-sol"],
+            "cloud": ["codex/gpt-5-mini"],
         },
         catalog=BUILTIN_MODELS,
         hardware=HardwareInfo(platform="windows", ram_gb=16.0),
@@ -38,6 +38,8 @@ def test_cross_engine_router_prefers_local_over_codex() -> None:
     assert route is not None
     assert route.engine == "llamacpp"
     assert route.model == "llama3.2:1b"
+
+
 def test_cross_engine_router_uses_codex_when_no_local_model_is_available() -> None:
     router = EngineModelRouter()
     route = router.route(
@@ -90,3 +92,36 @@ def test_oversized_gpt_oss_is_removed_from_local_candidates() -> None:
     assert [candidate.catalog_model_id for candidate in candidates] == [
         "llama3.2:3b"
     ]
+
+def test_capability_routing_prefers_granite_for_coding() -> None:
+    router = EngineModelRouter()
+    route = router.route(
+        models_by_engine={
+            "ollama": ["qwen3.5:4b", "granite-code:3b"],
+        },
+        catalog=BUILTIN_MODELS,
+        hardware=HardwareInfo(platform="windows", ram_gb=16.0),
+        preferred_models=("qwen3.5:4b", "granite-code:3b"),
+        capability="coding",
+    )
+
+    assert route is not None
+    assert route.model == "granite-code:3b"
+    assert "capability=coding" in route.reason
+
+
+def test_capability_routing_prefers_qwen_for_multimodal() -> None:
+    router = EngineModelRouter()
+    route = router.route(
+        models_by_engine={
+            "ollama": ["granite-code:3b", "qwen3.5:4b"],
+        },
+        catalog=BUILTIN_MODELS,
+        hardware=HardwareInfo(platform="windows", ram_gb=16.0),
+        preferred_models=("granite-code:3b", "qwen3.5:4b"),
+        capability="multimodal",
+    )
+
+    assert route is not None
+    assert route.model == "qwen3.5:4b"
+    assert "capability=multimodal" in route.reason

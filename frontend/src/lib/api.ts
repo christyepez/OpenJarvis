@@ -281,6 +281,11 @@ export interface OperationsStatus {
     engine: string;
     model: string;
     local_models: string[];
+    role_models: {
+      general: string | null;
+      coding: string | null;
+      multimodal: string | null;
+    };
   };
   governance: {
     prefer_local: boolean;

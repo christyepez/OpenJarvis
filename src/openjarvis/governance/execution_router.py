@@ -98,6 +98,29 @@ class EngineModelRouter:
             ):
                 return index
         return len(preferred_models)
+
+    @staticmethod
+    def _capability_rank(spec: ModelSpec | None, capability: str) -> int:
+        if not capability or capability in {"general", "reasoning"}:
+            return 0
+        if spec is None:
+            return 2
+
+        normalized = capability.casefold().strip()
+        metadata = spec.metadata or {}
+        specialization = str(metadata.get("specialization", "")).casefold()
+        model_text = f"{spec.model_id} {spec.name}".casefold()
+        modalities = {
+            str(value).casefold()
+            for value in (metadata.get("modalities", ()) or ())
+        }
+
+        if normalized in {"coding", "code"}:
+            return 0 if specialization == "coding" or "code" in model_text else 1
+        if normalized in {"multimodal", "vision", "visual", "image"}:
+            return 0 if "image" in modalities else 1
+        return 1
+
     def candidates(
         self,
         *,
@@ -105,6 +128,7 @@ class EngineModelRouter:
         catalog: Iterable[ModelSpec],
         hardware: HardwareInfo,
         preferred_models: Sequence[str] = (),
+        capability: str = "",
     ) -> list[EngineModelCandidate]:
         """Build cost-aware candidates from currently available engines."""
         catalog_rows = list(catalog)
@@ -159,6 +183,7 @@ class EngineModelRouter:
         candidates.sort(
             key=lambda item: (
                 priority[item.cost_class],
+                self._capability_rank(item.spec, capability),
                 self._preference_rank(item.catalog_model_id, preferred_models),
                 -float(
                     getattr(item.spec, "active_parameter_count_b", 0.0)
@@ -170,6 +195,7 @@ class EngineModelRouter:
             )
         )
         return candidates
+
     def route(
         self,
         *,
@@ -178,6 +204,7 @@ class EngineModelRouter:
         hardware: HardwareInfo,
         preferred_models: Sequence[str] = (),
         user_approved_paid: Sequence[str] = (),
+        capability: str = "",
     ) -> EngineModelRoute | None:
         """Choose the first allowed candidate, never auto-using new paid services."""
         approvals = {name.casefold() for name in user_approved_paid}
@@ -186,6 +213,7 @@ class EngineModelRouter:
             catalog=catalog,
             hardware=hardware,
             preferred_models=preferred_models,
+            capability=capability,
         ):
             if candidate.cost_class is CostClass.REQUIRES_APPROVAL:
                 provider = (
@@ -200,6 +228,8 @@ class EngineModelRouter:
                 if candidate.is_local
                 else "approved provider route"
             )
+            if capability:
+                reason = f"{reason}; capability={capability}"
             return EngineModelRoute(
                 engine=candidate.engine,
                 model=candidate.catalog_model_id,
@@ -210,9 +240,49 @@ class EngineModelRouter:
         return None
 
 
+def recommend_installed_model(
+    runtime_model_ids: Sequence[str],
+    catalog: Iterable[ModelSpec],
+    *,
+    capability: str = "general",
+    preferred_models: Sequence[str] = (),
+) -> str | None:
+    """Choose the best already-installed model for one task capability."""
+    catalog_rows = list(catalog)
+    router = EngineModelRouter()
+    ranked: list[tuple[int, int, float, str]] = []
+
+    for runtime_id in runtime_model_ids:
+        spec = match_catalog_model(runtime_id, catalog_rows)
+        capability_rank = router._capability_rank(spec, capability)
+        preference_rank = router._preference_rank(
+            spec.model_id if spec is not None else runtime_id,
+            preferred_models,
+        )
+        strength = float(
+            getattr(spec, "active_parameter_count_b", 0.0)
+            or getattr(spec, "parameter_count_b", 0.0)
+            or 0.0
+        )
+        ranked.append(
+            (
+                capability_rank,
+                preference_rank,
+                -strength,
+                runtime_id,
+            )
+        )
+
+    if not ranked:
+        return None
+    ranked.sort()
+    return ranked[0][3]
+
+
 __all__ = [
     "EngineModelCandidate",
     "EngineModelRoute",
     "EngineModelRouter",
     "match_catalog_model",
+    "recommend_installed_model",
 ]

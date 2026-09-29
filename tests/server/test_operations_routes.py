@@ -78,6 +78,11 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["primary_implementer"] == "chatgpt:gpt-5.6-sol"
     assert data["runtime"]["engine"] == "ollama"
     assert data["runtime"]["local_models"] == ["granite-code:3b", "qwen3.5:4b"]
+    assert data["runtime"]["role_models"] == {
+        "general": "qwen3.5:4b",
+        "coding": "granite-code:3b",
+        "multimodal": "qwen3.5:4b",
+    }
     assert data["machines"]["primary"]["name"] == "trabajo"
     assert data["machines"]["primary"]["status"] == "configured"
     assert data["agents"]["total"] == 2
