@@ -202,8 +202,9 @@ class AgentManager:
         name: str,
         agent_type: str = "monitor_operative",
         config: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        agent_id = uuid.uuid4().hex[:12]
+        agent_id = str(agent_id or uuid.uuid4().hex[:12])
         now = time.time()
         config = dict(config or {})
         config_json = json.dumps(config)

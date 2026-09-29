@@ -250,3 +250,83 @@ class TestAgentKillTool:
         tool = AgentKillTool()
         result = tool.execute()
         assert not result.success
+
+
+def test_manager_backed_agent_lifecycle(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        spawned = AgentSpawnTool(manager=manager).execute(
+            agent_type="orchestrator",
+            agent_id="managed-agent-1",
+            name="Managed Code Worker",
+            query="Refactor this Python service and add unit tests",
+            tools="file_read,think",
+            model="smart",
+        )
+
+        assert spawned.success is True
+        payload = json.loads(spawned.content)
+        assert payload["agent_id"] == "managed-agent-1"
+        assert payload["managed"] is True
+        assert payload["status"] == "idle"
+        assert payload["capability"] == "coding"
+
+        record = manager.get_agent("managed-agent-1")
+        assert record is not None
+        assert record["name"] == "Managed Code Worker"
+        assert record["config"]["capability"] == "coding"
+        assert record["config"]["model"] == "smart"
+        assert record["config"]["tools"] == ["file_read", "think"]
+
+        sent = AgentSendTool(manager=manager).execute(
+            agent_id="managed-agent-1",
+            message="Focus on the API layer first.",
+        )
+        sent_payload = json.loads(sent.content)
+        assert sent.success is True
+        assert sent_payload["queued"] is True
+        assert sent_payload["delivered"] is False
+        pending = manager.get_pending_messages("managed-agent-1")
+        assert [item["content"] for item in pending] == [
+            "Focus on the API layer first."
+        ]
+
+        listed = AgentListTool(manager=manager).execute()
+        listed_payload = json.loads(listed.content)
+        assert any(
+            item["agent_id"] == "managed-agent-1"
+            and item["managed"] is True
+            and item["status"] == "idle"
+            for item in listed_payload
+        )
+
+        killed = AgentKillTool(manager=manager).execute(
+            agent_id="managed-agent-1"
+        )
+        assert json.loads(killed.content)["status"] == "paused"
+        assert manager.get_agent("managed-agent-1")["status"] == "paused"
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_tool_resolver_injects_agent_manager(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.agents.tool_resolver import instantiate_registered_tool
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        tool = instantiate_registered_tool(
+            AgentSpawnTool,
+            "agent_spawn",
+            engine=None,
+            model="",
+            agent_manager=manager,
+        )
+
+        assert tool._manager is manager
+    finally:
+        manager.close()

@@ -34,9 +34,12 @@ _SPAWNED_AGENTS: Dict[str, Dict[str, Any]] = {}
 
 @ToolRegistry.register("agent_spawn")
 class AgentSpawnTool(BaseTool):
-    """Spawn a new agent instance and optionally send it an initial query."""
+    """Spawn a new agent instance and optionally persist it via AgentManager."""
 
     tool_id = "agent_spawn"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -72,6 +75,24 @@ class AgentSpawnTool(BaseTool):
                             "Custom agent ID. Auto-generated if not provided."
                         ),
                     },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional display name for the spawned agent.",
+                    },
+                    "capability": {
+                        "type": "string",
+                        "description": (
+                            "Optional routing capability: general, coding, "
+                            "or multimodal."
+                        ),
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Optional explicit model or 'smart' for local-first "
+                            "routing."
+                        ),
+                    },
                 },
                 "required": ["agent_type"],
             },
@@ -89,14 +110,59 @@ class AgentSpawnTool(BaseTool):
             )
 
         agent_id = params.get("agent_id") or uuid.uuid4().hex[:12]
-        query = params.get("query", "")
-        tools = params.get("tools", "")
+        query = str(params.get("query", "") or "")
+        tools = str(params.get("tools", "") or "")
+        capability = str(params.get("capability", "") or "").strip().casefold()
+        model = str(params.get("model", "") or "").strip()
+        name = str(params.get("name", "") or "").strip()
+
+        if not capability and query:
+            try:
+                from openjarvis.governance.execution_router import (
+                    classify_task_capability,
+                )
+
+                capability = classify_task_capability(query)
+            except Exception:
+                capability = "general"
+        capability = capability or "general"
+
+        status = "running"
+        managed = False
+        if self._manager is not None:
+            config: Dict[str, Any] = {"capability": capability}
+            if query:
+                config["instruction"] = query
+            if tools:
+                config["tools"] = [
+                    item.strip() for item in tools.split(",") if item.strip()
+                ]
+            if model:
+                config["model"] = model
+
+            try:
+                record = self._manager.create_agent(
+                    name=name or f"{agent_type}-{agent_id[:6]}",
+                    agent_type=agent_type,
+                    config=config,
+                    agent_id=agent_id,
+                )
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_spawn",
+                    content=f"Failed to create managed agent: {exc}",
+                    success=False,
+                )
+            status = str(record.get("status", "idle"))
+            managed = True
 
         entry: Dict[str, Any] = {
             "agent_id": agent_id,
             "agent_type": agent_type,
-            "status": "running",
+            "status": status,
             "created_at": time.time(),
+            "capability": capability,
+            "managed": managed,
         }
         if tools:
             entry["tools"] = tools
@@ -108,7 +174,9 @@ class AgentSpawnTool(BaseTool):
         result_data: Dict[str, Any] = {
             "agent_id": agent_id,
             "agent_type": agent_type,
-            "status": "running",
+            "status": status,
+            "capability": capability,
+            "managed": managed,
         }
         if query:
             result_data["initial_query"] = query
@@ -127,9 +195,12 @@ class AgentSpawnTool(BaseTool):
 
 @ToolRegistry.register("agent_send")
 class AgentSendTool(BaseTool):
-    """Send a message to a previously spawned agent."""
+    """Send a message to a spawned or managed agent."""
 
     tool_id = "agent_send"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -155,8 +226,8 @@ class AgentSendTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_id = params.get("agent_id", "")
-        message = params.get("message", "")
+        agent_id = str(params.get("agent_id", "") or "")
+        message = str(params.get("message", "") or "")
 
         if not agent_id:
             return ToolResult(
@@ -165,7 +236,14 @@ class AgentSendTool(BaseTool):
                 success=False,
             )
 
-        if agent_id not in _SPAWNED_AGENTS:
+        managed_record = None
+        if self._manager is not None:
+            try:
+                managed_record = self._manager.get_agent(agent_id)
+            except Exception:
+                managed_record = None
+
+        if managed_record is None and agent_id not in _SPAWNED_AGENTS:
             return ToolResult(
                 tool_name="agent_send",
                 content=f"Agent '{agent_id}' not found.",
@@ -178,6 +256,18 @@ class AgentSendTool(BaseTool):
                 content="No message provided.",
                 success=False,
             )
+
+        queued = False
+        if managed_record is not None:
+            try:
+                self._manager.send_message(agent_id, message, mode="queued")
+                queued = True
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_send",
+                    content=f"Failed to queue managed-agent message: {exc}",
+                    success=False,
+                )
 
         # Publish event if event bus is available
         try:
@@ -199,7 +289,8 @@ class AgentSendTool(BaseTool):
             content=json.dumps(
                 {
                     "agent_id": agent_id,
-                    "delivered": True,
+                    "delivered": not queued,
+                    "queued": queued,
                     "message": message,
                 }
             ),
@@ -214,9 +305,12 @@ class AgentSendTool(BaseTool):
 
 @ToolRegistry.register("agent_list")
 class AgentListTool(BaseTool):
-    """List all spawned agents and their current status."""
+    """List spawned and managed agents with their current status."""
 
     tool_id = "agent_list"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -234,22 +328,46 @@ class AgentListTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        if not _SPAWNED_AGENTS:
-            return ToolResult(
-                tool_name="agent_list",
-                content="No agents spawned.",
-                success=True,
-            )
+        agents: list[dict[str, Any]] = []
+        seen: set[str] = set()
 
-        agents = []
+        if self._manager is not None:
+            try:
+                for record in self._manager.list_agents():
+                    agent_id = str(record.get("id", ""))
+                    if not agent_id:
+                        continue
+                    agents.append(
+                        {
+                            "agent_id": agent_id,
+                            "agent_type": str(record.get("agent_type", "")),
+                            "status": str(record.get("status", "unknown")),
+                            "created_at": float(record.get("created_at", 0.0) or 0.0),
+                            "managed": True,
+                        }
+                    )
+                    seen.add(agent_id)
+            except Exception as exc:
+                logger.warning("Managed agent listing failed: %s", exc)
+
         for agent_id, info in _SPAWNED_AGENTS.items():
+            if agent_id in seen:
+                continue
             agents.append(
                 {
                     "agent_id": agent_id,
                     "agent_type": info["agent_type"],
                     "status": info["status"],
                     "created_at": info["created_at"],
+                    "managed": bool(info.get("managed", False)),
                 }
+            )
+
+        if not agents:
+            return ToolResult(
+                tool_name="agent_list",
+                content="No agents spawned.",
+                success=True,
             )
 
         return ToolResult(
@@ -266,9 +384,12 @@ class AgentListTool(BaseTool):
 
 @ToolRegistry.register("agent_kill")
 class AgentKillTool(BaseTool):
-    """Kill (stop) a spawned agent by its ID."""
+    """Stop a spawned or managed agent by its ID."""
 
     tool_id = "agent_kill"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -291,7 +412,7 @@ class AgentKillTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_id = params.get("agent_id", "")
+        agent_id = str(params.get("agent_id", "") or "")
 
         if not agent_id:
             return ToolResult(
@@ -300,21 +421,41 @@ class AgentKillTool(BaseTool):
                 success=False,
             )
 
-        if agent_id not in _SPAWNED_AGENTS:
+        managed_record = None
+        if self._manager is not None:
+            try:
+                managed_record = self._manager.get_agent(agent_id)
+            except Exception:
+                managed_record = None
+
+        if managed_record is None and agent_id not in _SPAWNED_AGENTS:
             return ToolResult(
                 tool_name="agent_kill",
                 content=f"Agent '{agent_id}' not found.",
                 success=False,
             )
 
-        _SPAWNED_AGENTS[agent_id]["status"] = "stopped"
+        result_status = "stopped"
+        if managed_record is not None:
+            try:
+                self._manager.pause_agent(agent_id)
+                result_status = "paused"
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_kill",
+                    content=f"Failed to pause managed agent: {exc}",
+                    success=False,
+                )
+
+        if agent_id in _SPAWNED_AGENTS:
+            _SPAWNED_AGENTS[agent_id]["status"] = result_status
 
         return ToolResult(
             tool_name="agent_kill",
             content=json.dumps(
                 {
                     "agent_id": agent_id,
-                    "status": "stopped",
+                    "status": result_status,
                 }
             ),
             success=True,

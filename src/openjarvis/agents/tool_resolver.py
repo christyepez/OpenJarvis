@@ -30,6 +30,9 @@ _MEMORY_TOOLS = frozenset(
     {"retrieval", "memory_store", "memory_search", "memory_index", "memory_retrieve"}
 )
 _CHANNEL_TOOLS = frozenset({"channel_send", "channel_list", "channel_status"})
+_AGENT_LIFECYCLE_TOOLS = frozenset(
+    {"agent_spawn", "agent_send", "agent_list", "agent_kill"}
+)
 
 
 class _SpecOverrideTool:
@@ -235,6 +238,7 @@ def instantiate_registered_tool(
     model: str,
     memory_backend: Any = None,
     channel_backend: Any = None,
+    agent_manager: Any = None,
 ) -> Any:
     """Instantiate a registry tool with its runtime dependencies."""
 
@@ -254,6 +258,8 @@ def instantiate_registered_tool(
                 name,
             )
         return tool_cls(channel=channel_backend)
+    if name in _AGENT_LIFECYCLE_TOOLS:
+        return tool_cls(manager=agent_manager)
     if name == "llm":
         return tool_cls(engine=engine, model=model)
     return tool_cls()
@@ -316,6 +322,7 @@ def resolve_agent_tools(
     model: str,
     memory_backend: Any = None,
     channel_backend: Any = None,
+    agent_manager: Any = None,
     mcp_tools: Iterable[Any] = (),
     mcp_clients: Iterable[Any] = (),
     knowledge_db_path: str | Path | None = None,
@@ -397,6 +404,7 @@ def resolve_agent_tools(
                             model=model,
                             memory_backend=memory_backend,
                             channel_backend=channel_backend,
+                            agent_manager=agent_manager,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -444,6 +452,7 @@ def resolve_agent_tools(
                         model=model,
                         memory_backend=memory_backend,
                         channel_backend=channel_backend,
+                        agent_manager=agent_manager,
                     )
                 )
             except Exception as exc:
