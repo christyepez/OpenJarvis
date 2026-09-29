@@ -119,7 +119,10 @@ def _memory_summary(state: Any) -> dict[str, Any]:
     }
 
 
-def _agent_summary(manager: Any) -> dict[str, Any]:
+def _agent_summary(
+    manager: Any,
+    role_models: dict[str, str | None] | None = None,
+) -> dict[str, Any]:
     if manager is None:
         return {
             "total": 0,
@@ -144,6 +147,27 @@ def _agent_summary(manager: Any) -> dict[str, Any]:
         status = str(agent.get("status", "unknown"))
         by_status[status] = by_status.get(status, 0) + 1
         agent_id = str(agent.get("id", ""))
+        config = agent.get("config", {}) or {}
+        capability = str(config.get("capability", "") or "").strip().casefold()
+        if not capability:
+            try:
+                from openjarvis.governance.execution_router import (
+                    classify_task_capability,
+                )
+
+                capability = classify_task_capability(
+                    str(config.get("instruction", "") or "")
+                )
+            except Exception:
+                capability = "general"
+
+        configured_model = str(config.get("model", "") or "").strip()
+        if configured_model and configured_model.casefold() != "smart":
+            routed_model = configured_model
+        else:
+            models = role_models or {}
+            routed_model = models.get(capability) or models.get("general")
+
         compact.append(
             {
                 "id": agent_id,
@@ -151,6 +175,8 @@ def _agent_summary(manager: Any) -> dict[str, Any]:
                 "type": str(agent.get("agent_type", "")),
                 "status": status,
                 "activity": str(agent.get("current_activity", "") or ""),
+                "capability": capability,
+                "routed_model": routed_model,
             }
         )
         try:
@@ -263,7 +289,10 @@ def operations_status(request: Request) -> dict[str, Any]:
                 for name in fallback_machines
             ],
         },
-        "agents": _agent_summary(getattr(state, "agent_manager", None)),
+        "agents": _agent_summary(
+            getattr(state, "agent_manager", None),
+            role_models,
+        ),
         "memory": _memory_summary(state),
         "tools": tooling["tools"],
         "skills": tooling["skills"],

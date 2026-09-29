@@ -47,6 +47,44 @@ export function ModelRoleSummary({
   );
 }
 
+export function AgentRoutingSummary({
+  agents,
+}: {
+  agents: OperationsStatus['agents']['agents'];
+}) {
+  if (!agents.length) {
+    return (
+      <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        No managed agents
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {agents.slice(0, 5).map((agent) => (
+        <div key={agent.id} className="flex items-center justify-between gap-3 text-xs">
+          <div className="min-w-0">
+            <div
+              className="truncate font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {agent.name || agent.id}
+            </div>
+            <div
+              className="truncate"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              {agent.capability || 'general'}
+            </div>
+          </div>
+          <Badge>{agent.routed_model || 'unassigned'}</Badge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function MemorySummary({
   memory,
 }: {
@@ -298,6 +336,12 @@ export function OperationsOverview() {
               <Badge key={skill}>{skill}</Badge>
             ))}
           </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 mt-3">
+        <Card title="Agent routing">
+          <AgentRoutingSummary agents={status.agents.agents} />
         </Card>
       </div>
     </div>

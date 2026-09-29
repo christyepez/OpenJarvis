@@ -317,6 +317,8 @@ export interface OperationsStatus {
       type: string;
       status: string;
       activity: string;
+      capability: string;
+      routed_model: string | null;
     }>;
     tasks: {
       total: number;
