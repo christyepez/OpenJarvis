@@ -129,8 +129,17 @@ export function OperationsOverview() {
         </Card>
 
         <Card title="Runtime">
-          <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
-            {status.runtime.engine || 'unknown'}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+              {status.runtime.engine || 'unknown'}
+            </div>
+            <Badge>
+              {status.runtime.available === true
+                ? 'online'
+                : status.runtime.available === false
+                  ? 'offline'
+                  : 'unknown'}
+            </Badge>
           </div>
           <div className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
             {status.runtime.model || 'No active model'}

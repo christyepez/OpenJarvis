@@ -9,6 +9,9 @@ class _Engine:
     def list_models(self):
         return ["qwen3.5:4b", "granite-code:3b"]
 
+    def health(self):
+        return True
+
 
 class _Manager:
     def list_agents(self):
@@ -77,6 +80,7 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     data = response.json()
     assert data["primary_implementer"] == "chatgpt:gpt-5.6-sol"
     assert data["runtime"]["engine"] == "ollama"
+    assert data["runtime"]["available"] is True
     assert data["runtime"]["local_models"] == ["granite-code:3b", "qwen3.5:4b"]
     assert data["runtime"]["role_models"] == {
         "general": "qwen3.5:4b",

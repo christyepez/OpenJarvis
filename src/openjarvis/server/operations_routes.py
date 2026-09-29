@@ -31,6 +31,19 @@ def _safe_models(engine: Any) -> list[str]:
     return sorted(set(result))
 
 
+def _safe_health(engine: Any) -> bool | None:
+    """Return engine health when the runtime exposes a health probe."""
+    if engine is None:
+        return False
+    health = getattr(engine, "health", None)
+    if not callable(health):
+        return None
+    try:
+        return bool(health())
+    except Exception:
+        return False
+
+
 def _tooling_summary(state: Any) -> dict[str, Any]:
     native_tools: list[str] = []
     skills: list[str] = []
@@ -143,7 +156,9 @@ def operations_status(request: Request) -> dict[str, Any]:
         getattr(governance, "fallback_machines", "MarketingIndo")
     )
     tooling = _tooling_summary(state)
-    local_models = _safe_models(getattr(state, "engine", None))
+    engine = getattr(state, "engine", None)
+    local_models = _safe_models(engine)
+    runtime_available = _safe_health(engine)
     preferred_models = _csv(getattr(governance, "preferred_models", ""))
 
     from openjarvis.governance.execution_router import (
@@ -166,6 +181,7 @@ def operations_status(request: Request) -> dict[str, Any]:
         "runtime": {
             "engine": str(getattr(state, "engine_name", "") or ""),
             "model": str(getattr(state, "model", "") or ""),
+            "available": runtime_available,
             "local_models": local_models,
             "role_models": role_models,
         },

@@ -280,6 +280,7 @@ export interface OperationsStatus {
   runtime: {
     engine: string;
     model: string;
+    available: boolean | null;
     local_models: string[];
     role_models: {
       general: string | null;
