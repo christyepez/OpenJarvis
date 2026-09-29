@@ -1,7 +1,10 @@
 from openjarvis.core.config import HardwareInfo
 from openjarvis.governance.execution_router import (
     EngineModelRouter,
+    classify_task_capability,
+    local_runtime_models,
     match_catalog_model,
+    recommend_model_for_task,
 )
 from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
 
@@ -125,3 +128,38 @@ def test_capability_routing_prefers_qwen_for_multimodal() -> None:
     assert route is not None
     assert route.model == "qwen3.5:4b"
     assert "capability=multimodal" in route.reason
+
+
+class _GroupedEngine:
+    engine_id = "multi"
+
+    def models_by_engine(self):
+        return {
+            "ollama": ["qwen3.5:4b", "granite-code:3b"],
+            "cloud": ["gpt-4o"],
+        }
+
+
+def test_task_capability_detects_code_and_visual_work() -> None:
+    assert classify_task_capability("Refactor this Python function") == "coding"
+    assert classify_task_capability("Review this dashboard screenshot") == "multimodal"
+    assert classify_task_capability("Summarize this topic") == "general"
+
+
+def test_local_runtime_models_excludes_cloud_models() -> None:
+    assert local_runtime_models(_GroupedEngine()) == [
+        "granite-code:3b",
+        "qwen3.5:4b",
+    ]
+
+
+def test_recommend_model_for_task_selects_coding_worker() -> None:
+    model, capability = recommend_model_for_task(
+        _GroupedEngine(),
+        "Fix this Python code and add tests",
+        BUILTIN_MODELS,
+        preferred_models=("qwen3.5:4b", "granite-code:3b"),
+    )
+
+    assert capability == "coding"
+    assert model == "granite-code:3b"

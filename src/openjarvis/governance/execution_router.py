@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from openjarvis.core.config import HardwareInfo
 from openjarvis.core.types import ModelSpec
@@ -12,6 +12,36 @@ from openjarvis.governance.cost_policy import CostClass, CostPolicy, ProviderDes
 from openjarvis.governance.model_selection import estimated_model_memory_gb
 
 _NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
+_CODE_HINTS = (
+    "python",
+    "typescript",
+    "javascript",
+    "csharp",
+    "c#",
+    ".net",
+    "sql",
+    "refactor",
+    "unit test",
+    "pytest",
+    "source code",
+    "codigo",
+    "código",
+)
+_VISUAL_HINTS = (
+    "image",
+    "screenshot",
+    "diagram",
+    "dashboard",
+    "photo",
+    "picture",
+    "visual",
+    "imagen",
+    "captura",
+    "diagrama",
+    "panel",
+    "grafico",
+    "gráfico",
+)
 
 
 def _normalized(value: str) -> str:
@@ -240,6 +270,78 @@ class EngineModelRouter:
         return None
 
 
+def classify_task_capability(
+    query: str,
+    *,
+    has_visual_input: bool = False,
+) -> str:
+    """Classify one request into a local worker capability."""
+    if has_visual_input:
+        return "multimodal"
+
+    normalized = query.casefold()
+    if any(hint in normalized for hint in _VISUAL_HINTS):
+        return "multimodal"
+
+    from openjarvis.learning.routing.router import build_routing_context
+
+    context = build_routing_context(query)
+    if context.has_code or any(hint in normalized for hint in _CODE_HINTS):
+        return "coding"
+    return "general"
+
+
+def local_runtime_models(engine: Any) -> list[str]:
+    """Return models exposed by local engines only."""
+    if engine is None:
+        return []
+
+    grouped = getattr(engine, "models_by_engine", None)
+    if callable(grouped):
+        try:
+            groups = grouped()
+        except Exception:
+            groups = None
+        if isinstance(groups, Mapping):
+            rows: list[str] = []
+            for key, values in groups.items():
+                if str(key).casefold() == "cloud":
+                    continue
+                rows.extend(str(value) for value in (values or []))
+            return sorted(set(rows))
+
+    engine_id = str(getattr(engine, "engine_id", "") or "").casefold()
+    if engine_id == "cloud":
+        return []
+
+    try:
+        return sorted(set(str(value) for value in (engine.list_models() or [])))
+    except Exception:
+        return []
+
+
+def recommend_model_for_task(
+    engine: Any,
+    query: str,
+    catalog: Iterable[ModelSpec],
+    *,
+    preferred_models: Sequence[str] = (),
+    has_visual_input: bool = False,
+) -> tuple[str | None, str]:
+    """Select an installed local worker for a task without paid fallback."""
+    capability = classify_task_capability(
+        query,
+        has_visual_input=has_visual_input,
+    )
+    model = recommend_installed_model(
+        local_runtime_models(engine),
+        catalog,
+        capability=capability,
+        preferred_models=preferred_models,
+    )
+    return model, capability
+
+
 def recommend_installed_model(
     runtime_model_ids: Sequence[str],
     catalog: Iterable[ModelSpec],
@@ -283,6 +385,9 @@ __all__ = [
     "EngineModelCandidate",
     "EngineModelRoute",
     "EngineModelRouter",
+    "classify_task_capability",
+    "local_runtime_models",
     "match_catalog_model",
     "recommend_installed_model",
+    "recommend_model_for_task",
 ]

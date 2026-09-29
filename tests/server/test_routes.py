@@ -1744,3 +1744,43 @@ class TestTraceRecording:
         assert trace.query == "stream please"
         # _make_engine streams "Hello", " ", "world".
         assert trace.result == "Hello world"
+
+
+class TestSmartLocalRouting:
+    def test_smart_routes_code_request_to_local_coding_worker(self):
+        engine = _make_engine(models=["qwen3.5:4b", "granite-code:3b"])
+        app = create_app(engine, "qwen3.5:4b", config=_test_config())
+        client = TestClient(app)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "smart",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Refactor this Python function: def x(): return 1",
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["model"] == "granite-code:3b"
+        assert engine.generate.call_args.kwargs["model"] == "granite-code:3b"
+
+    def test_smart_does_not_fall_back_to_cloud(self):
+        engine = _make_engine(models=["gpt-4o"])
+        engine.engine_id = "cloud"
+        app = create_app(engine, "gpt-4o", config=_test_config())
+        client = TestClient(app)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "smart",
+                "messages": [{"role": "user", "content": "Summarize this topic"}],
+            },
+        )
+        assert response.status_code == 503
+        assert "installed local model" in response.json()["detail"]
+        engine.generate.assert_not_called()
