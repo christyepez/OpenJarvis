@@ -16,10 +16,27 @@ def _csv(value: str) -> list[str]:
 def _safe_models(engine: Any) -> list[str]:
     if engine is None:
         return []
-    try:
-        rows = engine.list_models()
-    except Exception:
-        return []
+
+    rows: list[Any] | None = None
+    grouped = getattr(engine, "models_by_engine", None)
+    if callable(grouped):
+        try:
+            groups = grouped()
+        except Exception:
+            groups = None
+        if isinstance(groups, dict):
+            rows = []
+            for key, values in groups.items():
+                if str(key).casefold() == "cloud":
+                    continue
+                rows.extend(list(values or []))
+
+    if rows is None:
+        try:
+            rows = list(engine.list_models() or [])
+        except Exception:
+            return []
+
     result: list[str] = []
     for row in rows or []:
         if isinstance(row, str):

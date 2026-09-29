@@ -7,7 +7,13 @@ from openjarvis.server.app import create_app
 
 class _Engine:
     def list_models(self):
-        return ["qwen3.5:4b", "granite-code:3b"]
+        return ["qwen3.5:4b", "granite-code:3b", "gpt-4o"]
+
+    def models_by_engine(self):
+        return {
+            "ollama": ["qwen3.5:4b", "granite-code:3b"],
+            "cloud": ["gpt-4o"],
+        }
 
     def health(self):
         return True
