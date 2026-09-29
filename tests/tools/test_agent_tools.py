@@ -412,9 +412,22 @@ def test_quality_pipeline_spawns_visual_code_reviewers(tmp_path):
             "coding",
             "coding",
         ]
-        assert len(manager.list_agents()) == 3
+        assert len(manager.list_agents()) == 4
         for record in manager.list_agents():
             assert record["config"]["model"] == "smart"
+
+        coordinator_id = payload["coordinator_agent_id"]
+        tasks = manager.list_tasks(coordinator_id)
+        assert len(tasks) == 4
+        assert {task["status"] for task in tasks} == {"pending"}
+
+        reviewer_ids = {stage["agent_id"] for stage in agent_stages}
+        for reviewer_id in reviewer_ids:
+            reviewer = manager.get_agent(reviewer_id)
+            assert reviewer is not None
+            assert reviewer["config"]["quality_pipeline_id"] == payload["pipeline_id"]
+            assert reviewer["config"]["quality_task_id"]
+            assert reviewer["config"]["quality_stage"]
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()

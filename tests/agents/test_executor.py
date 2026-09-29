@@ -333,3 +333,59 @@ def test_managed_worker_honors_explicit_capability_hint() -> None:
     )
 
     assert selected == "qwen3.5:4b"
+
+
+def test_quality_task_completes_with_findings(executor, manager):
+    agent = manager.create_agent(
+        name="quality-reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-1",
+            "quality_stage": "anti-slop",
+        },
+    )
+    task = manager.create_task(agent["id"], "anti-slop: review changes")
+    config = dict(agent["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(agent["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        return_value=AgentResult(content="No material issues found."),
+    ):
+        executor.execute_tick(agent["id"])
+
+    updated = manager.list_tasks(agent["id"])[0]
+    assert updated["status"] == "completed"
+    assert updated["progress"]["pipeline_id"] == "pipeline-1"
+    assert updated["progress"]["stage"] == "anti-slop"
+    assert updated["findings"] == ["No material issues found."]
+
+
+def test_quality_task_failure_is_persisted(executor, manager):
+    agent = manager.create_agent(
+        name="quality-reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-2",
+            "quality_stage": "thermos",
+        },
+    )
+    task = manager.create_task(agent["id"], "thermos: review release")
+    config = dict(agent["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(agent["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        side_effect=FatalError("review failed"),
+    ):
+        executor.execute_tick(agent["id"])
+
+    updated = manager.list_tasks(agent["id"])[0]
+    assert updated["status"] == "failed"
+    assert updated["progress"]["pipeline_id"] == "pipeline-2"
+    assert updated["progress"]["stage"] == "thermos"
+    assert updated["findings"] == ["review failed"]

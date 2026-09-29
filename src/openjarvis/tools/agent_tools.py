@@ -308,13 +308,45 @@ class QualityPipelineTool(BaseTool):
             QualityStage.ANTI_SLOP: "anti_slop_reviewer",
             QualityStage.THERMOS: "thermos_reviewer",
         }
+        pipeline_id = uuid.uuid4().hex[:12]
+        coordinator = self._manager.create_from_template(
+            "project_orchestrator",
+            f"Quality Pipeline {pipeline_id[:6]}",
+            overrides={
+                "instruction": objective,
+                "model": "smart",
+                "quality_pipeline_id": pipeline_id,
+            },
+            agent_id=f"quality-{pipeline_id}",
+        )
+
         spawn = AgentSpawnTool(manager=self._manager)
         stages: list[dict[str, Any]] = []
 
         for stage in plan.stages:
             template = templates.get(stage)
+            kind = "agent" if template is not None else "gate"
+            task = self._manager.create_task(
+                coordinator["id"],
+                f"{stage.value}: {objective}",
+                status="pending",
+            )
+            progress = {
+                "pipeline_id": pipeline_id,
+                "stage": stage.value,
+                "kind": kind,
+            }
+
             if template is None:
-                stages.append({"stage": stage.value, "kind": "gate"})
+                self._manager.update_task(task["id"], progress=progress)
+                stages.append(
+                    {
+                        "stage": stage.value,
+                        "kind": "gate",
+                        "task_id": task["id"],
+                        "status": "pending",
+                    }
+                )
                 continue
 
             spawned = spawn.execute(
@@ -332,12 +364,32 @@ class QualityPipelineTool(BaseTool):
                     ),
                     success=False,
                 )
+
             payload = json.loads(spawned.content)
+            reviewer = self._manager.get_agent(payload["agent_id"])
+            if reviewer is not None:
+                reviewer_config = dict(reviewer.get("config", {}) or {})
+                reviewer_config.update(
+                    {
+                        "quality_pipeline_id": pipeline_id,
+                        "quality_task_id": task["id"],
+                        "quality_stage": stage.value,
+                    }
+                )
+                self._manager.update_agent(
+                    payload["agent_id"],
+                    config=reviewer_config,
+                )
+
+            progress["reviewer_agent_id"] = payload["agent_id"]
+            progress["template"] = template
+            self._manager.update_task(task["id"], progress=progress)
             stages.append(
                 {
                     "stage": stage.value,
                     "kind": "agent",
                     "template": template,
+                    "task_id": task["id"],
                     "agent_id": payload["agent_id"],
                     "status": payload["status"],
                     "capability": payload["capability"],
@@ -346,7 +398,14 @@ class QualityPipelineTool(BaseTool):
 
         return ToolResult(
             tool_name=self.tool_id,
-            content=json.dumps({"objective": objective, "stages": stages}),
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "coordinator_agent_id": coordinator["id"],
+                    "objective": objective,
+                    "stages": stages,
+                }
+            ),
             success=True,
         )
 

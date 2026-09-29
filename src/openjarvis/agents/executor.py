@@ -242,6 +242,46 @@ class AgentExecutor:
         except Exception:
             pass  # Non-critical
 
+    def _update_quality_task(
+        self,
+        agent_id: str,
+        status: str,
+        *,
+        result: AgentResult | None = None,
+        error: AgentTickError | None = None,
+    ) -> None:
+        """Persist quality-stage progress for reviewer agents."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("quality_task_id", "") or "")
+            if not task_id:
+                return
+
+            progress = {
+                "pipeline_id": str(config.get("quality_pipeline_id", "") or ""),
+                "stage": str(config.get("quality_stage", "") or ""),
+                "reviewer_agent_id": agent_id,
+            }
+            kwargs: dict[str, Any] = {
+                "status": status,
+                "progress": progress,
+            }
+            if result is not None and (result.content or "").strip():
+                kwargs["findings"] = [result.content]
+            elif error is not None:
+                kwargs["findings"] = [str(error)]
+
+            self._manager.update_task(task_id, **kwargs)
+        except Exception:
+            logger.debug(
+                "Failed to persist quality task for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+
     def run_ephemeral(
         self,
         agent_type: str,
@@ -343,6 +383,8 @@ class AgentExecutor:
         if agent is None:
             logger.error("Agent %s not found", agent_id)
             return
+
+        self._update_quality_task(agent_id, "active")
 
         self._bus.publish(
             EventType.AGENT_TICK_START,
@@ -1055,6 +1097,20 @@ class AgentExecutor:
                     "duration": duration,
                 },
             )
+
+        quality_status = (
+            "completed"
+            if error is None
+            else "needs_attention"
+            if isinstance(error, EscalateError)
+            else "failed"
+        )
+        self._update_quality_task(
+            agent_id,
+            quality_status,
+            result=result,
+            error=error,
+        )
 
     def _save_trace(
         self,
