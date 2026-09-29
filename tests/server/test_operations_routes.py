@@ -13,6 +13,13 @@ class _Engine:
         return True
 
 
+class _MemoryBackend:
+    backend_id = "sqlite"
+
+    def count(self):
+        return 7
+
+
 class _Manager:
     def list_agents(self):
         return [
@@ -73,6 +80,7 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         engine_name="ollama",
         config=config,
         agent_manager=_Manager(),
+        memory_backend=_MemoryBackend(),
     )
     response = TestClient(app).get("/v1/operations/status")
 
@@ -86,6 +94,11 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         "general": "qwen3.5:4b",
         "coding": "granite-code:3b",
         "multimodal": "qwen3.5:4b",
+    }
+    assert data["memory"] == {
+        "enabled": True,
+        "backend": "sqlite",
+        "documents": 7,
     }
     assert data["machines"]["primary"]["name"] == "trabajo"
     assert data["machines"]["primary"]["status"] == "configured"

@@ -299,6 +299,11 @@ export interface OperationsStatus {
     primary: { name: string; status: string };
     fallbacks: Array<{ name: string; status: string }>;
   };
+  memory: {
+    enabled: boolean;
+    backend: string;
+    documents: number | null;
+  };
   agents: {
     total: number;
     by_status: Record<string, number>;

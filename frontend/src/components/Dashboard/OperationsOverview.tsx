@@ -47,6 +47,28 @@ export function ModelRoleSummary({
   );
 }
 
+export function MemorySummary({
+  memory,
+}: {
+  memory: OperationsStatus['memory'];
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+          {memory.backend || 'disabled'}
+        </div>
+        <Badge>{memory.enabled ? 'enabled' : 'disabled'}</Badge>
+      </div>
+      <div className="text-xs mt-2" style={{ color: 'var(--color-text-tertiary)' }}>
+        {memory.documents === null
+          ? 'Document count unavailable'
+          : memory.documents + ' stored documents'}
+      </div>
+    </>
+  );
+}
+
 function Card({
   title,
   children,
@@ -212,7 +234,11 @@ export function OperationsOverview() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mt-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mt-3">
+        <Card title="Memory">
+          <MemorySummary memory={status.memory} />
+        </Card>
+
         <Card title="Tasks">
           <div className="text-2xl font-semibold" style={{ color: 'var(--color-text)' }}>
             {status.agents.tasks.total}

@@ -78,6 +78,30 @@ def _tooling_summary(state: Any) -> dict[str, Any]:
     }
 
 
+def _memory_summary(state: Any) -> dict[str, Any]:
+    backend = getattr(state, "memory_backend", None)
+    if backend is None:
+        return {"enabled": False, "backend": "", "documents": None}
+
+    backend_name = str(
+        getattr(backend, "backend_id", None)
+        or backend.__class__.__name__
+    )
+    documents: int | None = None
+    count = getattr(backend, "count", None)
+    if callable(count):
+        try:
+            documents = int(count())
+        except Exception:
+            documents = None
+
+    return {
+        "enabled": True,
+        "backend": backend_name,
+        "documents": documents,
+    }
+
+
 def _agent_summary(manager: Any) -> dict[str, Any]:
     if manager is None:
         return {
@@ -215,6 +239,7 @@ def operations_status(request: Request) -> dict[str, Any]:
             ],
         },
         "agents": _agent_summary(getattr(state, "agent_manager", None)),
+        "memory": _memory_summary(state),
         "tools": tooling["tools"],
         "skills": tooling["skills"],
         "quality_pipeline": [
