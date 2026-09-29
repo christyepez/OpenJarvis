@@ -10,6 +10,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    QualityPipelineTool,
 )
 
 # ---------------------------------------------------------------------------
@@ -369,3 +370,73 @@ def test_template_spawn_without_manager_is_rejected():
 
     assert result.success is False
     assert "AgentManager" in result.content
+
+
+def test_quality_pipeline_requires_manager():
+    result = QualityPipelineTool().execute(objective="Review implementation")
+    assert result.success is False
+    assert "AgentManager" in result.content
+
+
+def test_quality_pipeline_spawns_visual_code_reviewers(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        result = QualityPipelineTool(manager=manager).execute(
+            objective="Validate the dashboard implementation before merge",
+            has_code_changes=True,
+            has_visual_changes=True,
+            material_change=True,
+            release_candidate=False,
+        )
+        assert result.success is True
+        payload = json.loads(result.content)
+        assert [stage["stage"] for stage in payload["stages"]] == [
+            "build-tests",
+            "multimodal-review",
+            "anti-slop",
+            "thermos",
+        ]
+        agent_stages = [
+            stage for stage in payload["stages"] if stage["kind"] == "agent"
+        ]
+        assert [stage["template"] for stage in agent_stages] == [
+            "qwen_mm_reviewer",
+            "anti_slop_reviewer",
+            "thermos_reviewer",
+        ]
+        assert [stage["capability"] for stage in agent_stages] == [
+            "multimodal",
+            "coding",
+            "coding",
+        ]
+        assert len(manager.list_agents()) == 3
+        for record in manager.list_agents():
+            assert record["config"]["model"] == "smart"
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_quality_pipeline_release_keeps_release_as_gate(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = QualityPipelineTool(manager=manager).execute(
+            objective="Prepare release candidate",
+            has_code_changes=False,
+            has_visual_changes=False,
+            material_change=False,
+            release_candidate=True,
+        )
+        payload = json.loads(result.content)
+        assert [stage["stage"] for stage in payload["stages"]] == [
+            "thermos",
+            "release",
+        ]
+        assert payload["stages"][-1]["kind"] == "gate"
+    finally:
+        manager.close()

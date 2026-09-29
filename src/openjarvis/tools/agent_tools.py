@@ -237,6 +237,121 @@ class AgentSpawnTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# QualityPipelineTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("quality_pipeline")
+class QualityPipelineTool(BaseTool):
+    """Plan quality gates and create the required managed review agents."""
+
+    tool_id = "quality_pipeline"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="quality_pipeline",
+            description=(
+                "Plan build/review/release quality gates and create managed "
+                "Qwen-MM, Anti-Slop, and Thermos reviewers when required."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "objective": {
+                        "type": "string",
+                        "description": "Implementation or review objective.",
+                    },
+                    "has_code_changes": {"type": "boolean", "default": True},
+                    "has_visual_changes": {"type": "boolean", "default": False},
+                    "material_change": {"type": "boolean", "default": True},
+                    "release_candidate": {"type": "boolean", "default": False},
+                },
+                "required": ["objective"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality pipeline requires an AgentManager.",
+                success=False,
+            )
+
+        objective = str(params.get("objective", "") or "").strip()
+        if not objective:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="No quality objective provided.",
+                success=False,
+            )
+
+        from openjarvis.governance.quality_pipeline import (
+            QualityPipelinePlanner,
+            QualityStage,
+        )
+
+        plan = QualityPipelinePlanner().plan(
+            has_code_changes=bool(params.get("has_code_changes", True)),
+            has_visual_changes=bool(params.get("has_visual_changes", False)),
+            material_change=bool(params.get("material_change", True)),
+            release_candidate=bool(params.get("release_candidate", False)),
+        )
+        templates = {
+            QualityStage.MULTIMODAL_REVIEW: "qwen_mm_reviewer",
+            QualityStage.ANTI_SLOP: "anti_slop_reviewer",
+            QualityStage.THERMOS: "thermos_reviewer",
+        }
+        spawn = AgentSpawnTool(manager=self._manager)
+        stages: list[dict[str, Any]] = []
+
+        for stage in plan.stages:
+            template = templates.get(stage)
+            if template is None:
+                stages.append({"stage": stage.value, "kind": "gate"})
+                continue
+
+            spawned = spawn.execute(
+                template=template,
+                name=f"Quality {stage.value}",
+                query=objective,
+                model="smart",
+            )
+            if not spawned.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=(
+                        f"Failed to create reviewer for {stage.value}: "
+                        f"{spawned.content}"
+                    ),
+                    success=False,
+                )
+            payload = json.loads(spawned.content)
+            stages.append(
+                {
+                    "stage": stage.value,
+                    "kind": "agent",
+                    "template": template,
+                    "agent_id": payload["agent_id"],
+                    "status": payload["status"],
+                    "capability": payload["capability"],
+                }
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps({"objective": objective, "stages": stages}),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # AgentSendTool
 # ---------------------------------------------------------------------------
 
@@ -510,4 +625,10 @@ class AgentKillTool(BaseTool):
         )
 
 
-__all__ = ["AgentKillTool", "AgentListTool", "AgentSendTool", "AgentSpawnTool"]
+__all__ = [
+    "AgentKillTool",
+    "AgentListTool",
+    "AgentSendTool",
+    "AgentSpawnTool",
+    "QualityPipelineTool",
+]

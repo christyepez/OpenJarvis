@@ -31,7 +31,7 @@ _MEMORY_TOOLS = frozenset(
 )
 _CHANNEL_TOOLS = frozenset({"channel_send", "channel_list", "channel_status"})
 _AGENT_LIFECYCLE_TOOLS = frozenset(
-    {"agent_spawn", "agent_send", "agent_list", "agent_kill"}
+    {"agent_spawn", "agent_send", "agent_list", "agent_kill", "quality_pipeline"}
 )
 
 
