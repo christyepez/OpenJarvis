@@ -10,6 +10,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
 )
@@ -506,6 +507,67 @@ def test_quality_gate_update_requires_evidence_and_cannot_override_reviewer(tmp_
         )
         assert reviewer_override.success is False
         assert "reviewer-managed" in reviewer_override.content
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_quality_advance_runs_only_the_next_ready_reviewer(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    class _CompletingExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            agent = self.manager.get_agent(agent_id)
+            task_id = agent["config"]["quality_task_id"]
+            task = self.manager.get_task(task_id)
+            self.manager.update_task(
+                task_id,
+                status="completed",
+                progress=task["progress"],
+                findings=["review complete"],
+            )
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        planned = QualityPipelineTool(manager=manager).execute(
+            objective="Validate dashboard",
+            has_code_changes=True,
+            has_visual_changes=True,
+            material_change=True,
+            release_candidate=False,
+        )
+        payload = json.loads(planned.content)
+        pipeline_id = payload["pipeline_id"]
+        executor = _CompletingExecutor(manager)
+        advance = QualityAdvanceTool(manager=manager, executor=executor)
+
+        first = json.loads(advance.execute(pipeline_id=pipeline_id).content)
+        assert first["action"] == "gate_requires_evidence"
+        assert first["stage"] == "build-tests"
+        assert executor.calls == []
+
+        updated = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="build-tests",
+            status="completed",
+            evidence="pytest passed; ruff clean",
+        )
+        assert updated.success is True
+
+        second = json.loads(advance.execute(pipeline_id=pipeline_id).content)
+        assert second["action"] == "reviewer_executed"
+        assert second["stage"] == "multimodal-review"
+        assert second["status"] == "completed"
+        assert len(executor.calls) == 1
+
+        reviewer = manager.get_agent(executor.calls[0])
+        assert reviewer["config"]["quality_stage"] == "multimodal-review"
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()

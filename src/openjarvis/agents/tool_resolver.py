@@ -40,6 +40,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "quality_gate_update",
     }
 )
+_AGENT_EXECUTION_TOOLS = frozenset({"quality_advance"})
 
 
 class _SpecOverrideTool:
@@ -246,6 +247,7 @@ def instantiate_registered_tool(
     memory_backend: Any = None,
     channel_backend: Any = None,
     agent_manager: Any = None,
+    agent_executor: Any = None,
 ) -> Any:
     """Instantiate a registry tool with its runtime dependencies."""
 
@@ -267,6 +269,8 @@ def instantiate_registered_tool(
         return tool_cls(channel=channel_backend)
     if name in _AGENT_LIFECYCLE_TOOLS:
         return tool_cls(manager=agent_manager)
+    if name in _AGENT_EXECUTION_TOOLS:
+        return tool_cls(manager=agent_manager, executor=agent_executor)
     if name == "llm":
         return tool_cls(engine=engine, model=model)
     return tool_cls()
@@ -330,6 +334,7 @@ def resolve_agent_tools(
     memory_backend: Any = None,
     channel_backend: Any = None,
     agent_manager: Any = None,
+    agent_executor: Any = None,
     mcp_tools: Iterable[Any] = (),
     mcp_clients: Iterable[Any] = (),
     knowledge_db_path: str | Path | None = None,
@@ -412,6 +417,7 @@ def resolve_agent_tools(
                             memory_backend=memory_backend,
                             channel_backend=channel_backend,
                             agent_manager=agent_manager,
+                            agent_executor=agent_executor,
                         )
                     except Exception as exc:
                         logger.warning(

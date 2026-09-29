@@ -551,6 +551,179 @@ class QualityGateUpdateTool(BaseTool):
         )
 
 
+@ToolRegistry.register("quality_advance")
+class QualityAdvanceTool(BaseTool):
+    """Advance exactly one ready stage in a persistent quality pipeline."""
+
+    tool_id = "quality_advance"
+
+    _STAGE_ORDER = {
+        "build-tests": 0,
+        "multimodal-review": 1,
+        "anti-slop": 2,
+        "thermos": 3,
+        "release": 4,
+    }
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance one ready quality stage. Deterministic gates request "
+                "evidence; reviewer stages execute their managed reviewer."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string"},
+                },
+                "required": ["pipeline_id"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None or self._executor is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality advance requires AgentManager and AgentExecutor.",
+                success=False,
+            )
+
+        pipeline_id = str(params.get("pipeline_id", "") or "").strip()
+        coordinator = None
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if (
+                str(config.get("quality_pipeline_id", "") or "") == pipeline_id
+                and str(config.get("quality_pipeline_role", "") or "").casefold()
+                == "coordinator"
+            ):
+                coordinator = record
+                break
+        if coordinator is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality pipeline not found: {pipeline_id}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(coordinator["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+
+        blocking = next(
+            (
+                task
+                for task in tasks
+                if str(task.get("status", ""))
+                in {"failed", "needs_attention"}
+            ),
+            None,
+        )
+        if blocking is not None:
+            progress = blocking.get("progress", {}) or {}
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "pipeline_id": pipeline_id,
+                        "action": "blocked",
+                        "stage": progress.get("stage", ""),
+                        "status": blocking.get("status", ""),
+                    }
+                ),
+                success=True,
+            )
+
+        pending = [
+            task for task in tasks if str(task.get("status", "")) == "pending"
+        ]
+        if not pending:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {"pipeline_id": pipeline_id, "action": "complete"}
+                ),
+                success=True,
+            )
+
+        ready: list[dict[str, Any]] = []
+        for task in pending:
+            progress = task.get("progress", {}) or {}
+            dependency_id = str(progress.get("depends_on_task_id", "") or "")
+            dependency = task_by_id.get(dependency_id) if dependency_id else None
+            if not dependency_id or (
+                dependency is not None
+                and str(dependency.get("status", "")) == "completed"
+            ):
+                ready.append(task)
+
+        if not ready:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {"pipeline_id": pipeline_id, "action": "waiting"}
+                ),
+                success=True,
+            )
+
+        ready.sort(
+            key=lambda task: self._STAGE_ORDER.get(
+                str((task.get("progress", {}) or {}).get("stage", "")),
+                99,
+            )
+        )
+        task = ready[0]
+        progress = task.get("progress", {}) or {}
+        stage = str(progress.get("stage", "") or "")
+        kind = str(progress.get("kind", "") or "")
+
+        if kind == "gate":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "pipeline_id": pipeline_id,
+                        "action": "gate_requires_evidence",
+                        "stage": stage,
+                        "task_id": task["id"],
+                    }
+                ),
+                success=True,
+            )
+
+        reviewer_id = str(progress.get("reviewer_agent_id", "") or "")
+        if not reviewer_id:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Reviewer missing for quality stage: {stage}",
+                success=False,
+            )
+
+        self._executor.execute_tick(reviewer_id)
+        updated = self._manager.get_task(task["id"]) or task
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "action": "reviewer_executed",
+                    "stage": stage,
+                    "task_id": task["id"],
+                    "agent_id": reviewer_id,
+                    "status": updated.get("status", "unknown"),
+                }
+            ),
+            success=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # AgentSendTool
 # ---------------------------------------------------------------------------
@@ -830,6 +1003,7 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "QualityAdvanceTool",
     "QualityGateUpdateTool",
     "QualityPipelineTool",
 ]

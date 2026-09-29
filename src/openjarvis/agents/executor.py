@@ -683,6 +683,7 @@ class AgentExecutor:
             memory_backend=getattr(self._system, "memory_backend", None),
             channel_backend=getattr(self._system, "channel_backend", None),
             agent_manager=self._manager,
+            agent_executor=self,
             mcp_tools=mcp_tools,
             mcp_clients=mcp_clients,
             knowledge_db_path=getattr(self._system, "knowledge_db_path", None),
