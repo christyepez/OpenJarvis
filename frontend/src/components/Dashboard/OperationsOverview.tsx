@@ -19,6 +19,34 @@ function Badge({ children }: { children: React.ReactNode }) {
   );
 }
 
+export function ModelRoleSummary({
+  roleModels,
+}: {
+  roleModels: OperationsStatus['runtime']['role_models'];
+}) {
+  const roles = [
+    ['general', roleModels.general],
+    ['coding', roleModels.coding],
+    ['multimodal', roleModels.multimodal],
+  ] as const;
+
+  return (
+    <div className="space-y-2">
+      {roles.map(([role, model]) => (
+        <div key={role} className="flex items-center justify-between gap-3 text-xs">
+          <span
+            className="capitalize"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            {role}
+          </span>
+          <Badge>{model || 'unassigned'}</Badge>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Card({
   title,
   children,
@@ -129,7 +157,11 @@ export function OperationsOverview() {
           </div>
         </Card>
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <Card title="Model roles">
+          <ModelRoleSummary roleModels={status.runtime.role_models} />
+        </Card>
+
         <Card title="Governance">
           <div className="flex flex-wrap gap-1.5">
             <Badge>{status.governance.prefer_local ? 'local-first' : 'local optional'}</Badge>
