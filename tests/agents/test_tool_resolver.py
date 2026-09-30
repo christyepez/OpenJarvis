@@ -364,3 +364,45 @@ def test_task_dispatch_receives_live_agent_manager() -> None:
     )
 
     assert resolved.by_name["task_dispatch"]._manager is manager
+
+
+def test_domain_worker_memory_tools_inherit_domain_default() -> None:
+    from openjarvis.tools.storage_tools import MemoryStoreTool
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.metadata: list[dict[str, object]] = []
+
+        def store(self, content, *, source="", metadata=None):
+            self.metadata.append(dict(metadata or {}))
+            return f"doc-{len(self.metadata)}"
+
+    backend = _Backend()
+    ToolRegistry.clear()
+    ToolRegistry.register_value("memory_store", MemoryStoreTool)
+    try:
+        resolved = tool_resolver.resolve_agent_tools(
+            {
+                "agent_type": "orchestrator",
+                "config": {
+                    "domain": "finance",
+                    "tools": ["memory_store"],
+                },
+            },
+            engine=object(),
+            model="test-model",
+            memory_backend=backend,
+        )
+
+        first = resolved.by_name["memory_store"].execute(content="Budget decision")
+        second = resolved.by_name["memory_store"].execute(
+            content="Personal preference",
+            domain="personal",
+        )
+
+        assert first.success is True
+        assert second.success is True
+        assert backend.metadata[0]["domain"] == "finance"
+        assert backend.metadata[1]["domain"] == "personal"
+    finally:
+        ToolRegistry.clear()

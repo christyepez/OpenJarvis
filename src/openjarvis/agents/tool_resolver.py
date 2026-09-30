@@ -387,6 +387,7 @@ def resolve_agent_tools(
     owned_resources: list[Any] = []
     seen: set[str] = set()
     workspace = str(config.get("workspace", "") or "").strip()
+    domain = str(config.get("domain", "") or "").strip().casefold()
 
     def bind_workspace_defaults(tool: Any) -> Any:
         if not workspace:
@@ -402,12 +403,21 @@ def resolve_agent_tools(
             return _DefaultParamsTool(tool, {"repo_path": workspace})
         return tool
 
+    def bind_domain_defaults(tool: Any) -> Any:
+        if not domain:
+            return tool
+        name = _tool_name(tool)
+        if name in {"memory_store", "memory_search", "memory_retrieve"}:
+            return _DefaultParamsTool(tool, {"domain": domain})
+        return tool
+
     def add_instance(
         tool: Any,
         *,
         advertised_spec: dict[str, Any] | None = None,
     ) -> None:
         tool = bind_workspace_defaults(tool)
+        tool = bind_domain_defaults(tool)
         name = _tool_name(tool)
         if not name or name in seen:
             return
