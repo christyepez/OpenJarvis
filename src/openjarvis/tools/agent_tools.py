@@ -769,6 +769,34 @@ _PROJECT_CAPABILITIES = {
 }
 
 
+def _project_stream_capability(stream: str, objective: str) -> str:
+    """Resolve a specialist capability from stream semantics and objective."""
+    baseline = _PROJECT_CAPABILITIES.get(stream, "general")
+
+    try:
+        from openjarvis.governance.execution_router import (
+            classify_task_capability,
+        )
+
+        inferred = classify_task_capability(objective)
+    except Exception:
+        return baseline
+
+    # UI/UX, architecture and documentation can legitimately need visual
+    # reasoning, but a generic project mention of a dashboard should not turn
+    # backend/devops/security workers into multimodal agents.
+    if stream in {"frontend", "architecture", "documentation", "data"}:
+        if inferred == "multimodal":
+            return "multimodal"
+
+    # Data streams become coding workers when their objective is explicitly
+    # implementation-oriented (SQL/Python/ETL/etc.).
+    if stream == "data" and inferred == "coding":
+        return "coding"
+
+    return baseline
+
+
 @ToolRegistry.register("project_dispatch")
 class ProjectDispatchTool(BaseTool):
     """Dispatch dependency-ready project streams to persistent workers."""
@@ -919,7 +947,10 @@ class ProjectDispatchTool(BaseTool):
                 )
                 continue
 
-            capability = _PROJECT_CAPABILITIES.get(stream, "general")
+            capability = _project_stream_capability(
+                stream,
+                str(task.get("description", "") or ""),
+            )
             stream_workspace = str(
                 progress.get("workspace", "")
                 or project_config.get("workspace", "")

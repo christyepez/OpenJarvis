@@ -19,6 +19,7 @@ from openjarvis.tools.agent_tools import (
     QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
+    _project_stream_capability,
 )
 
 # ---------------------------------------------------------------------------
@@ -915,3 +916,43 @@ def test_quality_advance_runs_only_the_next_ready_reviewer(tmp_path):
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
+
+
+def test_project_stream_capability_uses_multimodal_for_visual_frontend() -> None:
+    assert (
+        _project_stream_capability(
+            "frontend",
+            "Review the dashboard screenshot and improve the UI layout",
+        )
+        == "multimodal"
+    )
+
+
+def test_project_stream_capability_uses_coding_for_data_sql_work() -> None:
+    assert (
+        _project_stream_capability(
+            "data",
+            "Implement SQL ETL transformations and Python validation",
+        )
+        == "coding"
+    )
+
+
+def test_project_stream_capability_keeps_backend_coding_on_visual_project() -> None:
+    assert (
+        _project_stream_capability(
+            "backend",
+            "Build the API for a dashboard with screenshots",
+        )
+        == "coding"
+    )
+
+
+def test_project_stream_capability_uses_multimodal_for_diagram_docs() -> None:
+    assert (
+        _project_stream_capability(
+            "documentation",
+            "Create and review the C4 architecture diagram",
+        )
+        == "multimodal"
+    )
