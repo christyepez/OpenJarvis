@@ -16,6 +16,7 @@ from openjarvis.tools.agent_tools import (
     ProjectAdvanceTool,
     ProjectBootstrapTool,
     ProjectDispatchTool,
+    ProjectHandoffReviewTool,
     ProjectStatusTool,
     ProjectStreamUpdateTool,
     ProjectWorktreePrepareTool,
@@ -1189,5 +1190,151 @@ def test_project_advance_starts_only_newly_dispatched_workers(tmp_path):
         assert third["started_agents"][0] != architecture_agent
         assert len(executor.agent_ids) == 2
         assert third["start_errors"] == []
+    finally:
+        manager.close()
+
+
+
+def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
+    project = next(
+        agent
+        for agent in manager.list_agents()
+        if str((agent.get("config", {}) or {}).get("project_bootstrap_key", ""))
+        == project_key
+        and str((agent.get("config", {}) or {}).get("project_role", ""))
+        == "coordinator"
+    )
+    task = next(
+        task
+        for task in manager.list_tasks(project["id"])
+        if str((task.get("progress", {}) or {}).get("stream", "")) == stream
+    )
+    progress = dict(task.get("progress", {}) or {})
+    progress.update(
+        {
+            "handoff_ready": True,
+            "worker_agent_id": f"worker-{stream}",
+            "worker_status": "completed_tick",
+        }
+    )
+    manager.update_task(
+        task["id"],
+        status="active",
+        progress=progress,
+        findings=["Worker implementation complete; tests reported passing."],
+    )
+    return task["id"]
+
+
+def test_project_handoff_review_requires_ready_handoff(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        result = ProjectHandoffReviewTool(manager=manager).execute(
+            project_key=boot["project_key"],
+            stream="architecture",
+            decision="approve",
+            review_evidence="Reviewed ADR and contracts.",
+        )
+
+        assert result.success is False
+        assert "no worker handoff ready" in result.content
+    finally:
+        manager.close()
+
+
+def test_project_handoff_review_approval_completes_stream_with_review_evidence(
+    tmp_path,
+):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        task_id = _mark_project_handoff_ready(
+            manager,
+            project_key,
+            "architecture",
+        )
+
+        result = ProjectHandoffReviewTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            decision="approve",
+            review_evidence="Validated architecture contract and dependency plan.",
+        )
+
+        assert result.success is True
+        payload = json.loads(result.content)
+        assert payload["status"] == "completed"
+        assert payload["execution_state"] == "DONE"
+
+        task = manager.get_task(task_id)
+        assert task["status"] == "completed"
+        assert task["progress"]["handoff_ready"] is False
+        assert task["progress"]["handoff_decision"] == "approve"
+        assert "Validated architecture contract" in task["progress"][
+            "handoff_review_evidence"
+        ]
+
+        status = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert status["ready_streams"] == ["backend"]
+        assert status["next_action"] == "dispatch:backend"
+    finally:
+        manager.close()
+
+
+def test_project_handoff_review_rejection_requires_rework(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        task_id = _mark_project_handoff_ready(
+            manager,
+            project_key,
+            "architecture",
+        )
+
+        result = ProjectHandoffReviewTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            decision="reject",
+            review_evidence="Missing rollback and security constraints.",
+        )
+
+        assert result.success is True
+        task = manager.get_task(task_id)
+        assert task["status"] == "needs_attention"
+        assert task["progress"]["execution_state"] == "BLOCKED"
+        assert task["progress"]["handoff_ready"] is False
+        assert task["progress"]["handoff_decision"] == "reject"
+        assert "Missing rollback" in task["findings"][-1]
     finally:
         manager.close()

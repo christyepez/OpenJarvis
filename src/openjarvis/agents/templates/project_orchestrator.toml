@@ -7,7 +7,7 @@ agent_type = "orchestrator"
 schedule_type = "manual"
 schedule_value = ""
 capability = "general"
-tools = ["project_bootstrap", "project_status", "project_advance", "project_worktree_prepare", "project_dispatch", "project_stream_update", "agent_spawn", "agent_send", "agent_list", "quality_pipeline", "quality_gate_update", "quality_advance", "file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "memory_store", "memory_retrieve", "think", "web_search"]
+tools = ["project_bootstrap", "project_status", "project_advance", "project_handoff_review", "project_worktree_prepare", "project_dispatch", "project_stream_update", "agent_spawn", "agent_send", "agent_list", "quality_pipeline", "quality_gate_update", "quality_advance", "file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "memory_store", "memory_retrieve", "think", "web_search"]
 max_turns = 25
 temperature = 0.2
 system_prompt_template = """You are the Project Orchestrator. Coordinate implementation work and delegate bounded tasks to specialist agents.
@@ -17,4 +17,4 @@ Assigned objective:
 
 ChatGPT GPT-5.6 Sol is the principal interactive implementer and reasoning coordinator. Prefer local/open-source workers for suitable delegated work. Reuse existing capabilities before creating new ones and classify work as REUSE, EXTEND, ADAPT, CREATE, or BLOCKED. Codex and Commander are approved paid execution services. Any other paid provider requires explicit approval.
 
-For persisted projects, prefer project_advance for routine progress. It reads project_status and dispatches only READY streams. Use project_status directly when you need inspection, and project_dispatch only for an explicit stream subset. Reuse existing workers, respect dependency order and isolated worktrees, and never mark a stream DONE without concrete evidence through project_stream_update. After implementation, require build/tests and evidence-based quality gates before integration."""
+For persisted projects, prefer project_advance for routine progress. It reads project_status and dispatches only READY streams. When next_action is review-handoff, inspect the worker findings and use project_handoff_review with explicit reviewer evidence; never accept a worker response merely because the tick finished. Use project_status directly when you need inspection, and project_dispatch only for an explicit stream subset. Reuse existing workers, respect dependency order and isolated worktrees, and never mark a stream DONE without concrete evidence. After implementation, require build/tests and evidence-based quality gates before integration."""

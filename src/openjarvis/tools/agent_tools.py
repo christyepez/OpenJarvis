@@ -1485,6 +1485,204 @@ class ProjectDispatchTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# Project handoff review
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("project_handoff_review")
+class ProjectHandoffReviewTool(BaseTool):
+    """Approve or reject a worker handoff with explicit review evidence."""
+
+    tool_id = "project_handoff_review"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Review a project specialist handoff. Approval requires an existing "
+                "handoff_ready marker plus explicit reviewer evidence; rejection "
+                "returns the stream to needs_attention. Worker prose alone never "
+                "auto-completes the stream."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "decision": {
+                        "type": "string",
+                        "enum": ["approve", "reject"],
+                    },
+                    "review_evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete reviewer evidence or rejection reason."
+                        ),
+                    },
+                },
+                "required": [
+                    "project_key",
+                    "stream",
+                    "decision",
+                    "review_evidence",
+                ],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project handoff review requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        decision = str(params.get("decision", "") or "").strip().casefold()
+        review_evidence = str(
+            params.get("review_evidence", "") or ""
+        ).strip()
+
+        if not project_key or not stream:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key and stream are required.",
+                success=False,
+            )
+        if decision not in {"approve", "reject"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported handoff decision: {decision}",
+                success=False,
+            )
+        if not review_evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Handoff review requires explicit reviewer evidence.",
+                success=False,
+            )
+
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        target = next(
+            (
+                task
+                for task in tasks
+                if str(
+                    (task.get("progress", {}) or {}).get("stream", "")
+                ).casefold()
+                == stream
+            ),
+            None,
+        )
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project stream not found: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        if not bool(progress.get("handoff_ready", False)):
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    f"Stream {stream} has no worker handoff ready for review."
+                ),
+                success=False,
+            )
+
+        findings = list(target.get("findings", []) or [])
+        findings.append(f"REVIEW {decision.upper()}: {review_evidence}")
+        progress.update(
+            {
+                "handoff_ready": False,
+                "handoff_decision": decision,
+                "handoff_review_evidence": review_evidence,
+                "handoff_reviewed_at": time.time(),
+            }
+        )
+
+        if decision == "reject":
+            progress["execution_state"] = "BLOCKED"
+            updated = self._manager.update_task(
+                target["id"],
+                status="needs_attention",
+                progress=progress,
+                findings=findings,
+            )
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "project_key": project_key,
+                        "stream": stream,
+                        "decision": decision,
+                        "status": updated["status"],
+                        "execution_state": progress["execution_state"],
+                        "review_evidence": review_evidence,
+                    }
+                ),
+                success=True,
+            )
+
+        completion = ProjectStreamUpdateTool(manager=self._manager).execute(
+            project_key=project_key,
+            stream=stream,
+            status="completed",
+            evidence=f"Reviewer acceptance: {review_evidence}",
+        )
+        if not completion.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=completion.content,
+                success=False,
+            )
+
+        completed = self._manager.get_task(target["id"])
+        completed_progress = dict((completed or {}).get("progress", {}) or {})
+        completed_findings = list((completed or {}).get("findings", []) or [])
+        completed_progress.update(progress)
+        completed_progress["execution_state"] = "DONE"
+        completed_findings.append(f"REVIEW APPROVE: {review_evidence}")
+        self._manager.update_task(
+            target["id"],
+            status="completed",
+            progress=completed_progress,
+            findings=completed_findings[-10:],
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "decision": decision,
+                    "status": "completed",
+                    "execution_state": "DONE",
+                    "review_evidence": review_evidence,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectStreamUpdateTool
 # ---------------------------------------------------------------------------
 
@@ -2447,6 +2645,7 @@ __all__ = [
     "ProjectAdvanceTool",
     "ProjectBootstrapTool",
     "ProjectDispatchTool",
+    "ProjectHandoffReviewTool",
     "ProjectStatusTool",
     "ProjectWorktreePrepareTool",
     "ProjectStreamUpdateTool",
