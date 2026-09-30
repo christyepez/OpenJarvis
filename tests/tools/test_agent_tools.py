@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from pathlib import Path
 
 from openjarvis.tools.agent_tools import (
     _SPAWNED_AGENTS,
@@ -13,6 +15,7 @@ from openjarvis.tools.agent_tools import (
     ProjectBootstrapTool,
     ProjectDispatchTool,
     ProjectStreamUpdateTool,
+    ProjectWorktreePrepareTool,
     QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
@@ -473,6 +476,99 @@ def test_project_bootstrap_reuses_existing_project(tmp_path):
         assert second["reused"] is True
         assert second["orchestrator_agent_id"] == first["orchestrator_agent_id"]
         assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    (repo / "README.md").write_text("bootstrap\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend and frontend then integrate and test",
+                repository="https://github.com/example/portal",
+                workspace=str(repo),
+                streams="architecture,backend,frontend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        worktree_root = tmp_path / "worktrees"
+
+        prepared_result = ProjectWorktreePrepareTool(manager=manager).execute(
+            project_key=project_key,
+            worktree_root=str(worktree_root),
+        )
+        assert prepared_result.success is True
+        prepared = json.loads(prepared_result.content)["prepared"]
+        assert [item["stream"] for item in prepared] == ["backend", "frontend"]
+        assert all(item["reused"] is False for item in prepared)
+
+        by_stream = {item["stream"]: item for item in prepared}
+        for stream in ("backend", "frontend"):
+            workspace = by_stream[stream]["workspace"]
+            assert Path(workspace).is_dir()
+            assert by_stream[stream]["branch"] == f"openjarvis/portal/{stream}"
+
+        dispatch = ProjectDispatchTool(manager=manager)
+        first = json.loads(dispatch.execute(project_key=project_key).content)
+        assert [item["stream"] for item in first["dispatched"]] == ["architecture"]
+
+        architecture = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture approved",
+        )
+        assert architecture.success is True
+
+        wave_b = json.loads(dispatch.execute(project_key=project_key).content)
+        workers = {
+            item["stream"]: manager.get_agent(item["agent_id"])
+            for item in wave_b["dispatched"]
+            if item.get("reused") is False
+        }
+        assert set(workers) == {"backend", "frontend"}
+        for stream, worker in workers.items():
+            assert worker is not None
+            assert worker["config"]["workspace"] == by_stream[stream]["workspace"]
+            assert worker["config"]["branch"] == by_stream[stream]["branch"]
+
+        reused = ProjectWorktreePrepareTool(manager=manager).execute(
+            project_key=project_key,
+            worktree_root=str(worktree_root),
+        )
+        assert reused.success is True
+        assert all(
+            item["reused"] is True
+            for item in json.loads(reused.content)["prepared"]
+        )
     finally:
         manager.close()
 

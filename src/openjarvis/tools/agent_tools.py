@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict
 
 from openjarvis.core.registry import ToolRegistry
@@ -482,6 +484,278 @@ class ProjectBootstrapTool(BaseTool):
         )
 
 
+def _branch_component(value: str) -> str:
+    normalized = "".join(
+        ch.lower() if ch.isalnum() else "-"
+        for ch in str(value or "").strip()
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    return normalized.strip("-") or "project"
+
+
+def _project_coordinator(manager: Any, project_key: str) -> dict[str, Any] | None:
+    for record in manager.list_agents():
+        config = record.get("config", {}) or {}
+        same_project = (
+            str(config.get("project_bootstrap_key", "") or "") == project_key
+        )
+        coordinator = (
+            str(config.get("project_role", "") or "") == "coordinator"
+            or not str(config.get("project_stream", "") or "")
+        )
+        if same_project and coordinator:
+            return record
+    return None
+
+
+@ToolRegistry.register("project_worktree_prepare")
+class ProjectWorktreePrepareTool(BaseTool):
+    """Create or reuse isolated Git worktrees for parallel project streams."""
+
+    tool_id = "project_worktree_prepare"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Prepare isolated Git worktrees for Wave B project streams and "
+                "persist each branch/workspace on the execution board."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Optional base Git checkout path. Defaults to the "
+                            "workspace stored by project_bootstrap."
+                        ),
+                    },
+                    "worktree_root": {
+                        "type": "string",
+                        "description": (
+                            "Optional parent directory for generated worktrees."
+                        ),
+                    },
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated Wave B streams. Omit to "
+                            "prepare all parallel implementation streams."
+                        ),
+                    },
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            requires_confirmation=True,
+            required_capabilities=["system:admin", "file:write"],
+        )
+
+    @staticmethod
+    def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project worktree preparation requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        config = dict(project.get("config", {}) or {})
+        workspace_raw = str(
+            params.get("workspace", "") or config.get("workspace", "") or ""
+        ).strip()
+        if not workspace_raw:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "A local project workspace is required before preparing "
+                    "worktrees."
+                ),
+                success=False,
+            )
+
+        workspace = Path(workspace_raw).expanduser().resolve()
+        if not workspace.is_dir():
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project workspace does not exist: {workspace}",
+                success=False,
+            )
+
+        root_probe = self._git(["rev-parse", "--show-toplevel"], workspace)
+        if root_probe.returncode != 0:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project workspace is not a Git checkout: {workspace}",
+                success=False,
+            )
+        repo_root = Path(root_probe.stdout.strip()).resolve()
+
+        requested = {
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        }
+        invalid = sorted(requested - set(_PROJECT_STREAMS))
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+
+        project_slug = _branch_component(
+            str(config.get("project_name", "") or project_key)
+        )
+        root_raw = str(params.get("worktree_root", "") or "").strip()
+        worktree_root = (
+            Path(root_raw).expanduser().resolve()
+            if root_raw
+            else repo_root.parent / ".openjarvis-worktrees" / project_slug
+        )
+        worktree_root.mkdir(parents=True, exist_ok=True)
+
+        prepared: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        tasks = list(self._manager.list_tasks(project["id"]))
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream or (requested and stream not in requested):
+                continue
+            if str(progress.get("wave", "")) != "B":
+                if requested:
+                    skipped.append(
+                        {
+                            "stream": stream,
+                            "reason": "only Wave B streams use isolated worktrees",
+                        }
+                    )
+                continue
+
+            branch = f"openjarvis/{project_slug}/{_branch_component(stream)}"
+            destination = (worktree_root / _branch_component(stream)).resolve()
+
+            reused = False
+            if destination.is_dir():
+                probe = self._git(["rev-parse", "--show-toplevel"], destination)
+                if probe.returncode != 0:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=(
+                            f"Existing worktree destination is not a Git checkout: "
+                            f"{destination}"
+                        ),
+                        success=False,
+                    )
+                reused = True
+            else:
+                branch_probe = self._git(
+                    ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                    repo_root,
+                )
+                if branch_probe.returncode == 0:
+                    add = self._git(
+                        ["worktree", "add", str(destination), branch],
+                        repo_root,
+                    )
+                else:
+                    add = self._git(
+                        [
+                            "worktree",
+                            "add",
+                            "-b",
+                            branch,
+                            str(destination),
+                            "HEAD",
+                        ],
+                        repo_root,
+                    )
+                if add.returncode != 0:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=(
+                            f"Failed to prepare worktree for {stream}: "
+                            f"{add.stderr.strip() or add.stdout.strip()}"
+                        ),
+                        success=False,
+                    )
+
+            progress["workspace"] = str(destination)
+            progress["branch"] = branch
+            self._manager.update_task(
+                task["id"],
+                progress=progress,
+            )
+
+            for agent in self._manager.list_agents():
+                agent_config = dict(agent.get("config", {}) or {})
+                if str(agent_config.get("project_task_id", "") or "") != str(
+                    task["id"]
+                ):
+                    continue
+                agent_config["workspace"] = str(destination)
+                agent_config["branch"] = branch
+                self._manager.update_agent(agent["id"], config=agent_config)
+
+            prepared.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "branch": branch,
+                    "workspace": str(destination),
+                    "reused": reused,
+                }
+            )
+
+        config["workspace"] = str(repo_root)
+        config["worktree_root"] = str(worktree_root)
+        self._manager.update_agent(project["id"], config=config)
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "repository_workspace": str(repo_root),
+                    "worktree_root": str(worktree_root),
+                    "prepared": prepared,
+                    "skipped": skipped,
+                }
+            ),
+            success=True,
+        )
+
+
 _PROJECT_CAPABILITIES = {
     "architecture": "general",
     "backend": "coding",
@@ -646,9 +920,17 @@ class ProjectDispatchTool(BaseTool):
                 continue
 
             capability = _PROJECT_CAPABILITIES.get(stream, "general")
+            stream_workspace = str(
+                progress.get("workspace", "")
+                or project_config.get("workspace", "")
+                or ""
+            )
+            stream_branch = str(progress.get("branch", "") or "")
             instruction = (
                 f"Project: {project_config.get('project_name', '')}\n"
                 f"Repository: {project_config.get('repository', '')}\n"
+                f"Workspace: {stream_workspace}\n"
+                f"Branch: {stream_branch}\n"
                 f"Stream: {stream}\n"
                 f"Objective: {task.get('description', '')}"
             )
@@ -664,7 +946,8 @@ class ProjectDispatchTool(BaseTool):
                     "project_stream": stream,
                     "project_task_id": task["id"],
                     "repository": str(project_config.get("repository", "") or ""),
-                    "workspace": str(project_config.get("workspace", "") or ""),
+                    "workspace": stream_workspace,
+                    "branch": stream_branch,
                 },
                 agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
             )
@@ -1672,6 +1955,7 @@ __all__ = [
     "AgentSpawnTool",
     "ProjectBootstrapTool",
     "ProjectDispatchTool",
+    "ProjectWorktreePrepareTool",
     "ProjectStreamUpdateTool",
     "QualityAdvanceTool",
     "QualityGateUpdateTool",
