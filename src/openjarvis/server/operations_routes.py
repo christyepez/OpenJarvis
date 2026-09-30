@@ -162,6 +162,11 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     ),
                     "order": int(progress.get("order", 999) or 0),
                     "status": str(task.get("status", "unknown")),
+                    "worker_agent_id": str(
+                        progress.get("worker_agent_id", "") or ""
+                    ),
+                    "branch": str(progress.get("branch", "") or ""),
+                    "workspace": str(progress.get("workspace", "") or ""),
                     "depends_on_task_ids": [
                         str(value)
                         for value in (

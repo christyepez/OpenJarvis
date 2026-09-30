@@ -181,6 +181,9 @@ describe('OperationsOverview project execution boards', () => {
                   execution_state: 'READY',
                   order: 0,
                   status: 'pending',
+                  worker_agent_id: '',
+                  branch: '',
+                  workspace: '',
                   depends_on_task_ids: [],
                 },
                 {
@@ -189,7 +192,10 @@ describe('OperationsOverview project execution boards', () => {
                   wave: 'B',
                   execution_state: 'PARALLEL',
                   order: 1,
-                  status: 'pending',
+                  status: 'active',
+                  worker_agent_id: 'project-backend-1',
+                  branch: 'openjarvis/portal/backend',
+                  workspace: 'C:/worktrees/portal/backend',
                   depends_on_task_ids: ['a1'],
                 },
               ],
@@ -202,7 +208,9 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('Portal');
     expect(html).toContain('https://github.com/example/portal');
     expect(html).toContain('A.architecture: pending');
-    expect(html).toContain('B.backend: pending');
+    expect(html).toContain('B.backend: active');
+    expect(html).toContain('openjarvis/portal/backend');
+    expect(html).toContain('worker: project-backend-1');
     expect(html).toContain('runtime: trabajo, MarketingIndo');
   });
 

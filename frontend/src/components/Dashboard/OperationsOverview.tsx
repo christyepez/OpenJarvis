@@ -143,11 +143,22 @@ export function ProjectBoardSummary({
             </div>
             <Badge>{project.status}</Badge>
           </div>
-          <div className="flex flex-wrap gap-1 mt-1.5">
+          <div className="space-y-1.5 mt-1.5">
             {project.streams.map((stream) => (
-              <Badge key={stream.task_id}>
-                {stream.wave}.{stream.stream}: {stream.status}
-              </Badge>
+              <div key={stream.task_id} className="flex flex-wrap items-center gap-1">
+                <Badge>
+                  {stream.wave}.{stream.stream}: {stream.status}
+                </Badge>
+                {stream.branch ? <Badge>{stream.branch}</Badge> : null}
+                {stream.worker_agent_id ? (
+                  <span
+                    className="text-[10px]"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    worker: {stream.worker_agent_id}
+                  </span>
+                ) : null}
+              </div>
             ))}
           </div>
           {project.runtime_machines.length ? (

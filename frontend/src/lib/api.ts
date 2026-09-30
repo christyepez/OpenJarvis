@@ -325,6 +325,9 @@ export interface OperationsStatus {
         execution_state: string;
         order: number;
         status: string;
+        worker_agent_id: string;
+        branch: string;
+        workspace: string;
         depends_on_task_ids: string[];
       }>;
     }>;
