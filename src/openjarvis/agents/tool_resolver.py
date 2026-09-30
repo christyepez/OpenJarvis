@@ -38,7 +38,6 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "agent_kill",
         "task_dispatch",
         "quality_pipeline",
-        "project_advance",
         "project_bootstrap",
         "project_dispatch",
         "project_status",
@@ -47,7 +46,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "quality_gate_update",
     }
 )
-_AGENT_EXECUTION_TOOLS = frozenset({"quality_advance"})
+_AGENT_EXECUTION_TOOLS = frozenset({"project_advance", "quality_advance"})
 
 
 class _DefaultParamsTool:

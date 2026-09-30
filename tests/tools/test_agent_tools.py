@@ -1136,3 +1136,58 @@ def test_project_advance_requires_manager():
 
     assert result.success is False
     assert "AgentManager" in result.content
+
+
+
+class _RecordingProjectExecutor:
+    def __init__(self) -> None:
+        self.agent_ids: list[str] = []
+
+    def execute_tick(self, agent_id: str) -> None:
+        self.agent_ids.append(agent_id)
+
+
+def test_project_advance_starts_only_newly_dispatched_workers(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    executor = _RecordingProjectExecutor()
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                repository="https://github.com/example/portal",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        advance = ProjectAdvanceTool(manager=manager, executor=executor)
+
+        first = json.loads(advance.execute(project_key=project_key).content)
+        assert first["action"] == "dispatched"
+        assert first["started_agents"] == executor.agent_ids
+        assert len(first["started_agents"]) == 1
+        architecture_agent = first["started_agents"][0]
+
+        second = json.loads(advance.execute(project_key=project_key).content)
+        assert second["action"] == "wait-active"
+        assert second["started_agents"] == []
+        assert executor.agent_ids == [architecture_agent]
+
+        completed = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture approved",
+        )
+        assert completed.success is True
+
+        third = json.loads(advance.execute(project_key=project_key).content)
+        assert third["action"] == "dispatched"
+        assert len(third["started_agents"]) == 1
+        assert third["started_agents"][0] != architecture_agent
+        assert len(executor.agent_ids) == 2
+        assert third["start_errors"] == []
+    finally:
+        manager.close()

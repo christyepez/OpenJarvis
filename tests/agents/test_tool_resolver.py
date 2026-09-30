@@ -406,3 +406,23 @@ def test_domain_worker_memory_tools_inherit_domain_default() -> None:
         assert backend.metadata[1]["domain"] == "personal"
     finally:
         ToolRegistry.clear()
+
+
+
+def test_project_advance_receives_manager_and_executor():
+    from openjarvis.agents.tool_resolver import instantiate_registered_tool
+    from openjarvis.tools.agent_tools import ProjectAdvanceTool
+
+    manager = object()
+    executor = object()
+    tool = instantiate_registered_tool(
+        ProjectAdvanceTool,
+        "project_advance",
+        engine=None,
+        model="",
+        agent_manager=manager,
+        agent_executor=executor,
+    )
+
+    assert tool._manager is manager
+    assert tool._executor is executor

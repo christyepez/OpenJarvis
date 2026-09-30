@@ -1130,12 +1130,13 @@ class ProjectStatusTool(BaseTool):
 
 @ToolRegistry.register("project_advance")
 class ProjectAdvanceTool(BaseTool):
-    """Advance one project by dispatching only dependency-ready streams."""
+    """Advance one project by dispatching and starting dependency-ready streams."""
 
     tool_id = "project_advance"
 
-    def __init__(self, manager: Any = None) -> None:
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
         self._manager = manager
+        self._executor = executor
 
     @property
     def spec(self) -> ToolSpec:
@@ -1199,6 +1200,23 @@ class ProjectAdvanceTool(BaseTool):
         elif before.get("blocked_streams"):
             action = "resolve-dependencies"
 
+        started_agents: list[str] = []
+        start_errors: list[dict[str, str]] = []
+        if dispatch_payload is not None and self._executor is not None:
+            for item in dispatch_payload.get("dispatched", []) or []:
+                if item.get("reused") is True:
+                    continue
+                agent_id = str(item.get("agent_id", "") or "")
+                if not agent_id:
+                    continue
+                try:
+                    self._executor.execute_tick(agent_id)
+                    started_agents.append(agent_id)
+                except Exception as exc:
+                    start_errors.append(
+                        {"agent_id": agent_id, "error": str(exc)}
+                    )
+
         after_result = ProjectStatusTool(manager=self._manager).execute(
             project_key=project_key
         )
@@ -1215,6 +1233,8 @@ class ProjectAdvanceTool(BaseTool):
                     "project_key": project_key,
                     "action": action,
                     "dispatched_streams": ready if action == "dispatched" else [],
+                    "started_agents": started_agents,
+                    "start_errors": start_errors,
                     "dispatch": dispatch_payload,
                     "status": after,
                 }
