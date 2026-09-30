@@ -361,7 +361,9 @@ export interface OperationsStatus {
       status: string;
       activity: string;
       capability: string;
+      model_policy: string;
       routed_model: string | null;
+      project_stream: string;
     }>;
     tasks: {
       total: number;

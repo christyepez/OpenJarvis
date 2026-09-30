@@ -353,7 +353,11 @@ def _agent_summary(
                 "status": status,
                 "activity": str(agent.get("current_activity", "") or ""),
                 "capability": capability,
+                "model_policy": configured_model or "default",
                 "routed_model": routed_model,
+                "project_stream": str(
+                    config.get("project_stream", "") or ""
+                ),
             }
         )
         try:

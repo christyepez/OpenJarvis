@@ -75,7 +75,13 @@ export function AgentRoutingSummary({
               className="truncate"
               style={{ color: 'var(--color-text-tertiary)' }}
             >
-              {agent.capability || 'general'}
+              {[
+                agent.project_stream,
+                agent.capability || 'general',
+                agent.model_policy || 'default',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </div>
           </div>
           <Badge>{agent.routed_model || 'unassigned'}</Badge>

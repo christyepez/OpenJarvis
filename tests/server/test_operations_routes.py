@@ -47,7 +47,11 @@ class _Manager:
                 "agent_type": "reviewer",
                 "status": "running",
                 "current_activity": "reviewing",
-                "config": {"capability": "multimodal", "model": "smart"},
+                "config": {
+                    "capability": "multimodal",
+                    "model": "smart",
+                    "project_stream": "frontend",
+                },
             },
         ]
 
@@ -122,8 +126,11 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["agents"]["total"] == 2
     assert data["agents"]["by_status"] == {"idle": 1, "running": 1}
     assert data["agents"]["agents"][0]["capability"] == "general"
+    assert data["agents"]["agents"][0]["model_policy"] == "default"
     assert data["agents"]["agents"][0]["routed_model"] == "qwen3.5:4b"
     assert data["agents"]["agents"][1]["capability"] == "multimodal"
+    assert data["agents"]["agents"][1]["model_policy"] == "smart"
+    assert data["agents"]["agents"][1]["project_stream"] == "frontend"
     assert data["agents"]["agents"][1]["routed_model"] == "qwen3.5:4b"
     assert data["agents"]["tasks"]["total"] == 2
     assert data["agents"]["tasks"]["by_status"] == {

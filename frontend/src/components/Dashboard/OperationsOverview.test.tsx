@@ -76,7 +76,9 @@ describe('OperationsOverview agent routing', () => {
             status: 'idle',
             activity: '',
             capability: 'multimodal',
+            model_policy: 'smart',
             routed_model: 'qwen3.5:4b',
+            project_stream: 'frontend',
           },
           {
             id: 'a2',
@@ -85,17 +87,19 @@ describe('OperationsOverview agent routing', () => {
             status: 'idle',
             activity: '',
             capability: 'coding',
+            model_policy: 'granite-code:3b',
             routed_model: 'granite-code:3b',
+            project_stream: 'backend',
           },
         ]}
       />,
     );
 
     expect(html).toContain('Visual QA');
-    expect(html).toContain('multimodal');
+    expect(html).toContain('frontend · multimodal · smart');
     expect(html).toContain('qwen3.5:4b');
     expect(html).toContain('Code Reviewer');
-    expect(html).toContain('coding');
+    expect(html).toContain('backend · coding · granite-code:3b');
     expect(html).toContain('granite-code:3b');
   });
 });
