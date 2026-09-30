@@ -487,6 +487,7 @@ def test_project_dispatch_spawns_only_dependency_ready_workers(tmp_path):
                 project_name="Portal",
                 objective="Build backend and frontend then integrate and test",
                 repository="https://github.com/example/portal",
+                workspace="C:/worktrees/portal",
                 streams="architecture,backend,frontend,integration,qa",
             ).content
         )
@@ -507,6 +508,7 @@ def test_project_dispatch_spawns_only_dependency_ready_workers(tmp_path):
         assert architecture_record["config"]["model"] == "smart"
         assert architecture_record["config"]["capability"] == "general"
         assert architecture_record["config"]["project_stream"] == "architecture"
+        assert architecture_record["config"]["workspace"] == "C:/worktrees/portal"
 
         second = json.loads(dispatch.execute(project_key=project_key).content)
         assert second["dispatched"][0]["agent_id"] == architecture_worker

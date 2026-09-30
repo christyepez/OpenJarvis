@@ -46,6 +46,28 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
 _AGENT_EXECUTION_TOOLS = frozenset({"quality_advance"})
 
 
+class _DefaultParamsTool:
+    """Delegate a tool while injecting agent-scoped default parameters."""
+
+    def __init__(self, wrapped: Any, defaults: Mapping[str, Any]) -> None:
+        self._wrapped = wrapped
+        self._defaults = dict(defaults)
+
+    @property
+    def spec(self) -> Any:
+        return self._wrapped.spec
+
+    def execute(self, **params: Any) -> Any:
+        merged = {**self._defaults, **params}
+        return self._wrapped.execute(**merged)
+
+    def to_openai_function(self) -> dict[str, Any]:
+        return _openai_spec(self._wrapped)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
+
+
 class _SpecOverrideTool:
     """Delegate execution while exposing an agent-configured OpenAI schema."""
 
@@ -362,12 +384,28 @@ def resolve_agent_tools(
     advertised_specs: list[dict[str, Any]] = []
     owned_resources: list[Any] = []
     seen: set[str] = set()
+    workspace = str(config.get("workspace", "") or "").strip()
+
+    def bind_workspace_defaults(tool: Any) -> Any:
+        if not workspace:
+            return tool
+        original = getattr(tool, "_wrapped", tool)
+        module_name = str(original.__class__.__module__)
+        if not module_name.startswith("openjarvis.tools."):
+            return tool
+        name = _tool_name(tool)
+        if name == "shell_exec":
+            return _DefaultParamsTool(tool, {"working_dir": workspace})
+        if name in {"git_status", "git_diff", "git_commit", "git_log"}:
+            return _DefaultParamsTool(tool, {"repo_path": workspace})
+        return tool
 
     def add_instance(
         tool: Any,
         *,
         advertised_spec: dict[str, Any] | None = None,
     ) -> None:
+        tool = bind_workspace_defaults(tool)
         name = _tool_name(tool)
         if not name or name in seen:
             return

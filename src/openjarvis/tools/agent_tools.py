@@ -300,6 +300,12 @@ class ProjectBootstrapTool(BaseTool):
                     "project_name": {"type": "string"},
                     "objective": {"type": "string"},
                     "repository": {"type": "string"},
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Optional local project workspace or worktree path."
+                        ),
+                    },
                     "streams": {
                         "type": "string",
                         "description": (
@@ -331,6 +337,7 @@ class ProjectBootstrapTool(BaseTool):
         project_name = str(params.get("project_name", "") or "").strip()
         objective = str(params.get("objective", "") or "").strip()
         repository = str(params.get("repository", "") or "").strip()
+        workspace = str(params.get("workspace", "") or "").strip()
         if not project_name or not objective:
             return ToolResult(
                 tool_name=self.tool_id,
@@ -400,6 +407,7 @@ class ProjectBootstrapTool(BaseTool):
                 "model": "smart",
                 "project_name": project_name,
                 "repository": repository,
+                "workspace": workspace,
                 "project_bootstrap_key": key,
                 "project_role": "coordinator",
                 "runtime_machines": runtime_machines,
@@ -462,6 +470,7 @@ class ProjectBootstrapTool(BaseTool):
                     "project_name": project_name,
                     "project_key": key,
                     "repository": repository,
+                    "workspace": workspace,
                     "runtime_machines": runtime_machines,
                     "orchestrator_agent_id": coordinator["id"],
                     "reused": False,
@@ -655,6 +664,7 @@ class ProjectDispatchTool(BaseTool):
                     "project_stream": stream,
                     "project_task_id": task["id"],
                     "repository": str(project_config.get("repository", "") or ""),
+                    "workspace": str(project_config.get("workspace", "") or ""),
                 },
                 agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
             )

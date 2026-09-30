@@ -282,3 +282,67 @@ def test_mcp_tools_can_be_disabled_per_agent() -> None:
 
     assert [tool.spec.name for tool in resolved.instances] == ["shared"]
     assert resolved.mcp_clients == []
+
+
+def test_agent_workspace_binds_native_shell_and_git_defaults(tmp_path) -> None:
+    class _WorkspaceShellTool(BaseTool):
+        tool_id = "shell_exec"
+
+        @property
+        def spec(self) -> ToolSpec:
+            return ToolSpec(name="shell_exec", description="workspace shell")
+
+        def execute(self, **params) -> ToolResult:
+            return ToolResult(
+                tool_name="shell_exec",
+                content=str(params.get("working_dir", "")),
+                success=True,
+            )
+
+    class _WorkspaceGitTool(BaseTool):
+        tool_id = "git_status"
+
+        @property
+        def spec(self) -> ToolSpec:
+            return ToolSpec(name="git_status", description="workspace git")
+
+        def execute(self, **params) -> ToolResult:
+            return ToolResult(
+                tool_name="git_status",
+                content=str(params.get("repo_path", "")),
+                success=True,
+            )
+
+    _WorkspaceShellTool.__module__ = "openjarvis.tools.shell_exec"
+    _WorkspaceGitTool.__module__ = "openjarvis.tools.git_tool"
+    ToolRegistry.register_value("shell_exec", _WorkspaceShellTool)
+    ToolRegistry.register_value("git_status", _WorkspaceGitTool)
+
+    workspace = str(tmp_path / "worktree")
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {
+                "workspace": workspace,
+                "tools": ["shell_exec", "git_status"],
+            },
+        },
+        engine=object(),
+        model="test-model",
+    )
+
+    assert resolved.by_name["shell_exec"].execute(command="pwd").content == workspace
+    assert resolved.by_name["git_status"].execute().content == workspace
+    assert (
+        resolved.by_name["shell_exec"]
+        .execute(
+            command="pwd",
+            working_dir="override",
+        )
+        .content
+        == "override"
+    )
+    assert (
+        resolved.by_name["git_status"].execute(repo_path="override").content
+        == "override"
+    )
