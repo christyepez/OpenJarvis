@@ -308,6 +308,27 @@ export interface OperationsStatus {
     backend: string;
     documents: number | null;
   };
+  projects: {
+    total: number;
+    by_status: Record<string, number>;
+    projects: Array<{
+      project_key: string;
+      name: string;
+      repository: string;
+      orchestrator_agent_id: string;
+      runtime_machines: string[];
+      status: string;
+      streams: Array<{
+        task_id: string;
+        stream: string;
+        wave: string;
+        execution_state: string;
+        order: number;
+        status: string;
+        depends_on_task_ids: string[];
+      }>;
+    }>;
+  };
   quality: {
     total: number;
     by_status: Record<string, number>;

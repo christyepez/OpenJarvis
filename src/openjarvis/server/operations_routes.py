@@ -119,6 +119,97 @@ def _memory_summary(state: Any) -> dict[str, Any]:
     }
 
 
+def _project_summary(manager: Any) -> dict[str, Any]:
+    if manager is None:
+        return {"total": 0, "by_status": {}, "projects": []}
+
+    try:
+        agents = list(manager.list_agents())
+    except Exception:
+        return {"total": 0, "by_status": {}, "projects": []}
+
+    projects: list[dict[str, Any]] = []
+    by_status: dict[str, int] = {}
+
+    for agent in agents:
+        config = agent.get("config", {}) or {}
+        project_key = str(config.get("project_bootstrap_key", "") or "")
+        if not project_key:
+            continue
+
+        agent_id = str(agent.get("id", ""))
+        try:
+            tasks = list(manager.list_tasks(agent_id))
+        except Exception:
+            tasks = []
+
+        streams: list[dict[str, Any]] = []
+        for task in tasks:
+            progress = task.get("progress", {}) or {}
+            stream = str(progress.get("stream", "") or "")
+            if not stream:
+                continue
+            streams.append(
+                {
+                    "task_id": str(task.get("id", "")),
+                    "stream": stream,
+                    "wave": str(progress.get("wave", "") or ""),
+                    "execution_state": str(
+                        progress.get("execution_state", "") or ""
+                    ),
+                    "order": int(progress.get("order", 999) or 0),
+                    "status": str(task.get("status", "unknown")),
+                    "depends_on_task_ids": [
+                        str(value)
+                        for value in (
+                            progress.get("depends_on_task_ids", []) or []
+                        )
+                    ],
+                }
+            )
+
+        streams.sort(
+            key=lambda row: (
+                row["order"],
+                row["stream"],
+            )
+        )
+        statuses = {row["status"] for row in streams}
+        if "failed" in statuses:
+            status = "failed"
+        elif "needs_attention" in statuses:
+            status = "needs_attention"
+        elif "active" in statuses or "running" in statuses:
+            status = "active"
+        elif streams and statuses == {"completed"}:
+            status = "completed"
+        else:
+            status = "pending"
+
+        by_status[status] = by_status.get(status, 0) + 1
+        projects.append(
+            {
+                "project_key": project_key,
+                "name": str(config.get("project_name", "") or agent.get("name", "")),
+                "repository": str(config.get("repository", "") or ""),
+                "orchestrator_agent_id": agent_id,
+                "runtime_machines": [
+                    str(value)
+                    for value in (config.get("runtime_machines", []) or [])
+                ],
+                "status": status,
+                "streams": streams,
+            }
+        )
+
+    projects.sort(key=lambda row: row["name"].casefold())
+    return {
+        "total": len(projects),
+        "by_status": by_status,
+        "projects": projects,
+    }
+
+
 def _quality_summary(manager: Any) -> dict[str, Any]:
     if manager is None:
         return {"total": 0, "by_status": {}, "pipelines": []}
@@ -369,6 +460,7 @@ def operations_status(request: Request) -> dict[str, Any]:
             ],
         },
         "agents": _agent_summary(manager, role_models),
+        "projects": _project_summary(manager),
         "quality": _quality_summary(manager),
         "memory": _memory_summary(state),
         "tools": tooling["tools"],

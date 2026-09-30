@@ -218,3 +218,46 @@ def test_quality_summary_reports_persistent_pipeline(tmp_path) -> None:
         assert anti_slop["findings_count"] == 1
     finally:
         manager.close()
+
+
+def test_project_summary_reports_bootstrap_execution_board(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server.operations_routes import _project_summary
+    from openjarvis.tools.agent_tools import ProjectBootstrapTool
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = ProjectBootstrapTool(manager=manager).execute(
+            project_name="Portal",
+            objective="Build API, Angular UI, Docker deployment and tests",
+            repository="https://github.com/example/portal",
+            runtime_machines="trabajo,MarketingIndo",
+        )
+        assert result.success is True
+
+        summary = _project_summary(manager)
+
+        assert summary["total"] == 1
+        assert summary["by_status"] == {"pending": 1}
+        project = summary["projects"][0]
+        assert project["name"] == "Portal"
+        assert project["repository"] == "https://github.com/example/portal"
+        assert project["runtime_machines"] == ["trabajo", "MarketingIndo"]
+        assert [stream["wave"] for stream in project["streams"]] == [
+            "A",
+            "B",
+            "B",
+            "B",
+            "C",
+            "D",
+        ]
+        assert [stream["stream"] for stream in project["streams"]] == [
+            "architecture",
+            "backend",
+            "frontend",
+            "devops",
+            "integration",
+            "qa",
+        ]
+    finally:
+        manager.close()

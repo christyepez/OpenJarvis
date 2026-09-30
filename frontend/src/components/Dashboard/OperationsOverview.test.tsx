@@ -4,6 +4,7 @@ import {
   AgentRoutingSummary,
   MemorySummary,
   ModelRoleSummary,
+  ProjectBoardSummary,
   QualityRunSummary,
 } from './OperationsOverview';
 
@@ -153,5 +154,65 @@ describe('OperationsOverview quality runs', () => {
     );
 
     expect(html).toContain('No quality runs');
+  });
+});
+
+
+describe('OperationsOverview project execution boards', () => {
+  it('renders project status, waves, streams and runtime machines', () => {
+    const html = renderToStaticMarkup(
+      <ProjectBoardSummary
+        projects={{
+          total: 1,
+          by_status: { pending: 1 },
+          projects: [
+            {
+              project_key: 'portal|repo',
+              name: 'Portal',
+              repository: 'https://github.com/example/portal',
+              orchestrator_agent_id: 'project-1',
+              runtime_machines: ['trabajo', 'MarketingIndo'],
+              status: 'pending',
+              streams: [
+                {
+                  task_id: 'a1',
+                  stream: 'architecture',
+                  wave: 'A',
+                  execution_state: 'READY',
+                  order: 0,
+                  status: 'pending',
+                  depends_on_task_ids: [],
+                },
+                {
+                  task_id: 'b1',
+                  stream: 'backend',
+                  wave: 'B',
+                  execution_state: 'PARALLEL',
+                  order: 1,
+                  status: 'pending',
+                  depends_on_task_ids: ['a1'],
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain('Portal');
+    expect(html).toContain('https://github.com/example/portal');
+    expect(html).toContain('A.architecture: pending');
+    expect(html).toContain('B.backend: pending');
+    expect(html).toContain('runtime: trabajo, MarketingIndo');
+  });
+
+  it('renders an empty project state', () => {
+    const html = renderToStaticMarkup(
+      <ProjectBoardSummary
+        projects={{ total: 0, by_status: {}, projects: [] }}
+      />,
+    );
+
+    expect(html).toContain('No bootstrapped projects');
   });
 });

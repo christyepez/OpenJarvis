@@ -107,6 +107,64 @@ export function MemorySummary({
   );
 }
 
+export function ProjectBoardSummary({
+  projects,
+}: {
+  projects: OperationsStatus['projects'];
+}) {
+  if (!projects.projects.length) {
+    return (
+      <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+        No bootstrapped projects
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {projects.projects.slice(0, 3).map((project) => (
+        <div key={project.project_key}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div
+                className="truncate text-xs font-medium"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                {project.name || project.project_key}
+              </div>
+              {project.repository ? (
+                <div
+                  className="truncate text-[11px]"
+                  style={{ color: 'var(--color-text-tertiary)' }}
+                >
+                  {project.repository}
+                </div>
+              ) : null}
+            </div>
+            <Badge>{project.status}</Badge>
+          </div>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {project.streams.map((stream) => (
+              <Badge key={stream.task_id}>
+                {stream.wave}.{stream.stream}: {stream.status}
+              </Badge>
+            ))}
+          </div>
+          {project.runtime_machines.length ? (
+            <div
+              className="text-[11px] mt-1.5"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              runtime: {project.runtime_machines.join(', ')}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 export function QualityRunSummary({
   quality,
 }: {
@@ -379,7 +437,10 @@ export function OperationsOverview() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 mt-3">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mt-3">
+        <Card title="Projects / execution boards">
+          <ProjectBoardSummary projects={status.projects} />
+        </Card>
         <Card title="Agent routing">
           <AgentRoutingSummary agents={status.agents.agents} />
         </Card>
