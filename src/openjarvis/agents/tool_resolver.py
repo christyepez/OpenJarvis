@@ -38,6 +38,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "agent_kill",
         "task_dispatch",
         "quality_pipeline",
+        "project_advance",
         "project_bootstrap",
         "project_dispatch",
         "project_status",

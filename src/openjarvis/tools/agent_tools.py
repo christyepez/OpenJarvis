@@ -1128,6 +1128,101 @@ class ProjectStatusTool(BaseTool):
         )
 
 
+@ToolRegistry.register("project_advance")
+class ProjectAdvanceTool(BaseTool):
+    """Advance one project by dispatching only dependency-ready streams."""
+
+    tool_id = "project_advance"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance a persisted project safely. Reads project_status first, "
+                "dispatches only READY streams, and otherwise reports whether to "
+                "wait, resolve dependencies, or complete. Never marks work done."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project advance requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        status_result = ProjectStatusTool(manager=self._manager).execute(
+            project_key=project_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        before = json.loads(status_result.content)
+        ready = list(before.get("ready_streams", []) or [])
+
+        dispatch_payload: dict[str, Any] | None = None
+        action = "complete"
+        if ready:
+            dispatch_result = ProjectDispatchTool(manager=self._manager).execute(
+                project_key=project_key,
+                streams=",".join(ready),
+            )
+            if not dispatch_result.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=dispatch_result.content,
+                    success=False,
+                )
+            dispatch_payload = json.loads(dispatch_result.content)
+            action = "dispatched"
+        elif before.get("active_streams"):
+            action = "wait-active"
+        elif before.get("blocked_streams"):
+            action = "resolve-dependencies"
+
+        after_result = ProjectStatusTool(manager=self._manager).execute(
+            project_key=project_key
+        )
+        after = (
+            json.loads(after_result.content)
+            if after_result.success
+            else before
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "action": action,
+                    "dispatched_streams": ready if action == "dispatched" else [],
+                    "dispatch": dispatch_payload,
+                    "status": after,
+                }
+            ),
+            success=True,
+        )
+
+
 @ToolRegistry.register("project_dispatch")
 class ProjectDispatchTool(BaseTool):
     """Dispatch dependency-ready project streams to persistent workers."""
@@ -2315,6 +2410,7 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "ProjectAdvanceTool",
     "ProjectBootstrapTool",
     "ProjectDispatchTool",
     "ProjectStatusTool",

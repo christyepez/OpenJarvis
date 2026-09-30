@@ -13,6 +13,7 @@ from openjarvis.tools.agent_tools import (
     AgentSendTool,
     AgentSpawnTool,
     DomainTaskDispatchTool,
+    ProjectAdvanceTool,
     ProjectBootstrapTool,
     ProjectDispatchTool,
     ProjectStatusTool,
@@ -1081,6 +1082,57 @@ def test_project_status_reports_ready_active_blocked_and_done(tmp_path):
 
 def test_project_status_requires_manager():
     result = ProjectStatusTool().execute(project_key="missing")
+
+    assert result.success is False
+    assert "AgentManager" in result.content
+
+
+
+def test_project_advance_dispatches_only_ready_streams(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                repository="https://github.com/example/portal",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        advance = ProjectAdvanceTool(manager=manager)
+
+        first = json.loads(advance.execute(project_key=project_key).content)
+        assert first["action"] == "dispatched"
+        assert first["dispatched_streams"] == ["architecture"]
+        assert first["status"]["active_streams"] == ["architecture"]
+
+        second = json.loads(advance.execute(project_key=project_key).content)
+        assert second["action"] == "wait-active"
+        assert second["dispatched_streams"] == []
+
+        completed = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture approved",
+        )
+        assert completed.success is True
+
+        third = json.loads(advance.execute(project_key=project_key).content)
+        assert third["action"] == "dispatched"
+        assert third["dispatched_streams"] == ["backend"]
+        assert third["status"]["active_streams"] == ["backend"]
+        assert "integration" in third["status"]["blocked_streams"]
+        assert "qa" in third["status"]["blocked_streams"]
+    finally:
+        manager.close()
+
+
+def test_project_advance_requires_manager():
+    result = ProjectAdvanceTool().execute(project_key="missing")
 
     assert result.success is False
     assert "AgentManager" in result.content
