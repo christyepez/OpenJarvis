@@ -11,6 +11,7 @@ from openjarvis.tools.agent_tools import (
     AgentSendTool,
     AgentSpawnTool,
     ProjectBootstrapTool,
+    ProjectDispatchTool,
     ProjectStreamUpdateTool,
     QualityAdvanceTool,
     QualityGateUpdateTool,
@@ -472,6 +473,65 @@ def test_project_bootstrap_reuses_existing_project(tmp_path):
         assert second["reused"] is True
         assert second["orchestrator_agent_id"] == first["orchestrator_agent_id"]
         assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_project_dispatch_spawns_only_dependency_ready_workers(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend and frontend then integrate and test",
+                repository="https://github.com/example/portal",
+                streams="architecture,backend,frontend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatch = ProjectDispatchTool(manager=manager)
+
+        first = json.loads(dispatch.execute(project_key=project_key).content)
+        assert [item["stream"] for item in first["dispatched"]] == ["architecture"]
+        assert {item["stream"] for item in first["blocked"]} == {
+            "backend",
+            "frontend",
+            "integration",
+            "qa",
+        }
+        architecture_worker = first["dispatched"][0]["agent_id"]
+        architecture_record = manager.get_agent(architecture_worker)
+        assert architecture_record is not None
+        assert architecture_record["config"]["model"] == "smart"
+        assert architecture_record["config"]["capability"] == "general"
+        assert architecture_record["config"]["project_stream"] == "architecture"
+
+        second = json.loads(dispatch.execute(project_key=project_key).content)
+        assert second["dispatched"][0]["agent_id"] == architecture_worker
+        assert second["dispatched"][0]["reused"] is True
+        assert len(manager.list_agents()) == 2
+
+        architecture_done = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture contracts approved",
+        )
+        assert architecture_done.success is True
+
+        wave_b = json.loads(dispatch.execute(project_key=project_key).content)
+        new_workers = [
+            item for item in wave_b["dispatched"] if item.get("reused") is False
+        ]
+        assert [item["stream"] for item in new_workers] == ["backend", "frontend"]
+        assert {item["capability"] for item in new_workers} == {"coding"}
+        assert {item["stream"] for item in wave_b["blocked"]} == {
+            "integration",
+            "qa",
+        }
+        assert len(manager.list_agents()) == 4
     finally:
         manager.close()
 

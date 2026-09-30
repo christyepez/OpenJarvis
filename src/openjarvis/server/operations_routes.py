@@ -134,7 +134,10 @@ def _project_summary(manager: Any) -> dict[str, Any]:
     for agent in agents:
         config = agent.get("config", {}) or {}
         project_key = str(config.get("project_bootstrap_key", "") or "")
-        if not project_key:
+        project_role = str(config.get("project_role", "") or "")
+        project_stream = str(config.get("project_stream", "") or "")
+        is_coordinator = project_role == "coordinator" or not project_stream
+        if not project_key or not is_coordinator:
             continue
 
         agent_id = str(agent.get("id", ""))

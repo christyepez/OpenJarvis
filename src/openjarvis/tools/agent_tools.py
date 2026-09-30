@@ -341,7 +341,14 @@ class ProjectBootstrapTool(BaseTool):
         key = _project_key(project_name, repository)
         for record in self._manager.list_agents():
             config = record.get("config", {}) or {}
-            if str(config.get("project_bootstrap_key", "") or "") == key:
+            same_project = (
+                str(config.get("project_bootstrap_key", "") or "") == key
+            )
+            coordinator = (
+                str(config.get("project_role", "") or "") == "coordinator"
+                or not str(config.get("project_stream", "") or "")
+            )
+            if same_project and coordinator:
                 return ToolResult(
                     tool_name=self.tool_id,
                     content=json.dumps(
@@ -394,6 +401,7 @@ class ProjectBootstrapTool(BaseTool):
                 "project_name": project_name,
                 "repository": repository,
                 "project_bootstrap_key": key,
+                "project_role": "coordinator",
                 "runtime_machines": runtime_machines,
             },
             agent_id=f"project-{uuid.uuid4().hex[:10]}",
@@ -465,6 +473,233 @@ class ProjectBootstrapTool(BaseTool):
         )
 
 
+_PROJECT_CAPABILITIES = {
+    "architecture": "general",
+    "backend": "coding",
+    "frontend": "coding",
+    "data": "general",
+    "devops": "coding",
+    "security": "coding",
+    "documentation": "general",
+    "integration": "coding",
+    "qa": "coding",
+}
+
+
+@ToolRegistry.register("project_dispatch")
+class ProjectDispatchTool(BaseTool):
+    """Dispatch dependency-ready project streams to persistent workers."""
+
+    tool_id = "project_dispatch"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Create one managed specialist per dependency-ready project stream. "
+                "Dispatch is idempotent and never bypasses persisted dependencies."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated stream filter. "
+                            "Omit to dispatch every currently ready stream."
+                        ),
+                    },
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def _find_project(self, project_key: str) -> dict[str, Any] | None:
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            same_project = (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+            )
+            coordinator = (
+                str(config.get("project_role", "") or "") == "coordinator"
+                or not str(config.get("project_stream", "") or "")
+            )
+            if same_project and coordinator:
+                return record
+        return None
+
+    @staticmethod
+    def _dependencies_ready(
+        task: dict[str, Any],
+        task_by_id: dict[str, dict[str, Any]],
+    ) -> bool:
+        progress = task.get("progress", {}) or {}
+        dependency_ids = [
+            str(value)
+            for value in (progress.get("depends_on_task_ids", []) or [])
+        ]
+        return all(
+            str((task_by_id.get(dep_id) or {}).get("status", "missing"))
+            == "completed"
+            for dep_id in dependency_ids
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project dispatch requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        if not project_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key is required.",
+                success=False,
+            )
+
+        requested = {
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        }
+        invalid = sorted(requested - set(_PROJECT_STREAMS))
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+
+        project = self._find_project(project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        project_config = project.get("config", {}) or {}
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        existing_workers: dict[str, dict[str, Any]] = {}
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") != project_key:
+                continue
+            stream = str(config.get("project_stream", "") or "").casefold()
+            if stream and str(agent.get("status", "")) != "archived":
+                existing_workers[stream] = agent
+
+        dispatched: list[dict[str, Any]] = []
+        blocked: list[dict[str, Any]] = []
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream or (requested and stream not in requested):
+                continue
+
+            existing = existing_workers.get(stream)
+            if existing is not None:
+                dispatched.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "agent_id": existing["id"],
+                        "status": str(existing.get("status", "idle")),
+                        "reused": True,
+                    }
+                )
+                continue
+
+            if str(task.get("status", "")) != "pending":
+                continue
+            if not self._dependencies_ready(task, task_by_id):
+                blocked.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "reason": "dependencies",
+                    }
+                )
+                continue
+
+            capability = _PROJECT_CAPABILITIES.get(stream, "general")
+            instruction = (
+                f"Project: {project_config.get('project_name', '')}\n"
+                f"Repository: {project_config.get('repository', '')}\n"
+                f"Stream: {stream}\n"
+                f"Objective: {task.get('description', '')}"
+            )
+            worker = self._manager.create_from_template(
+                "project_specialist",
+                f"{project_config.get('project_name', 'Project')} - {stream}",
+                overrides={
+                    "instruction": instruction,
+                    "model": "smart",
+                    "capability": capability,
+                    "project_bootstrap_key": project_key,
+                    "project_role": "specialist",
+                    "project_stream": stream,
+                    "project_task_id": task["id"],
+                    "repository": str(project_config.get("repository", "") or ""),
+                },
+                agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
+            )
+            if stream == "integration":
+                execution_state = "INTEGRATE"
+            elif str(progress.get("wave", "")) == "B":
+                execution_state = "PARALLEL"
+            else:
+                execution_state = "READY"
+            progress.update(
+                {
+                    "execution_state": execution_state,
+                    "worker_agent_id": worker["id"],
+                }
+            )
+            self._manager.update_task(
+                task["id"],
+                status="active",
+                progress=progress,
+            )
+            existing_workers[stream] = worker
+            dispatched.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "agent_id": worker["id"],
+                    "status": "active",
+                    "capability": capability,
+                    "reused": False,
+                }
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "dispatched": dispatched,
+                    "blocked": blocked,
+                }
+            ),
+            success=True,
+        )
+
+
 # ---------------------------------------------------------------------------
 # ProjectStreamUpdateTool
 # ---------------------------------------------------------------------------
@@ -517,7 +752,14 @@ class ProjectStreamUpdateTool(BaseTool):
     def _find_project(self, project_key: str) -> dict[str, Any] | None:
         for record in self._manager.list_agents():
             config = record.get("config", {}) or {}
-            if str(config.get("project_bootstrap_key", "") or "") == project_key:
+            same_project = (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+            )
+            coordinator = (
+                str(config.get("project_role", "") or "") == "coordinator"
+                or not str(config.get("project_stream", "") or "")
+            )
+            if same_project and coordinator:
                 return record
         return None
 
@@ -1419,6 +1661,7 @@ __all__ = [
     "AgentSendTool",
     "AgentSpawnTool",
     "ProjectBootstrapTool",
+    "ProjectDispatchTool",
     "ProjectStreamUpdateTool",
     "QualityAdvanceTool",
     "QualityGateUpdateTool",
