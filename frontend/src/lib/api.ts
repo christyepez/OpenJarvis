@@ -354,6 +354,7 @@ export interface OperationsStatus {
   agents: {
     total: number;
     by_status: Record<string, number>;
+    by_domain: Record<string, number>;
     agents: Array<{
       id: string;
       name: string;
@@ -364,6 +365,7 @@ export interface OperationsStatus {
       model_policy: string;
       routed_model: string | null;
       project_stream: string;
+      domain: string;
     }>;
     tasks: {
       total: number;

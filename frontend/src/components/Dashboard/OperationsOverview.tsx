@@ -76,7 +76,7 @@ export function AgentRoutingSummary({
               style={{ color: 'var(--color-text-tertiary)' }}
             >
               {[
-                agent.project_stream,
+                agent.project_stream || agent.domain,
                 agent.capability || 'general',
                 agent.model_policy || 'default',
               ]
@@ -338,6 +338,13 @@ export function OperationsOverview() {
           </div>
           <div className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
             {activeAgents} active/available
+          </div>
+          <div className="flex flex-wrap gap-1 mt-2">
+            {Object.entries(status.agents.by_domain)
+              .slice(0, 4)
+              .map(([domain, count]) => (
+                <Badge key={domain}>{domain}: {count}</Badge>
+              ))}
           </div>
         </Card>
       </div>

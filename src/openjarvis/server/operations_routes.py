@@ -304,6 +304,7 @@ def _agent_summary(
         return {
             "total": 0,
             "by_status": {},
+            "by_domain": {},
             "agents": [],
             "tasks": {"total": 0, "by_status": {}, "items": []},
         }
@@ -313,10 +314,12 @@ def _agent_summary(
         return {
             "total": 0,
             "by_status": {},
+            "by_domain": {},
             "agents": [],
             "tasks": {"total": 0, "by_status": {}, "items": []},
         }
     by_status: dict[str, int] = {}
+    by_domain: dict[str, int] = {}
     compact: list[dict[str, Any]] = []
     task_by_status: dict[str, int] = {}
     task_items: list[dict[str, Any]] = []
@@ -338,6 +341,10 @@ def _agent_summary(
             except Exception:
                 capability = "general"
 
+        domain = str(config.get("domain", "") or "").strip().casefold()
+        if domain:
+            by_domain[domain] = by_domain.get(domain, 0) + 1
+
         configured_model = str(config.get("model", "") or "").strip()
         if configured_model and configured_model.casefold() != "smart":
             routed_model = configured_model
@@ -358,6 +365,7 @@ def _agent_summary(
                 "project_stream": str(
                     config.get("project_stream", "") or ""
                 ),
+                "domain": domain,
             }
         )
         try:
@@ -378,6 +386,7 @@ def _agent_summary(
     return {
         "total": len(compact),
         "by_status": by_status,
+        "by_domain": by_domain,
         "agents": compact,
         "tasks": {
             "total": len(task_items),
