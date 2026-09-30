@@ -346,6 +346,69 @@ class AgentExecutor:
                 exc_info=True,
             )
 
+    def _update_project_task(
+        self,
+        agent_id: str,
+        *,
+        result: AgentResult | None = None,
+        error: AgentTickError | None = None,
+    ) -> None:
+        """Persist a project specialist handoff without auto-completing the stream."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("project_task_id", "") or "")
+            if not task_id:
+                return
+
+            task = self._manager.get_task(task_id)
+            if not task:
+                return
+
+            progress = dict(task.get("progress", {}) or {})
+            findings = list(task.get("findings", []) or [])
+            handoff_ready = bool(
+                error is None
+                and result is not None
+                and ((result.content or "").strip() or result.tool_results)
+            )
+            progress.update(
+                {
+                    "worker_agent_id": agent_id,
+                    "handoff_ready": handoff_ready,
+                    "worker_status": (
+                        "completed_tick"
+                        if error is None
+                        else "needs_attention"
+                    ),
+                    "last_handoff_at": time.time(),
+                }
+            )
+
+            if result is not None and (result.content or "").strip():
+                findings.append(result.content)
+            elif error is not None:
+                findings.append(str(error))
+
+            self._manager.update_task(
+                task_id,
+                status=(
+                    str(task.get("status", "active") or "active")
+                    if error is None
+                    else "needs_attention"
+                ),
+                progress=progress,
+                findings=findings[-10:],
+            )
+        except Exception:
+            logger.debug(
+                "Failed to persist project handoff for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+
     def run_ephemeral(
         self,
         agent_type: str,
@@ -1186,6 +1249,11 @@ class AgentExecutor:
             else "needs_attention"
             if isinstance(error, EscalateError)
             else "failed"
+        )
+        self._update_project_task(
+            agent_id,
+            result=result,
+            error=error,
         )
         self._update_quality_task(
             agent_id,

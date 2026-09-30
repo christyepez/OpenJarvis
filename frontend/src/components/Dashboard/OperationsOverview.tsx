@@ -156,6 +156,9 @@ export function ProjectBoardSummary({
             {project.active_streams.length ? (
               <Badge>ACTIVE: {project.active_streams.length}</Badge>
             ) : null}
+            {project.handoff_ready_streams.length ? (
+              <Badge>REVIEW: {project.handoff_ready_streams.length}</Badge>
+            ) : null}
             {project.blocked_streams.length ? (
               <Badge>BLOCKED: {project.blocked_streams.length}</Badge>
             ) : null}
@@ -178,6 +181,12 @@ export function ProjectBoardSummary({
                   {stream.wave}.{stream.stream}: {stream.status}
                 </Badge>
                 {stream.branch ? <Badge>{stream.branch}</Badge> : null}
+                {stream.handoff_ready ? (
+                  <Badge>handoff ready: {stream.findings_count}</Badge>
+                ) : null}
+                {stream.worker_status ? (
+                  <Badge>{stream.worker_status}</Badge>
+                ) : null}
                 {stream.worker_agent_id ? (
                   <span
                     className="text-[10px]"

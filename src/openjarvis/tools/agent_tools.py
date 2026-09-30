@@ -1042,6 +1042,7 @@ class ProjectStatusTool(BaseTool):
         rows: list[dict[str, Any]] = []
         ready: list[str] = []
         active: list[str] = []
+        handoff_ready_streams: list[str] = []
         blocked: list[str] = []
         done: list[str] = []
 
@@ -1072,6 +1073,8 @@ class ProjectStatusTool(BaseTool):
             elif task_status in {"active", "running", "in_progress"} or worker:
                 state = "ACTIVE"
                 active.append(stream)
+                if bool(progress.get("handoff_ready", False)):
+                    handoff_ready_streams.append(stream)
             elif not unmet:
                 state = "READY"
                 ready.append(stream)
@@ -1088,7 +1091,13 @@ class ProjectStatusTool(BaseTool):
                     "dependencies": dependencies,
                     "unmet_dependencies": unmet,
                     "worker_agent_id": str((worker or {}).get("id", "") or ""),
-                    "worker_status": str((worker or {}).get("status", "") or ""),
+                    "worker_status": str(
+                        progress.get("worker_status", "")
+                        or (worker or {}).get("status", "")
+                        or ""
+                    ),
+                    "handoff_ready": bool(progress.get("handoff_ready", False)),
+                    "findings_count": len(task.get("findings", []) or []),
                     "workspace": str(progress.get("workspace", "") or ""),
                     "branch": str(progress.get("branch", "") or ""),
                 }
@@ -1096,6 +1105,8 @@ class ProjectStatusTool(BaseTool):
 
         if ready:
             next_action = f"dispatch:{','.join(ready)}"
+        elif handoff_ready_streams:
+            next_action = f"review-handoff:{','.join(handoff_ready_streams)}"
         elif active:
             next_action = f"wait-active:{','.join(active)}"
         elif blocked:
@@ -1118,6 +1129,7 @@ class ProjectStatusTool(BaseTool):
                     },
                     "ready_streams": ready,
                     "active_streams": active,
+                    "handoff_ready_streams": handoff_ready_streams,
                     "blocked_streams": blocked,
                     "done_streams": done,
                     "next_action": next_action,
@@ -1195,6 +1207,8 @@ class ProjectAdvanceTool(BaseTool):
                 )
             dispatch_payload = json.loads(dispatch_result.content)
             action = "dispatched"
+        elif before.get("handoff_ready_streams"):
+            action = "review-handoff"
         elif before.get("active_streams"):
             action = "wait-active"
         elif before.get("blocked_streams"):

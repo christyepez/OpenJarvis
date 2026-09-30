@@ -446,3 +446,77 @@ def test_quality_reviewer_waits_for_previous_stage(executor, manager):
         updated = manager.get_task(task["id"])
         assert updated["status"] == "completed"
         assert updated["progress"]["depends_on_task_id"] == dependency["id"]
+
+
+
+def test_project_specialist_tick_persists_handoff_without_auto_complete(
+    executor, manager
+) -> None:
+    coordinator = manager.create_agent(
+        name="Project Coordinator",
+        agent_type="orchestrator",
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "backend: implement API",
+        status="active",
+    )
+    worker = manager.create_agent(
+        name="Backend Specialist",
+        agent_type="orchestrator",
+        config={
+            "project_role": "specialist",
+            "project_stream": "backend",
+            "project_task_id": task["id"],
+        },
+    )
+
+    result = AgentResult(
+        content="Implemented API; pytest 24 passed; ready for review."
+    )
+    with patch.object(executor, "_invoke_agent", return_value=result):
+        executor.execute_tick(worker["id"])
+
+    updated = manager.get_task(task["id"])
+    assert updated["status"] == "active"
+    assert updated["progress"]["handoff_ready"] is True
+    assert updated["progress"]["worker_status"] == "completed_tick"
+    assert updated["progress"]["worker_agent_id"] == worker["id"]
+    assert updated["progress"]["last_handoff_at"] > 0
+    assert updated["findings"] == [result.content]
+
+
+def test_project_specialist_failure_marks_handoff_needs_attention(
+    executor, manager
+) -> None:
+    coordinator = manager.create_agent(
+        name="Project Coordinator",
+        agent_type="orchestrator",
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "backend: implement API",
+        status="active",
+    )
+    worker = manager.create_agent(
+        name="Backend Specialist",
+        agent_type="orchestrator",
+        config={
+            "project_role": "specialist",
+            "project_stream": "backend",
+            "project_task_id": task["id"],
+        },
+    )
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        side_effect=FatalError("worker failed"),
+    ):
+        executor.execute_tick(worker["id"])
+
+    updated = manager.get_task(task["id"])
+    assert updated["status"] == "needs_attention"
+    assert updated["progress"]["handoff_ready"] is False
+    assert updated["progress"]["worker_status"] == "needs_attention"
+    assert "worker failed" in updated["findings"][-1]

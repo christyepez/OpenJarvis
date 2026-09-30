@@ -321,6 +321,7 @@ export interface OperationsStatus {
       next_action: string;
       ready_streams: string[];
       active_streams: string[];
+      handoff_ready_streams: string[];
       blocked_streams: string[];
       done_streams: string[];
       streams: Array<{
@@ -331,6 +332,9 @@ export interface OperationsStatus {
         order: number;
         status: string;
         worker_agent_id: string;
+        worker_status: string;
+        handoff_ready: boolean;
+        findings_count: number;
         branch: string;
         workspace: string;
         depends_on_task_ids: string[];

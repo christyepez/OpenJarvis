@@ -182,6 +182,7 @@ describe('OperationsOverview project execution boards', () => {
               next_action: 'dispatch:architecture',
               ready_streams: ['architecture'],
               active_streams: ['backend'],
+              handoff_ready_streams: ['backend'],
               blocked_streams: ['integration'],
               done_streams: [],
               streams: [
@@ -193,6 +194,9 @@ describe('OperationsOverview project execution boards', () => {
                   order: 0,
                   status: 'pending',
                   worker_agent_id: '',
+                  worker_status: '',
+                  handoff_ready: false,
+                  findings_count: 0,
                   branch: '',
                   workspace: '',
                   depends_on_task_ids: [],
@@ -205,6 +209,9 @@ describe('OperationsOverview project execution boards', () => {
                   order: 1,
                   status: 'active',
                   worker_agent_id: 'project-backend-1',
+                  worker_status: 'completed_tick',
+                  handoff_ready: true,
+                  findings_count: 1,
                   branch: 'openjarvis/portal/backend',
                   workspace: 'C:/worktrees/portal/backend',
                   depends_on_task_ids: ['a1'],
@@ -220,11 +227,14 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('https://github.com/example/portal');
     expect(html).toContain('READY: 1');
     expect(html).toContain('ACTIVE: 1');
+    expect(html).toContain('REVIEW: 1');
     expect(html).toContain('BLOCKED: 1');
     expect(html).toContain('next: dispatch:architecture');
     expect(html).toContain('A.architecture: pending');
     expect(html).toContain('B.backend: active');
     expect(html).toContain('openjarvis/portal/backend');
+    expect(html).toContain('handoff ready: 1');
+    expect(html).toContain('completed_tick');
     expect(html).toContain('worker: project-backend-1');
     expect(html).toContain('runtime: trabajo, MarketingIndo');
   });

@@ -170,6 +170,13 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "worker_agent_id": str(
                         progress.get("worker_agent_id", "") or ""
                     ),
+                    "worker_status": str(
+                        progress.get("worker_status", "") or ""
+                    ),
+                    "handoff_ready": bool(
+                        progress.get("handoff_ready", False)
+                    ),
+                    "findings_count": len(task.get("findings", []) or []),
                     "branch": str(progress.get("branch", "") or ""),
                     "workspace": str(progress.get("workspace", "") or ""),
                     "depends_on_task_ids": [
@@ -223,6 +230,9 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 "next_action": str(board.get("next_action", "") or ""),
                 "ready_streams": list(board.get("ready_streams", []) or []),
                 "active_streams": list(board.get("active_streams", []) or []),
+                "handoff_ready_streams": list(
+                    board.get("handoff_ready_streams", []) or []
+                ),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
                 "streams": streams,
