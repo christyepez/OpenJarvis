@@ -318,6 +318,11 @@ export interface OperationsStatus {
       orchestrator_agent_id: string;
       runtime_machines: string[];
       status: string;
+      next_action: string;
+      ready_streams: string[];
+      active_streams: string[];
+      blocked_streams: string[];
+      done_streams: string[];
       streams: Array<{
         task_id: string;
         stream: string;

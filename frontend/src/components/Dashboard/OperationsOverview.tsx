@@ -149,6 +149,28 @@ export function ProjectBoardSummary({
             </div>
             <Badge>{project.status}</Badge>
           </div>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {project.ready_streams.length ? (
+              <Badge>READY: {project.ready_streams.length}</Badge>
+            ) : null}
+            {project.active_streams.length ? (
+              <Badge>ACTIVE: {project.active_streams.length}</Badge>
+            ) : null}
+            {project.blocked_streams.length ? (
+              <Badge>BLOCKED: {project.blocked_streams.length}</Badge>
+            ) : null}
+            {project.done_streams.length ? (
+              <Badge>DONE: {project.done_streams.length}</Badge>
+            ) : null}
+          </div>
+          {project.next_action ? (
+            <div
+              className="text-[11px] mt-1.5"
+              style={{ color: 'var(--color-text-tertiary)' }}
+            >
+              next: {project.next_action}
+            </div>
+          ) : null}
           <div className="space-y-1.5 mt-1.5">
             {project.streams.map((stream) => (
               <div key={stream.task_id} className="flex flex-wrap items-center gap-1">

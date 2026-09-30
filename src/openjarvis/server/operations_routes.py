@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -131,6 +132,10 @@ def _project_summary(manager: Any) -> dict[str, Any]:
     projects: list[dict[str, Any]] = []
     by_status: dict[str, int] = {}
 
+    from openjarvis.tools.agent_tools import ProjectStatusTool
+
+    status_tool = ProjectStatusTool(manager=manager)
+
     for agent in agents:
         config = agent.get("config", {}) or {}
         project_key = str(config.get("project_bootstrap_key", "") or "")
@@ -195,6 +200,15 @@ def _project_summary(manager: Any) -> dict[str, Any]:
             status = "pending"
 
         by_status[status] = by_status.get(status, 0) + 1
+
+        board: dict[str, Any] = {}
+        try:
+            board_result = status_tool.execute(project_key=project_key)
+            if board_result.success:
+                board = json.loads(board_result.content)
+        except Exception:
+            board = {}
+
         projects.append(
             {
                 "project_key": project_key,
@@ -206,6 +220,11 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     for value in (config.get("runtime_machines", []) or [])
                 ],
                 "status": status,
+                "next_action": str(board.get("next_action", "") or ""),
+                "ready_streams": list(board.get("ready_streams", []) or []),
+                "active_streams": list(board.get("active_streams", []) or []),
+                "blocked_streams": list(board.get("blocked_streams", []) or []),
+                "done_streams": list(board.get("done_streams", []) or []),
                 "streams": streams,
             }
         )

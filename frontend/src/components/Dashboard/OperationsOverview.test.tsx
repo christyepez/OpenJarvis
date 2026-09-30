@@ -179,6 +179,11 @@ describe('OperationsOverview project execution boards', () => {
               orchestrator_agent_id: 'project-1',
               runtime_machines: ['trabajo', 'MarketingIndo'],
               status: 'pending',
+              next_action: 'dispatch:architecture',
+              ready_streams: ['architecture'],
+              active_streams: ['backend'],
+              blocked_streams: ['integration'],
+              done_streams: [],
               streams: [
                 {
                   task_id: 'a1',
@@ -213,6 +218,10 @@ describe('OperationsOverview project execution boards', () => {
 
     expect(html).toContain('Portal');
     expect(html).toContain('https://github.com/example/portal');
+    expect(html).toContain('READY: 1');
+    expect(html).toContain('ACTIVE: 1');
+    expect(html).toContain('BLOCKED: 1');
+    expect(html).toContain('next: dispatch:architecture');
     expect(html).toContain('A.architecture: pending');
     expect(html).toContain('B.backend: active');
     expect(html).toContain('openjarvis/portal/backend');
