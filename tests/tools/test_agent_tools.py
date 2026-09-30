@@ -10,6 +10,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    ProjectBootstrapTool,
     QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
@@ -372,6 +373,106 @@ def test_template_spawn_without_manager_is_rejected():
 
     assert result.success is False
     assert "AgentManager" in result.content
+
+
+def test_project_bootstrap_requires_manager():
+    result = ProjectBootstrapTool().execute(
+        project_name="Portal",
+        objective="Build an API and Angular frontend",
+    )
+
+    assert result.success is False
+    assert "AgentManager" in result.content
+
+
+def test_project_bootstrap_creates_persistent_execution_board(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = ProjectBootstrapTool(manager=manager).execute(
+            project_name="Portal",
+            objective=(
+                "Build a .NET API, Angular frontend, SQL data model, "
+                "Docker deployment and OAuth security"
+            ),
+            repository="https://github.com/example/portal",
+            runtime_machines="trabajo,MarketingIndo",
+        )
+
+        assert result.success is True
+        payload = json.loads(result.content)
+        assert payload["reused"] is False
+        assert payload["runtime_machines"] == ["trabajo", "MarketingIndo"]
+        assert payload["streams"] == [
+            "architecture",
+            "backend",
+            "frontend",
+            "data",
+            "devops",
+            "security",
+            "integration",
+            "qa",
+        ]
+
+        orchestrator = manager.get_agent(payload["orchestrator_agent_id"])
+        assert orchestrator is not None
+        assert orchestrator["config"]["model"] == "smart"
+        assert orchestrator["config"]["project_name"] == "Portal"
+
+        tasks = payload["tasks"]
+        by_stream = {task["progress"]["stream"]: task for task in tasks}
+        assert by_stream["architecture"]["progress"]["wave"] == "A"
+        assert by_stream["architecture"]["progress"]["execution_state"] == "READY"
+
+        architecture_id = by_stream["architecture"]["id"]
+        for stream in ("backend", "frontend", "data", "devops", "security"):
+            assert by_stream[stream]["progress"]["wave"] == "B"
+            assert by_stream[stream]["progress"]["execution_state"] == "PARALLEL"
+            assert by_stream[stream]["progress"]["depends_on_task_ids"] == [
+                architecture_id
+            ]
+
+        integration_id = by_stream["integration"]["id"]
+        assert by_stream["integration"]["progress"]["wave"] == "C"
+        assert set(by_stream["integration"]["progress"]["depends_on_task_ids"]) == {
+            by_stream[stream]["id"]
+            for stream in ("backend", "frontend", "data", "devops", "security")
+        }
+        assert by_stream["qa"]["progress"]["wave"] == "D"
+        assert by_stream["qa"]["progress"]["depends_on_task_ids"] == [
+            integration_id
+        ]
+    finally:
+        manager.close()
+
+
+def test_project_bootstrap_reuses_existing_project(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        tool = ProjectBootstrapTool(manager=manager)
+        first = json.loads(
+            tool.execute(
+                project_name="OpenJarvis",
+                objective="Improve local agent orchestration",
+                repository="https://github.com/christyepez/OpenJarvis",
+            ).content
+        )
+        second_result = tool.execute(
+            project_name="OpenJarvis",
+            objective="Improve local agent orchestration",
+            repository="https://github.com/christyepez/OpenJarvis",
+        )
+        second = json.loads(second_result.content)
+
+        assert second_result.success is True
+        assert second["reused"] is True
+        assert second["orchestrator_agent_id"] == first["orchestrator_agent_id"]
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
 
 
 def test_quality_pipeline_requires_manager():

@@ -237,6 +237,235 @@ class AgentSpawnTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# ProjectBootstrapTool
+# ---------------------------------------------------------------------------
+
+
+_PROJECT_STREAMS = (
+    "architecture",
+    "backend",
+    "frontend",
+    "data",
+    "devops",
+    "security",
+    "documentation",
+    "integration",
+    "qa",
+)
+
+
+def _project_key(project_name: str, repository: str) -> str:
+    raw = f"{project_name}|{repository}".casefold()
+    return "".join(ch for ch in raw if ch.isalnum() or ch in {"-", "_", "/", ":"})
+
+
+def _infer_project_streams(objective: str) -> list[str]:
+    text = objective.casefold()
+    streams = ["architecture"]
+    hints = {
+        "backend": ("api", "backend", ".net", "python", "service", "microservice"),
+        "frontend": ("frontend", "angular", "react", "ui", "web", "flutter"),
+        "data": ("data", "database", "sql", "power bi", "etl", "analytics"),
+        "devops": ("docker", "pipeline", "ci/cd", "devops", "deploy", "kubernetes"),
+        "security": ("security", "oauth", "rbac", "jwt", "zero trust"),
+        "documentation": ("documentation", "docs", "hld", "lld", "c4", "adr"),
+    }
+    for stream, keywords in hints.items():
+        if any(keyword in text for keyword in keywords):
+            streams.append(stream)
+    streams.extend(["integration", "qa"])
+    return list(dict.fromkeys(streams))
+
+
+@ToolRegistry.register("project_bootstrap")
+class ProjectBootstrapTool(BaseTool):
+    """Create a persistent project orchestrator and parallel execution board."""
+
+    tool_id = "project_bootstrap"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Bootstrap a project into one persistent orchestrator plus an "
+                "ordered execution board. Reuses an existing bootstrap when found."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string"},
+                    "objective": {"type": "string"},
+                    "repository": {"type": "string"},
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated streams. Supported: "
+                            + ", ".join(_PROJECT_STREAMS)
+                        ),
+                    },
+                    "runtime_machines": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated runtime machines."
+                        ),
+                    },
+                },
+                "required": ["project_name", "objective"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project bootstrap requires an AgentManager.",
+                success=False,
+            )
+
+        project_name = str(params.get("project_name", "") or "").strip()
+        objective = str(params.get("objective", "") or "").strip()
+        repository = str(params.get("repository", "") or "").strip()
+        if not project_name or not objective:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_name and objective are required.",
+                success=False,
+            )
+
+        key = _project_key(project_name, repository)
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") == key:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=json.dumps(
+                        {
+                            "project_name": project_name,
+                            "project_key": key,
+                            "orchestrator_agent_id": record["id"],
+                            "reused": True,
+                            "tasks": self._manager.list_tasks(record["id"]),
+                        }
+                    ),
+                    success=True,
+                )
+
+        requested_streams = [
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        ]
+        streams = requested_streams or _infer_project_streams(objective)
+        invalid = [stream for stream in streams if stream not in _PROJECT_STREAMS]
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+        streams = list(dict.fromkeys(streams))
+        if "architecture" not in streams:
+            streams.insert(0, "architecture")
+        if "integration" not in streams:
+            streams.append("integration")
+        if "qa" not in streams:
+            streams.append("qa")
+        stream_order = {name: index for index, name in enumerate(_PROJECT_STREAMS)}
+        streams.sort(key=lambda name: stream_order[name])
+
+        runtime_machines = [
+            item.strip()
+            for item in str(params.get("runtime_machines", "") or "").split(",")
+            if item.strip()
+        ]
+
+        coordinator = self._manager.create_from_template(
+            "project_orchestrator",
+            f"{project_name} Orchestrator",
+            overrides={
+                "instruction": objective,
+                "model": "smart",
+                "project_name": project_name,
+                "repository": repository,
+                "project_bootstrap_key": key,
+                "runtime_machines": runtime_machines,
+            },
+            agent_id=f"project-{uuid.uuid4().hex[:10]}",
+        )
+
+        tasks: list[dict[str, Any]] = []
+        architecture_task_id = ""
+        implementation_task_ids: list[str] = []
+        integration_task_id = ""
+        for index, stream in enumerate(streams):
+            if stream == "architecture":
+                wave = "A"
+                state = "READY"
+                dependencies: list[str] = []
+            elif stream == "integration":
+                wave = "C"
+                state = "SERIAL"
+                dependencies = list(implementation_task_ids)
+            elif stream == "qa":
+                wave = "D"
+                state = "SERIAL"
+                dependencies = (
+                    [integration_task_id]
+                    if integration_task_id
+                    else list(implementation_task_ids)
+                )
+            else:
+                wave = "B"
+                state = "PARALLEL"
+                dependencies = [architecture_task_id] if architecture_task_id else []
+
+            task = self._manager.create_task(
+                coordinator["id"],
+                f"{stream}: {objective}",
+                status="pending",
+            )
+            progress = {
+                "project_key": key,
+                "stream": stream,
+                "wave": wave,
+                "execution_state": state,
+                "depends_on_task_ids": dependencies,
+                "order": index,
+            }
+            task = self._manager.update_task(task["id"], progress=progress)
+            if stream == "architecture":
+                architecture_task_id = task["id"]
+            elif stream == "integration":
+                integration_task_id = task["id"]
+            elif stream != "qa":
+                implementation_task_ids.append(task["id"])
+            tasks.append(task)
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_name": project_name,
+                    "project_key": key,
+                    "repository": repository,
+                    "runtime_machines": runtime_machines,
+                    "orchestrator_agent_id": coordinator["id"],
+                    "reused": False,
+                    "streams": streams,
+                    "tasks": tasks,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # QualityPipelineTool
 # ---------------------------------------------------------------------------
 
@@ -1003,6 +1232,7 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "ProjectBootstrapTool",
     "QualityAdvanceTool",
     "QualityGateUpdateTool",
     "QualityPipelineTool",
