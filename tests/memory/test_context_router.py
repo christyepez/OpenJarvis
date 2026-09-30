@@ -1,4 +1,9 @@
-from openjarvis.memory.context_router import ContextRouter, MemoryDomain
+from openjarvis.memory.context_router import (
+    ContextRouter,
+    MemoryDomain,
+    filter_results_by_domain,
+)
+from openjarvis.tools.storage._stubs import RetrievalResult
 
 
 def test_context_router_detects_project_domain() -> None:
@@ -16,6 +21,8 @@ def test_context_router_detects_personal_finance_without_forcing_project() -> No
 
     assert route.primary is MemoryDomain.FINANCE
     assert MemoryDomain.PROJECT not in route.secondary
+
+
 def test_context_router_supports_explicit_domain() -> None:
     route = ContextRouter().route(
         "status update",
@@ -30,3 +37,20 @@ def test_context_router_keeps_general_queries_general() -> None:
     route = ContextRouter().route("Tell me something interesting")
 
     assert route.primary is MemoryDomain.GENERAL
+
+
+def test_filter_results_by_domain_is_case_insensitive() -> None:
+    results = [
+        RetrievalResult(
+            content="finance",
+            metadata={"domain": "Finance"},
+        ),
+        RetrievalResult(
+            content="personal",
+            metadata={"domain": "personal"},
+        ),
+    ]
+
+    filtered = filter_results_by_domain(results, "FINANCE")
+
+    assert [result.content for result in filtered] == ["finance"]

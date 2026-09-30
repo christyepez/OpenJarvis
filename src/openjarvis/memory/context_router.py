@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Iterable
 
 
 class MemoryDomain(str, Enum):
@@ -87,4 +88,28 @@ class ContextRouter:
         return ContextRoute(primary=primary, secondary=secondary)
 
 
-__all__ = ["ContextRoute", "ContextRouter", "MemoryDomain"]
+def filter_results_by_domain(
+    results: Iterable[Any],
+    domain: str,
+) -> list[Any]:
+    """Filter retrieval results by normalized domain metadata."""
+    rows = list(results)
+    normalized = str(domain or "").strip().casefold()
+    if not normalized:
+        return rows
+
+    filtered: list[Any] = []
+    for result in rows:
+        metadata = getattr(result, "metadata", {}) or {}
+        result_domain = str(metadata.get("domain", "") or "").strip().casefold()
+        if result_domain == normalized:
+            filtered.append(result)
+    return filtered
+
+
+__all__ = [
+    "ContextRoute",
+    "ContextRouter",
+    "MemoryDomain",
+    "filter_results_by_domain",
+]

@@ -69,6 +69,28 @@ def _prefer_local_workers(system: Any) -> bool:
     return getattr(governance, "prefer_local", False) is True
 
 
+def _retrieve_scoped_memory(
+    backend: Any,
+    query: str,
+    *,
+    top_k: int,
+    min_score: float,
+    domain: str = "",
+) -> list[Any]:
+    """Retrieve memory while respecting an optional agent domain."""
+    from openjarvis.memory.context_router import filter_results_by_domain
+
+    normalized_domain = str(domain or "").strip().casefold()
+    fetch_k = top_k * 4 if normalized_domain else top_k
+    results = backend.retrieve(query, top_k=fetch_k)
+    results = filter_results_by_domain(results, normalized_domain)
+    return [
+        result
+        for result in results
+        if float(getattr(result, "score", 0.0) or 0.0) >= min_score
+    ][:top_k]
+
+
 def _resolve_managed_worker_model(
     config: dict[str, Any],
     system: Any,
@@ -943,13 +965,13 @@ class AgentExecutor:
                     query = instruction
 
                 if query:
-                    results = self._system.memory_backend.retrieve(
+                    memory_results = _retrieve_scoped_memory(
+                        self._system.memory_backend,
                         query,
                         top_k=ctx_cfg.top_k,
+                        min_score=ctx_cfg.min_score,
+                        domain=str(config.get("domain", "") or ""),
                     )
-                    memory_results = [
-                        r for r in results if r.score >= ctx_cfg.min_score
-                    ]
                     if memory_results:
                         # Prepend retrieved context to input for agents
                         # that don't inspect AgentContext.memory_results

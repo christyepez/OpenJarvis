@@ -11,6 +11,7 @@ from typing import Any
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.memory.context_router import filter_results_by_domain
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 from openjarvis.tools.storage._stubs import MemoryBackend
 
@@ -23,18 +24,6 @@ def _memory_metadata(params: dict[str, Any]) -> dict[str, Any]:
         if value not in (None, ""):
             metadata[key] = value
     return metadata
-
-
-def _filter_domain(results: list[Any], domain: str) -> list[Any]:
-    """Filter retrieval results by domain metadata when requested."""
-    if not domain:
-        return results
-    expected = domain.casefold()
-    return [
-        result
-        for result in results
-        if str((result.metadata or {}).get("domain", "")).casefold() == expected
-    ]
 
 
 @ToolRegistry.register("memory_store")
@@ -179,7 +168,7 @@ class MemoryRetrieveTool(BaseTool):
             domain = str(params.get("domain", "") or "")
             fetch_k = top_k * 4 if domain else top_k
             results = self._backend.retrieve(query, top_k=fetch_k)
-            results = _filter_domain(results, domain)[:top_k]
+            results = filter_results_by_domain(results, domain)[:top_k]
             if not results:
                 return ToolResult(
                     tool_name="memory_retrieve",
@@ -257,7 +246,7 @@ class MemorySearchTool(BaseTool):
             domain = str(params.get("domain", "") or "")
             fetch_k = top_k * 4 if domain else top_k
             results = self._backend.retrieve(query, top_k=fetch_k)
-            results = _filter_domain(results, domain)[:top_k]
+            results = filter_results_by_domain(results, domain)[:top_k]
             if not results:
                 return ToolResult(
                     tool_name="memory_search",

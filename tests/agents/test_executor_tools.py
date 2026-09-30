@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from openjarvis.agents._stubs import AgentResult
-from openjarvis.agents.executor import AgentExecutor
+from openjarvis.agents.executor import AgentExecutor, _retrieve_scoped_memory
 from openjarvis.agents.manager import AgentManager
 from openjarvis.agents.tool_resolver import ResolvedAgentTools
 from openjarvis.connectors.store import KnowledgeStore
@@ -19,6 +19,7 @@ from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.registry import AgentRegistry, ToolRegistry
 from openjarvis.core.types import Role, ToolResult
 from openjarvis.tools._stubs import BaseTool, ToolSpec
+from openjarvis.tools.storage._stubs import RetrievalResult
 from tests.agents.fake_engine import FakeEngine
 from tests.agents.scenario_harness import FakeSystem
 
@@ -663,3 +664,46 @@ def test_executor_closes_resolver_resources_when_pre_run_setup_fails(
         resource.close.assert_called_once_with()
     finally:
         manager.close()
+
+
+def test_retrieve_scoped_memory_filters_domain_and_expands_window() -> None:
+    class _Backend:
+        def __init__(self) -> None:
+            self.top_k = 0
+
+        def retrieve(self, query, *, top_k=5, **kwargs):
+            self.top_k = top_k
+            return [
+                RetrievalResult(
+                    content="personal",
+                    score=0.99,
+                    metadata={"domain": "personal"},
+                ),
+                RetrievalResult(
+                    content="finance-high",
+                    score=0.90,
+                    metadata={"domain": "finance"},
+                ),
+                RetrievalResult(
+                    content="project",
+                    score=0.88,
+                    metadata={"domain": "project"},
+                ),
+                RetrievalResult(
+                    content="finance-low",
+                    score=0.40,
+                    metadata={"domain": "finance"},
+                ),
+            ]
+
+    backend = _Backend()
+    results = _retrieve_scoped_memory(
+        backend,
+        "budget",
+        top_k=2,
+        min_score=0.5,
+        domain="finance",
+    )
+
+    assert backend.top_k == 8
+    assert [result.content for result in results] == ["finance-high"]
