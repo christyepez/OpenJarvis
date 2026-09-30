@@ -12,6 +12,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    DomainTaskDispatchTool,
     ProjectBootstrapTool,
     ProjectDispatchTool,
     ProjectStreamUpdateTool,
@@ -956,3 +957,69 @@ def test_project_stream_capability_uses_multimodal_for_diagram_docs() -> None:
         )
         == "multimodal"
     )
+
+
+def test_task_dispatch_creates_finance_worker_and_reuses_it(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        tool = DomainTaskDispatchTool(manager=manager)
+        first = tool.execute(
+            instruction="Review my bank budget and expenses for this month"
+        )
+        assert first.success is True
+        payload = json.loads(first.content)
+        assert payload["domain"] == "finance"
+        assert payload["capability"] == "general"
+        assert payload["model"] == "smart"
+        assert payload["reused"] is False
+
+        record = manager.get_agent(payload["agent_id"])
+        assert record is not None
+        assert record["config"]["domain"] == "finance"
+        assert record["config"]["model"] == "smart"
+        assert record["config"]["domain_role"] == "specialist"
+
+        second = tool.execute(
+            instruction="Review my bank budget and expenses for this month"
+        )
+        reused = json.loads(second.content)
+        assert second.success is True
+        assert reused["agent_id"] == payload["agent_id"]
+        assert reused["reused"] is True
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_routes_visual_work_to_multimodal(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = DomainTaskDispatchTool(manager=manager).execute(
+            instruction="Review this dashboard screenshot for visual defects",
+            domain="professional",
+        )
+        payload = json.loads(result.content)
+        assert result.success is True
+        assert payload["domain"] == "professional"
+        assert payload["capability"] == "multimodal"
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_rejects_unknown_domain(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = DomainTaskDispatchTool(manager=manager).execute(
+            instruction="Do something useful",
+            domain="unsupported-domain",
+        )
+        assert result.success is False
+        assert "Unsupported domain" in result.content
+    finally:
+        manager.close()

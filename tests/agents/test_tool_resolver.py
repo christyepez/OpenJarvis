@@ -12,6 +12,7 @@ from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
 from openjarvis.tools import description_loader
 from openjarvis.tools._stubs import BaseTool, ToolSpec
+from openjarvis.tools.agent_tools import DomainTaskDispatchTool
 
 
 class _AlphaTool(BaseTool):
@@ -346,3 +347,20 @@ def test_agent_workspace_binds_native_shell_and_git_defaults(tmp_path) -> None:
         resolved.by_name["git_status"].execute(repo_path="override").content
         == "override"
     )
+
+
+def test_task_dispatch_receives_live_agent_manager() -> None:
+    ToolRegistry.register_value("task_dispatch", DomainTaskDispatchTool)
+    manager = object()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {"tools": ["task_dispatch"]},
+        },
+        engine=object(),
+        model="test-model",
+        agent_manager=manager,
+    )
+
+    assert resolved.by_name["task_dispatch"]._manager is manager

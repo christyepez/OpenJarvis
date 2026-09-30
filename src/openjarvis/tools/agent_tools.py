@@ -239,6 +239,191 @@ class AgentSpawnTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskDispatchTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_dispatch")
+class DomainTaskDispatchTool(BaseTool):
+    """Dispatch a bounded non-project task to a governed managed worker."""
+
+    tool_id = "task_dispatch"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Dispatch a bounded task to a managed local-first specialist. "
+                "The task is classified by domain and capability and is reused "
+                "idempotently when the same task is dispatched again."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instruction": {
+                        "type": "string",
+                        "description": "Task or question for the specialist.",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": (
+                            "Optional memory/task domain: personal, professional, "
+                            "project, knowledge, finance, learning, communication, "
+                            "temporal, or general."
+                        ),
+                    },
+                    "capability": {
+                        "type": "string",
+                        "description": (
+                            "Optional worker capability: general, coding, multimodal."
+                        ),
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Optional explicit model. Defaults to 'smart' local-first "
+                            "routing."
+                        ),
+                    },
+                    "task_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional stable idempotency key. Derived from the task "
+                            "when omitted."
+                        ),
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional display name for the managed worker.",
+                    },
+                },
+                "required": ["instruction"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    @staticmethod
+    def _stable_key(domain: str, instruction: str) -> str:
+        raw = f"{domain}|{instruction.strip().casefold()}"
+        return uuid.uuid5(uuid.NAMESPACE_URL, raw).hex[:16]
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task dispatch requires an AgentManager.",
+                success=False,
+            )
+
+        instruction = str(params.get("instruction", "") or "").strip()
+        if not instruction:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="instruction is required.",
+                success=False,
+            )
+
+        from openjarvis.governance.execution_router import classify_task_capability
+        from openjarvis.memory.context_router import ContextRouter, MemoryDomain
+
+        explicit_domain = str(params.get("domain", "") or "").strip().casefold()
+        try:
+            route = ContextRouter().route(
+                instruction,
+                explicit_domain=explicit_domain or None,
+            )
+        except ValueError:
+            allowed = ", ".join(domain.value for domain in MemoryDomain)
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported domain. Supported: {allowed}",
+                success=False,
+            )
+
+        domain = route.primary.value
+        explicit_capability = str(
+            params.get("capability", "") or ""
+        ).strip().casefold()
+        if explicit_capability and explicit_capability not in {
+            "general",
+            "coding",
+            "multimodal",
+        }:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Unsupported capability. Supported: general, coding, multimodal"
+                ),
+                success=False,
+            )
+        capability = explicit_capability or classify_task_capability(instruction)
+        model = str(params.get("model", "") or "").strip() or "smart"
+        task_key = (
+            str(params.get("task_key", "") or "").strip()
+            or self._stable_key(domain, instruction)
+        )
+
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            same_key = str(config.get("domain_task_key", "") or "") == task_key
+            if same_key and str(agent.get("status", "")) != "archived":
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=json.dumps(
+                        {
+                            "agent_id": agent["id"],
+                            "domain": domain,
+                            "capability": str(
+                                config.get("capability", capability) or capability
+                            ),
+                            "model": str(config.get("model", model) or model),
+                            "task_key": task_key,
+                            "reused": True,
+                        }
+                    ),
+                    success=True,
+                )
+
+        name = str(params.get("name", "") or "").strip()
+        worker = self._manager.create_from_template(
+            "domain_specialist",
+            name or f"{domain.title()} Specialist",
+            overrides={
+                "instruction": instruction,
+                "model": model,
+                "capability": capability,
+                "domain": domain,
+                "domain_task_key": task_key,
+                "domain_role": "specialist",
+            },
+            agent_id=f"task-{domain}-{uuid.uuid4().hex[:8]}",
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "agent_id": worker["id"],
+                    "domain": domain,
+                    "secondary_domains": [
+                        secondary.value for secondary in route.secondary
+                    ],
+                    "capability": capability,
+                    "model": model,
+                    "task_key": task_key,
+                    "reused": False,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectBootstrapTool
 # ---------------------------------------------------------------------------
 
