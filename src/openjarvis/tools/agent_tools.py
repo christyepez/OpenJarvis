@@ -1640,6 +1640,12 @@ class ProjectHandoffReviewTool(BaseTool):
                 success=True,
             )
 
+        self._manager.update_task(
+            target["id"],
+            status=str(target.get("status", "active") or "active"),
+            progress=progress,
+            findings=findings[-10:],
+        )
         completion = ProjectStreamUpdateTool(manager=self._manager).execute(
             project_key=project_key,
             stream=stream,
@@ -1652,19 +1658,6 @@ class ProjectHandoffReviewTool(BaseTool):
                 content=completion.content,
                 success=False,
             )
-
-        completed = self._manager.get_task(target["id"])
-        completed_progress = dict((completed or {}).get("progress", {}) or {})
-        completed_findings = list((completed or {}).get("findings", []) or [])
-        completed_progress.update(progress)
-        completed_progress["execution_state"] = "DONE"
-        completed_findings.append(f"REVIEW APPROVE: {review_evidence}")
-        self._manager.update_task(
-            target["id"],
-            status="completed",
-            progress=completed_progress,
-            findings=completed_findings[-10:],
-        )
 
         return ToolResult(
             tool_name=self.tool_id,
@@ -1832,6 +1825,21 @@ class ProjectStreamUpdateTool(BaseTool):
                         "action": "blocked",
                         "dependencies": blocked,
                     }
+                ),
+                success=False,
+            )
+
+        if (
+            status == "completed"
+            and str(progress.get("worker_agent_id", "") or "")
+            and str(progress.get("handoff_decision", "") or "").casefold()
+            != "approve"
+        ):
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Worker-assigned streams require an approved handoff via "
+                    "project_handoff_review before completion."
                 ),
                 success=False,
             )

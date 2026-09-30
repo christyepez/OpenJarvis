@@ -545,11 +545,11 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
         first = json.loads(dispatch.execute(project_key=project_key).content)
         assert [item["stream"] for item in first["dispatched"]] == ["architecture"]
 
-        architecture = ProjectStreamUpdateTool(manager=manager).execute(
-            project_key=project_key,
-            stream="architecture",
-            status="completed",
-            evidence="Architecture approved",
+        architecture = _approve_project_handoff(
+            manager,
+            project_key,
+            "architecture",
+            "Architecture approved",
         )
         assert architecture.success is True
 
@@ -616,11 +616,11 @@ def test_project_dispatch_spawns_only_dependency_ready_workers(tmp_path):
         assert second["dispatched"][0]["reused"] is True
         assert len(manager.list_agents()) == 2
 
-        architecture_done = ProjectStreamUpdateTool(manager=manager).execute(
-            project_key=project_key,
-            stream="architecture",
-            status="completed",
-            evidence="Architecture contracts approved",
+        architecture_done = _approve_project_handoff(
+            manager,
+            project_key,
+            "architecture",
+            "Architecture contracts approved",
         )
         assert architecture_done.success is True
 
@@ -1065,11 +1065,11 @@ def test_project_status_reports_ready_active_blocked_and_done(tmp_path):
         )
         assert architecture_row["worker_agent_id"]
 
-        completed = ProjectStreamUpdateTool(manager=manager).execute(
-            project_key=project_key,
-            stream="architecture",
-            status="completed",
-            evidence="Architecture reviewed and approved",
+        completed = _approve_project_handoff(
+            manager,
+            project_key,
+            "architecture",
+            "Architecture reviewed and approved",
         )
         assert completed.success is True
 
@@ -1114,11 +1114,11 @@ def test_project_advance_dispatches_only_ready_streams(tmp_path):
         assert second["action"] == "wait-active"
         assert second["dispatched_streams"] == []
 
-        completed = ProjectStreamUpdateTool(manager=manager).execute(
-            project_key=project_key,
-            stream="architecture",
-            status="completed",
-            evidence="Architecture approved",
+        completed = _approve_project_handoff(
+            manager,
+            project_key,
+            "architecture",
+            "Architecture approved",
         )
         assert completed.success is True
 
@@ -1176,11 +1176,11 @@ def test_project_advance_starts_only_newly_dispatched_workers(tmp_path):
         assert second["started_agents"] == []
         assert executor.agent_ids == [architecture_agent]
 
-        completed = ProjectStreamUpdateTool(manager=manager).execute(
-            project_key=project_key,
-            stream="architecture",
-            status="completed",
-            evidence="Architecture approved",
+        completed = _approve_project_handoff(
+            manager,
+            project_key,
+            "architecture",
+            "Architecture approved",
         )
         assert completed.success is True
 
@@ -1213,7 +1213,10 @@ def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
     progress.update(
         {
             "handoff_ready": True,
-            "worker_agent_id": f"worker-{stream}",
+            "worker_agent_id": (
+                str(progress.get("worker_agent_id", "") or "")
+                or f"worker-{stream}"
+            ),
             "worker_status": "completed_tick",
         }
     )
@@ -1224,6 +1227,22 @@ def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
         findings=["Worker implementation complete; tests reported passing."],
     )
     return task["id"]
+
+
+
+def _approve_project_handoff(
+    manager,
+    project_key: str,
+    stream: str,
+    evidence: str,
+):
+    _mark_project_handoff_ready(manager, project_key, stream)
+    return ProjectHandoffReviewTool(manager=manager).execute(
+        project_key=project_key,
+        stream=stream,
+        decision="approve",
+        review_evidence=evidence,
+    )
 
 
 def test_project_handoff_review_requires_ready_handoff(tmp_path):
@@ -1336,5 +1355,41 @@ def test_project_handoff_review_rejection_requires_rework(tmp_path):
         assert task["progress"]["handoff_ready"] is False
         assert task["progress"]["handoff_decision"] == "reject"
         assert "Missing rollback" in task["findings"][-1]
+    finally:
+        manager.close()
+
+
+
+def test_worker_assigned_stream_cannot_complete_without_handoff_review(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        ProjectDispatchTool(manager=manager).execute(project_key=project_key)
+
+        bypass = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Worker says it is done.",
+        )
+
+        assert bypass.success is False
+        assert "project_handoff_review" in bypass.content
+        status = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert status["active_streams"] == ["architecture"]
+        assert status["done_streams"] == []
     finally:
         manager.close()
