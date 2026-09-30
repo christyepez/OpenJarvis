@@ -11,6 +11,7 @@ from openjarvis.tools.agent_tools import (
     AgentSendTool,
     AgentSpawnTool,
     ProjectBootstrapTool,
+    ProjectStreamUpdateTool,
     QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
@@ -471,6 +472,90 @@ def test_project_bootstrap_reuses_existing_project(tmp_path):
         assert second["reused"] is True
         assert second["orchestrator_agent_id"] == first["orchestrator_agent_id"]
         assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_project_stream_update_enforces_dependencies_and_evidence(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        bootstrap = ProjectBootstrapTool(manager=manager).execute(
+            project_name="Portal",
+            objective="Build backend service and validate release",
+            repository="https://github.com/example/portal",
+            streams="architecture,backend,integration,qa",
+        )
+        payload = json.loads(bootstrap.content)
+        project_key = payload["project_key"]
+        update = ProjectStreamUpdateTool(manager=manager)
+
+        blocked_backend = update.execute(
+            project_key=project_key,
+            stream="backend",
+            status="active",
+        )
+        assert blocked_backend.success is False
+        assert json.loads(blocked_backend.content)["action"] == "blocked"
+
+        no_evidence = update.execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+        )
+        assert no_evidence.success is False
+        assert "requires evidence" in no_evidence.content
+
+        architecture = update.execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="ADR approved; contracts stable",
+        )
+        architecture_payload = json.loads(architecture.content)
+        assert architecture.success is True
+        assert architecture_payload["execution_state"] == "DONE"
+
+        backend_active = update.execute(
+            project_key=project_key,
+            stream="backend",
+            status="active",
+        )
+        assert backend_active.success is True
+        assert json.loads(backend_active.content)["execution_state"] == "PARALLEL"
+
+        integration_blocked = update.execute(
+            project_key=project_key,
+            stream="integration",
+            status="active",
+        )
+        assert integration_blocked.success is False
+
+        backend_done = update.execute(
+            project_key=project_key,
+            stream="backend",
+            status="completed",
+            evidence="Backend tests passed",
+        )
+        assert backend_done.success is True
+
+        integration = update.execute(
+            project_key=project_key,
+            stream="integration",
+            status="completed",
+            evidence="Integration smoke tests passed",
+        )
+        assert integration.success is True
+        assert json.loads(integration.content)["execution_state"] == "DONE"
+
+        qa = update.execute(
+            project_key=project_key,
+            stream="qa",
+            status="active",
+        )
+        assert qa.success is True
+        assert json.loads(qa.content)["execution_state"] == "READY"
     finally:
         manager.close()
 

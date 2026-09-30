@@ -466,6 +466,192 @@ class ProjectBootstrapTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# ProjectStreamUpdateTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("project_stream_update")
+class ProjectStreamUpdateTool(BaseTool):
+    """Advance one project stream while enforcing persisted dependencies."""
+
+    tool_id = "project_stream_update"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Update a bootstrapped project stream. Dependency gates are "
+                "enforced and completed streams require concrete evidence."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "completed",
+                            "failed",
+                            "needs_attention",
+                        ],
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete validation evidence. Required for completed."
+                        ),
+                    },
+                },
+                "required": ["project_key", "stream", "status"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def _find_project(self, project_key: str) -> dict[str, Any] | None:
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") == project_key:
+                return record
+        return None
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project stream update requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        status = str(params.get("status", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+
+        if not project_key or not stream:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key and stream are required.",
+                success=False,
+            )
+        if status not in {"active", "completed", "failed", "needs_attention"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project stream status: {status}",
+                success=False,
+            )
+        if status == "completed" and not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Completing a project stream requires evidence.",
+                success=False,
+            )
+
+        project = self._find_project(project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        target = next(
+            (
+                task
+                for task in tasks
+                if str((task.get("progress", {}) or {}).get("stream", "")).casefold()
+                == stream
+            ),
+            None,
+        )
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project stream not found: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        dependency_ids = [
+            str(value)
+            for value in (progress.get("depends_on_task_ids", []) or [])
+        ]
+        blocked = [
+            {
+                "task_id": dep_id,
+                "stream": str(
+                    ((task_by_id.get(dep_id) or {}).get("progress", {}) or {}).get(
+                        "stream", ""
+                    )
+                ),
+                "status": str((task_by_id.get(dep_id) or {}).get("status", "missing")),
+            }
+            for dep_id in dependency_ids
+            if str((task_by_id.get(dep_id) or {}).get("status", "missing"))
+            != "completed"
+        ]
+        if status in {"active", "completed"} and blocked:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "project_key": project_key,
+                        "stream": stream,
+                        "action": "blocked",
+                        "dependencies": blocked,
+                    }
+                ),
+                success=False,
+            )
+
+        if status == "completed":
+            execution_state = "DONE"
+        elif status in {"failed", "needs_attention"}:
+            execution_state = "BLOCKED"
+        elif stream == "integration":
+            execution_state = "INTEGRATE"
+        elif str(progress.get("wave", "")) == "B":
+            execution_state = "PARALLEL"
+        else:
+            execution_state = "READY"
+
+        progress["execution_state"] = execution_state
+        findings = list(target.get("findings", []) or [])
+        if evidence:
+            findings.append(evidence)
+
+        updated = self._manager.update_task(
+            target["id"],
+            status=status,
+            progress=progress,
+            findings=findings,
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "task_id": target["id"],
+                    "status": updated["status"],
+                    "execution_state": progress["execution_state"],
+                    "evidence": findings,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # QualityPipelineTool
 # ---------------------------------------------------------------------------
 
@@ -1233,6 +1419,7 @@ __all__ = [
     "AgentSendTool",
     "AgentSpawnTool",
     "ProjectBootstrapTool",
+    "ProjectStreamUpdateTool",
     "QualityAdvanceTool",
     "QualityGateUpdateTool",
     "QualityPipelineTool",
