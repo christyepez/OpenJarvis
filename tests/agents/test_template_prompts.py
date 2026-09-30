@@ -62,3 +62,21 @@ def test_create_qwen_mm_template_preserves_multimodal_capability(tmp_path):
     assert agent["config"]["capability"] == "multimodal"
     assert "dashboard screenshot" in agent["config"]["system_prompt"]
     mgr.close()
+
+
+
+def test_project_orchestrator_requires_status_before_dispatch(tmp_path):
+    mgr = AgentManager(db_path=str(tmp_path / "test.db"))
+    templates = {item["id"]: item for item in mgr.list_templates()}
+    template = templates["project_orchestrator"]
+
+    assert "project_status" in template["tools"]
+    agent = mgr.create_from_template(
+        "project_orchestrator",
+        "Project Coordinator",
+        overrides={"instruction": "Implement the project safely"},
+    )
+    prompt = agent["config"]["system_prompt"]
+    assert "project_status before project_dispatch" in prompt
+    assert "Dispatch only READY streams" in prompt
+    mgr.close()

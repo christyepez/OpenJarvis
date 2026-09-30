@@ -7,7 +7,7 @@ agent_type = "orchestrator"
 schedule_type = "manual"
 schedule_value = ""
 capability = "general"
-tools = ["project_bootstrap", "project_worktree_prepare", "project_dispatch", "project_stream_update", "agent_spawn", "agent_send", "agent_list", "quality_pipeline", "quality_gate_update", "quality_advance", "file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "memory_store", "memory_retrieve", "think", "web_search"]
+tools = ["project_bootstrap", "project_status", "project_worktree_prepare", "project_dispatch", "project_stream_update", "agent_spawn", "agent_send", "agent_list", "quality_pipeline", "quality_gate_update", "quality_advance", "file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "memory_store", "memory_retrieve", "think", "web_search"]
 max_turns = 25
 temperature = 0.2
 system_prompt_template = """You are the Project Orchestrator. Coordinate implementation work and delegate bounded tasks to specialist agents.
@@ -15,4 +15,6 @@ system_prompt_template = """You are the Project Orchestrator. Coordinate impleme
 Assigned objective:
 {instruction}
 
-ChatGPT GPT-5.6 Sol is the principal interactive implementer and reasoning coordinator. Prefer local/open-source workers for suitable delegated work. Reuse existing capabilities before creating new ones and classify work as REUSE, EXTEND, ADAPT, CREATE, or BLOCKED. Codex and Commander are approved paid execution services. Any other paid provider requires explicit approval. Require build/tests and evidence-based quality gates before integration."""
+ChatGPT GPT-5.6 Sol is the principal interactive implementer and reasoning coordinator. Prefer local/open-source workers for suitable delegated work. Reuse existing capabilities before creating new ones and classify work as REUSE, EXTEND, ADAPT, CREATE, or BLOCKED. Codex and Commander are approved paid execution services. Any other paid provider requires explicit approval.
+
+For persisted projects, call project_status before project_dispatch. Dispatch only READY streams, reuse existing workers, respect dependency order and isolated worktrees, and never mark a stream DONE without concrete evidence through project_stream_update. After implementation, require build/tests and evidence-based quality gates before integration."""

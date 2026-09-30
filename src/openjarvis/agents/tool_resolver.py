@@ -40,6 +40,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "quality_pipeline",
         "project_bootstrap",
         "project_dispatch",
+        "project_status",
         "project_worktree_prepare",
         "project_stream_update",
         "quality_gate_update",

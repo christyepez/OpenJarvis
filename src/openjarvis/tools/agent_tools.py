@@ -982,6 +982,152 @@ def _project_stream_capability(stream: str, objective: str) -> str:
     return baseline
 
 
+@ToolRegistry.register("project_status")
+class ProjectStatusTool(BaseTool):
+    """Return a compact execution-board snapshot for one project."""
+
+    tool_id = "project_status"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Inspect a project execution board before dispatching work. "
+                "Returns READY/BLOCKED/ACTIVE/DONE streams, dependencies, "
+                "assigned workers, and a deterministic next action."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project status requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        workers: dict[str, dict[str, Any]] = {}
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") != project_key:
+                continue
+            stream = str(config.get("project_stream", "") or "").casefold()
+            if stream and str(agent.get("status", "")) != "archived":
+                workers[stream] = agent
+
+        rows: list[dict[str, Any]] = []
+        ready: list[str] = []
+        active: list[str] = []
+        blocked: list[str] = []
+        done: list[str] = []
+
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream:
+                continue
+            dependencies = [
+                str(value)
+                for value in (progress.get("depends_on_task_ids", []) or [])
+            ]
+            unmet = [
+                dep_id
+                for dep_id in dependencies
+                if str((task_by_id.get(dep_id) or {}).get("status", "missing"))
+                != "completed"
+            ]
+            task_status = str(task.get("status", "pending") or "pending").casefold()
+            worker = workers.get(stream)
+
+            if task_status == "completed":
+                state = "DONE"
+                done.append(stream)
+            elif task_status in {"active", "running", "in_progress"} or worker:
+                state = "ACTIVE"
+                active.append(stream)
+            elif not unmet:
+                state = "READY"
+                ready.append(stream)
+            else:
+                state = "BLOCKED"
+                blocked.append(stream)
+
+            rows.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "state": state,
+                    "task_status": task_status,
+                    "dependencies": dependencies,
+                    "unmet_dependencies": unmet,
+                    "worker_agent_id": str((worker or {}).get("id", "") or ""),
+                    "worker_status": str((worker or {}).get("status", "") or ""),
+                    "workspace": str(progress.get("workspace", "") or ""),
+                    "branch": str(progress.get("branch", "") or ""),
+                }
+            )
+
+        if ready:
+            next_action = f"dispatch:{','.join(ready)}"
+        elif active:
+            next_action = f"wait-active:{','.join(active)}"
+        elif blocked:
+            next_action = f"resolve-dependencies:{','.join(blocked)}"
+        else:
+            next_action = "complete"
+
+        project_config = project.get("config", {}) or {}
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "project_name": str(project_config.get("project_name", "") or ""),
+                    "summary": {
+                        "ready": len(ready),
+                        "active": len(active),
+                        "blocked": len(blocked),
+                        "done": len(done),
+                    },
+                    "ready_streams": ready,
+                    "active_streams": active,
+                    "blocked_streams": blocked,
+                    "done_streams": done,
+                    "next_action": next_action,
+                    "streams": rows,
+                }
+            ),
+            success=True,
+        )
+
+
 @ToolRegistry.register("project_dispatch")
 class ProjectDispatchTool(BaseTool):
     """Dispatch dependency-ready project streams to persistent workers."""
@@ -2171,6 +2317,7 @@ __all__ = [
     "AgentSpawnTool",
     "ProjectBootstrapTool",
     "ProjectDispatchTool",
+    "ProjectStatusTool",
     "ProjectWorktreePrepareTool",
     "ProjectStreamUpdateTool",
     "QualityAdvanceTool",

@@ -15,6 +15,7 @@ from openjarvis.tools.agent_tools import (
     DomainTaskDispatchTool,
     ProjectBootstrapTool,
     ProjectDispatchTool,
+    ProjectStatusTool,
     ProjectStreamUpdateTool,
     ProjectWorktreePrepareTool,
     QualityAdvanceTool,
@@ -1023,3 +1024,63 @@ def test_task_dispatch_rejects_unknown_domain(tmp_path) -> None:
         assert "Unsupported domain" in result.content
     finally:
         manager.close()
+
+
+
+def test_project_status_reports_ready_active_blocked_and_done(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Build backend then integrate and test",
+                repository="https://github.com/example/portal",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+        status_tool = ProjectStatusTool(manager=manager)
+
+        initial = json.loads(status_tool.execute(project_key=project_key).content)
+        assert initial["ready_streams"] == ["architecture"]
+        assert initial["blocked_streams"] == ["backend", "integration", "qa"]
+        assert initial["next_action"] == "dispatch:architecture"
+
+        dispatched = json.loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert dispatched["dispatched"][0]["stream"] == "architecture"
+
+        assigned = json.loads(status_tool.execute(project_key=project_key).content)
+        assert assigned["active_streams"] == ["architecture"]
+        assert assigned["next_action"] == "wait-active:architecture"
+        architecture_row = next(
+            row for row in assigned["streams"] if row["stream"] == "architecture"
+        )
+        assert architecture_row["worker_agent_id"]
+
+        completed = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture reviewed and approved",
+        )
+        assert completed.success is True
+
+        next_wave = json.loads(status_tool.execute(project_key=project_key).content)
+        assert "architecture" in next_wave["done_streams"]
+        assert next_wave["ready_streams"] == ["backend"]
+        assert next_wave["next_action"] == "dispatch:backend"
+    finally:
+        manager.close()
+
+
+def test_project_status_requires_manager():
+    result = ProjectStatusTool().execute(project_key="missing")
+
+    assert result.success is False
+    assert "AgentManager" in result.content
