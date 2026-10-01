@@ -492,6 +492,18 @@ export async function executeOperationsProjectNextAction(
   return res.json();
 }
 
+export async function probeOperationsMachines(): Promise<
+  OperationsStatus['machines']
+> {
+  const res = await apiFetch('/v1/operations/machines/probe', {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to probe execution machines: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {

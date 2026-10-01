@@ -71,6 +71,7 @@ describe('OperationsOverview machine routing', () => {
   it('renders selected fallback runtime capabilities', () => {
     const html = renderToStaticMarkup(
       <MachineRoutingSummary
+        onProbe={() => undefined}
         execution={{ preferred_plane: 'commander', commander_connected: true }}
         machines={{
           selected: 'MarketingIndo',
@@ -97,6 +98,7 @@ describe('OperationsOverview machine routing', () => {
     expect(html).toContain('gpu');
     expect(html).toContain('commander:');
     expect(html).toContain('connected');
+    expect(html).toContain('Refresh machines');
   });
 });
 

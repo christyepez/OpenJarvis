@@ -3,6 +3,7 @@ import {
   executeOperationsProjectNextAction,
   executeOperationsTaskNextAction,
   fetchOperationsStatus,
+  probeOperationsMachines,
   type OperationsStatus,
 } from '../../lib/api';
 
@@ -52,9 +53,13 @@ export function ModelRoleSummary({
 export function MachineRoutingSummary({
   execution,
   machines,
+  onProbe,
+  probing = false,
 }: {
   execution: OperationsStatus['execution'];
   machines: OperationsStatus['machines'];
+  onProbe?: () => void;
+  probing?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -93,6 +98,21 @@ export function MachineRoutingSummary({
         plane: {execution.preferred_plane} · commander:{' '}
         {execution.commander_connected ? 'connected' : 'not detected'}
       </div>
+      {onProbe ? (
+        <button
+          type="button"
+          className="rounded-full px-2 py-1 text-[11px] disabled:opacity-50"
+          style={{
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-text-secondary)',
+            background: 'var(--color-surface)',
+          }}
+          disabled={probing}
+          onClick={onProbe}
+        >
+          {probing ? 'Refreshing…' : 'Refresh machines'}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -443,6 +463,7 @@ export function OperationsOverview() {
   const [actionError, setActionError] = useState('');
   const [busyTaskKey, setBusyTaskKey] = useState('');
   const [busyProjectKey, setBusyProjectKey] = useState('');
+  const [probingMachines, setProbingMachines] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -490,6 +511,19 @@ export function OperationsOverview() {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyProjectKey('');
+    }
+  };
+
+  const refreshMachines = async () => {
+    setProbingMachines(true);
+    setActionError('');
+    try {
+      await probeOperationsMachines();
+      setStatus(await fetchOperationsStatus());
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProbingMachines(false);
     }
   };
 
@@ -602,6 +636,10 @@ export function OperationsOverview() {
           <MachineRoutingSummary
             execution={status.execution}
             machines={status.machines}
+            probing={probingMachines}
+            onProbe={() => {
+              void refreshMachines();
+            }}
           />
         </Card>
 
