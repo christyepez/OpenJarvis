@@ -335,6 +335,7 @@ export interface OperationsStatus {
       active_streams: string[];
       handoff_ready_streams: string[];
       failed_streams: string[];
+      exhausted_streams: string[];
       blocked_streams: string[];
       done_streams: string[];
       quality_pipeline_id: string;

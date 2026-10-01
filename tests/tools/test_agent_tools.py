@@ -2766,3 +2766,63 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
         assert task["progress"]["last_retry_at"] > 0
     finally:
         manager.close()
+
+
+
+def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self):
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Exhausted Worker",
+                objective="Build API and tests",
+                repository="https://github.com/example/exhausted-worker",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatched = json.loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key,
+                streams="architecture",
+            ).content
+        )
+        item = dispatched["dispatched"][0]
+        manager.update_agent(item["agent_id"], status="error")
+        task = manager.get_task(item["task_id"])
+        progress = dict(task["progress"])
+        progress["retry_count"] = 3
+        manager.update_task(
+            item["task_id"],
+            status=task["status"],
+            progress=progress,
+        )
+        status = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert status["failed_streams"] == []
+        assert status["exhausted_streams"] == ["architecture"]
+        assert status["next_action"] == "resolve-worker:architecture"
+
+        executor = _Executor()
+        advanced = json.loads(
+            ProjectAdvanceTool(
+                manager=manager,
+                executor=executor,
+            ).execute(project_key=project_key).content
+        )
+        assert advanced["action"] == "resolve-worker"
+        assert advanced["started_agents"] == []
+        assert executor.calls == []
+    finally:
+        manager.close()

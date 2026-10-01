@@ -1942,6 +1942,7 @@ class ProjectStatusTool(BaseTool):
         active: list[str] = []
         handoff_ready_streams: list[str] = []
         failed: list[str] = []
+        exhausted: list[str] = []
         blocked: list[str] = []
         done: list[str] = []
 
@@ -1971,8 +1972,13 @@ class ProjectStatusTool(BaseTool):
                 state = "DONE"
                 done.append(stream)
             elif worker and worker_status == "error":
-                state = "ERROR"
-                failed.append(stream)
+                retry_count = int(progress.get("retry_count", 0) or 0)
+                if retry_count >= 3:
+                    state = "EXHAUSTED"
+                    exhausted.append(stream)
+                else:
+                    state = "ERROR"
+                    failed.append(stream)
             elif task_status in {"active", "running", "in_progress"} or worker:
                 state = "ACTIVE"
                 active.append(stream)
@@ -2021,6 +2027,8 @@ class ProjectStatusTool(BaseTool):
             next_action = f"review-handoff:{','.join(handoff_ready_streams)}"
         elif failed:
             next_action = f"retry-workers:{','.join(failed)}"
+        elif exhausted:
+            next_action = f"resolve-worker:{','.join(exhausted)}"
         elif active:
             next_action = f"wait-active:{','.join(active)}"
         elif blocked:
@@ -2044,6 +2052,8 @@ class ProjectStatusTool(BaseTool):
                     "summary": {
                         "ready": len(ready),
                         "active": len(active),
+                        "failed": len(failed),
+                        "exhausted": len(exhausted),
                         "blocked": len(blocked),
                         "done": len(done),
                     },
@@ -2051,6 +2061,7 @@ class ProjectStatusTool(BaseTool):
                     "active_streams": active,
                     "handoff_ready_streams": handoff_ready_streams,
                     "failed_streams": failed,
+                    "exhausted_streams": exhausted,
                     "blocked_streams": blocked,
                     "done_streams": done,
                     "quality_pipeline_id": quality_pipeline_id,
@@ -2198,6 +2209,10 @@ class ProjectAdvanceTool(BaseTool):
                                     progress=progress,
                                 )
                 action = "workers-retried"
+        elif str(before.get("next_action", "")).startswith(
+            "resolve-worker:"
+        ):
+            action = "resolve-worker"
         elif before.get("active_streams"):
             action = "wait-active"
         elif before.get("blocked_streams"):

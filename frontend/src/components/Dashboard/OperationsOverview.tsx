@@ -308,6 +308,9 @@ export function ProjectBoardSummary({
             {project.failed_streams.length ? (
               <Badge>ERROR: {project.failed_streams.length}</Badge>
             ) : null}
+            {project.exhausted_streams.length ? (
+              <Badge>EXHAUSTED: {project.exhausted_streams.length}</Badge>
+            ) : null}
             {project.blocked_streams.length ? (
               <Badge>BLOCKED: {project.blocked_streams.length}</Badge>
             ) : null}
@@ -332,6 +335,9 @@ export function ProjectBoardSummary({
             ) : null}
             {project.runtime_machines.length > 0 && !machineAvailable ? (
               <Badge>runtime unavailable</Badge>
+            ) : null}
+            {project.next_action.startsWith('resolve-worker:') ? (
+              <Badge>manual intervention required</Badge>
             ) : null}
             {onNextAction &&
             (project.runtime_machines.length === 0 || machineAvailable) &&

@@ -477,7 +477,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
             board.get("quality_status", "not_started") or "not_started"
         )
 
-        if board.get("failed_streams"):
+        if board.get("failed_streams") or board.get("exhausted_streams"):
             status = "failed"
         elif stream_status in {"failed", "needs_attention", "active", "pending"}:
             status = stream_status
@@ -512,6 +512,9 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     board.get("handoff_ready_streams", []) or []
                 ),
                 "failed_streams": list(board.get("failed_streams", []) or []),
+                "exhausted_streams": list(
+                    board.get("exhausted_streams", []) or []
+                ),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
                 "quality_pipeline_id": quality_pipeline_id,
