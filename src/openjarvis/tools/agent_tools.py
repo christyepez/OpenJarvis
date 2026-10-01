@@ -399,6 +399,117 @@ class DomainTaskDispatchTool(BaseTool):
             config = agent.get("config", {}) or {}
             same_key = str(config.get("domain_task_key", "") or "") == task_key
             if same_key and str(agent.get("status", "")) != "archived":
+                current = agent
+                current_config = dict(config)
+                started = False
+                start_error = ""
+                quality_payload: dict[str, Any] | None = None
+                quality_error = ""
+                handoff_ready = bool(
+                    current_config.get("domain_handoff_ready", False)
+                )
+                existing_error = str(
+                    current_config.get("domain_last_error", "") or ""
+                )
+
+                if (
+                    self._executor is not None
+                    and not handoff_ready
+                    and not existing_error
+                ):
+                    started = True
+                    try:
+                        self._executor.execute_tick(agent["id"])
+                    except Exception as exc:
+                        start_error = str(exc)
+
+                    current = self._manager.get_agent(agent["id"]) or agent
+                    current_config = dict(current.get("config", {}) or {})
+                    result_text = str(
+                        current.get("summary_memory", "") or ""
+                    )
+                    status = str(current.get("status", "") or "")
+                    execution_failed = (
+                        bool(start_error)
+                        or status.casefold() == "error"
+                        or result_text.lstrip().startswith("ERROR:")
+                    )
+                    handoff_ready = bool(
+                        not execution_failed and result_text.strip()
+                    )
+                    error_text = start_error
+                    if not error_text and execution_failed:
+                        error_text = (
+                            result_text or f"worker status: {status}"
+                        )
+                    current_config.update(
+                        {
+                            "domain_handoff_ready": handoff_ready,
+                            "domain_last_completed_at": (
+                                time.time() if handoff_ready else 0.0
+                            ),
+                            "domain_last_error": error_text,
+                        }
+                    )
+                    self._manager.update_agent(
+                        agent["id"],
+                        config=current_config,
+                    )
+
+                    quality_required = bool(
+                        current_config.get(
+                            "domain_quality_required",
+                            quality_plan.required,
+                        )
+                    )
+                    quality_pipeline_id = str(
+                        current_config.get(
+                            "domain_quality_pipeline_id", ""
+                        )
+                        or ""
+                    )
+                    if (
+                        handoff_ready
+                        and quality_required
+                        and not quality_pipeline_id
+                    ):
+                        current_quality_stages = list(
+                            current_config.get(
+                                "domain_quality_stages",
+                                quality_stages,
+                            )
+                            or []
+                        )
+                        quality_result = QualityPipelineTool(
+                            manager=self._manager
+                        ).execute(
+                            objective=(
+                                "Quality review for domain task: "
+                                + instruction
+                            ),
+                            domain_task_key=task_key,
+                            stages=current_quality_stages,
+                        )
+                        if quality_result.success:
+                            quality_payload = json.loads(
+                                quality_result.content
+                            )
+                        else:
+                            quality_error = quality_result.content
+                else:
+                    result_text = str(
+                        current.get("summary_memory", "") or ""
+                    )
+
+                status_result = DomainTaskStatusTool(
+                    manager=self._manager
+                ).execute(task_key=task_key)
+                status_payload = (
+                    json.loads(status_result.content)
+                    if status_result.success
+                    else {}
+                )
+
                 return ToolResult(
                     tool_name=self.tool_id,
                     content=json.dumps(
@@ -406,36 +517,72 @@ class DomainTaskDispatchTool(BaseTool):
                             "agent_id": agent["id"],
                             "domain": domain,
                             "capability": str(
-                                config.get("capability", capability) or capability
+                                current_config.get(
+                                    "capability", capability
+                                )
+                                or capability
                             ),
-                            "model": str(config.get("model", model) or model),
+                            "model": str(
+                                current_config.get("model", model) or model
+                            ),
                             "task_key": task_key,
                             "quality_mode": str(
-                                config.get("domain_quality_mode", quality_mode)
+                                current_config.get(
+                                    "domain_quality_mode", quality_mode
+                                )
                                 or quality_mode
                             ),
                             "quality_required": bool(
-                                config.get(
+                                current_config.get(
                                     "domain_quality_required",
                                     quality_plan.required,
                                 )
                             ),
                             "quality_stages": list(
-                                config.get(
+                                current_config.get(
                                     "domain_quality_stages",
                                     quality_stages,
                                 )
                                 or []
                             ),
-                            "reused": True,
-                            "started": False,
-                            "handoff_ready": bool(
-                                config.get("domain_handoff_ready", False)
+                            "quality_pipeline_id": str(
+                                status_payload.get(
+                                    "quality_pipeline_id", ""
+                                )
+                                or ""
                             ),
-                            "result": str(agent.get("summary_memory", "") or ""),
+                            "quality_status": str(
+                                status_payload.get(
+                                    "quality_status", ""
+                                )
+                                or ""
+                            ),
+                            "quality_next_action": str(
+                                status_payload.get(
+                                    "quality_next_action", ""
+                                )
+                                or ""
+                            ),
+                            "quality": quality_payload,
+                            "quality_error": quality_error,
+                            "state": str(
+                                status_payload.get("state", "") or ""
+                            ),
+                            "reused": True,
+                            "started": started,
+                            "handoff_ready": bool(
+                                status_payload.get(
+                                    "handoff_ready", handoff_ready
+                                )
+                            ),
+                            "result": result_text,
+                            "error": str(
+                                status_payload.get("error", "")
+                                or start_error
+                            ),
                         }
                     ),
-                    success=True,
+                    success=not bool(start_error or quality_error),
                 )
 
         name = str(params.get("name", "") or "").strip()

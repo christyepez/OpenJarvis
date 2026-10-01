@@ -2350,3 +2350,110 @@ def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
+
+
+
+def test_task_dispatch_reuses_created_worker_and_executes_when_executor_arrives(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Deferred task completed.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        first = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+        assert first["started"] is False
+
+        executor = _Executor(manager)
+        second = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=executor,
+            ).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+
+        assert second["reused"] is True
+        assert second["started"] is True
+        assert second["agent_id"] == first["agent_id"]
+        assert second["handoff_ready"] is True
+        assert second["state"] == "complete"
+        assert "Deferred task completed" in second["result"]
+        assert executor.calls == [first["agent_id"]]
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_does_not_silently_retry_existing_error(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self):
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            raise AssertionError("dispatch must not retry errored task")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        first = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Review my learning plan",
+                domain="learning",
+            ).content
+        )
+        worker = manager.get_agent(first["agent_id"])
+        config = dict(worker["config"])
+        config.update(
+            {
+                "domain_last_error": "temporary failure",
+                "domain_handoff_ready": False,
+            }
+        )
+        manager.update_agent(
+            worker["id"],
+            config=config,
+            status="error",
+            summary_memory="ERROR: temporary failure",
+        )
+
+        executor = _Executor()
+        second = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=executor,
+            ).execute(
+                instruction="Review my learning plan",
+                domain="learning",
+            ).content
+        )
+
+        assert second["reused"] is True
+        assert second["started"] is False
+        assert second["state"] == "error"
+        assert second["error"] == "temporary failure"
+        assert executor.calls == []
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
