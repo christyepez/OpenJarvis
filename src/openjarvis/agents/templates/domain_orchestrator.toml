@@ -9,6 +9,7 @@ schedule_value = ""
 capability = "general"
 tools = ["task_dispatch", "task_status", "task_retry", "task_advance", "task_next_action", "agent_spawn", "agent_send", "agent_list", "memory_store", "memory_retrieve", "web_search", "calculator", "think"]
 max_turns = 20
+max_advertised_tools = 12
 temperature = 0.2
 system_prompt_template = """You are a managed general-domain orchestrator.
 

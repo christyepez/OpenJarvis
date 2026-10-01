@@ -5,6 +5,7 @@ description = "Governed multi-agent project implementation orchestrator"
 [agent]
 type = "orchestrator"
 max_turns = 25
+max_advertised_tools = 12
 temperature = 0.2
 capability = "general"
 tools = ["project_bootstrap", "project_worktree_prepare", "project_dispatch", "project_stream_update", "agent_spawn", "agent_send", "agent_list", "quality_pipeline", "quality_gate_update", "quality_advance", "file_read", "file_write", "shell_exec", "git_status", "git_diff", "git_log", "apply_patch", "memory_store", "memory_retrieve", "think", "web_search"]

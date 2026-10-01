@@ -63,18 +63,31 @@ def _required_params(spec: ToolSpec) -> tuple[str, ...]:
     return tuple(sorted(str(value) for value in required if value))
 
 
-def _score(query_tokens: frozenset[str], spec: ToolSpec) -> int:
-    name_tokens = _tokens(spec.name.replace("_", " "))
-    category_tokens = _tokens(spec.category)
-    description_tokens = _tokens(spec.description)
-    parameter_tokens = _tokens(
-        " ".join(str(key) for key in spec.parameters.get("properties", {}))
-    )
+def score_tool_relevance(
+    query: str,
+    *,
+    name: str,
+    description: str,
+    category: str = "",
+    parameter_names: Iterable[str] = (),
+) -> int:
+    """Score task/tool affinity without executing or instantiating a tool."""
+    query_tokens = _tokens(query)
     return (
-        8 * len(query_tokens & name_tokens)
-        + 4 * len(query_tokens & category_tokens)
-        + 2 * len(query_tokens & description_tokens)
-        + len(query_tokens & parameter_tokens)
+        8 * len(query_tokens & _tokens(name.replace("_", " ")))
+        + 4 * len(query_tokens & _tokens(category))
+        + 2 * len(query_tokens & _tokens(description))
+        + len(query_tokens & _tokens(" ".join(parameter_names)))
+    )
+
+
+def _score(query: str, spec: ToolSpec) -> int:
+    return score_tool_relevance(
+        query,
+        name=spec.name,
+        description=spec.description,
+        category=spec.category,
+        parameter_names=(str(key) for key in spec.parameters.get("properties", {})),
     )
 
 
@@ -88,7 +101,6 @@ def discover_compact_tools(
     if limit <= 0:
         return []
 
-    query_tokens = _tokens(query)
     ranked: list[CompactToolCard] = []
     for spec in specs:
         ranked.append(
@@ -99,7 +111,7 @@ def discover_compact_tools(
                 required_params=_required_params(spec),
                 required_capabilities=tuple(sorted(spec.required_capabilities)),
                 requires_confirmation=spec.requires_confirmation,
-                score=_score(query_tokens, spec),
+                score=_score(query, spec),
             )
         )
 
@@ -125,4 +137,5 @@ __all__ = [
     "CompactToolCard",
     "discover_compact_tools",
     "render_compact_tool_catalog",
+    "score_tool_relevance",
 ]
