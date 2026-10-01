@@ -140,6 +140,8 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
         "backend": "sqlite",
         "documents": 7,
     }
+    assert data["machines"]["selected"] is None
+    assert data["machines"]["signal"] == "unavailable"
     assert data["machines"]["primary"]["name"] == "trabajo"
     assert data["machines"]["primary"]["status"] == "configured"
     assert data["agents"]["total"] == 3
@@ -462,3 +464,49 @@ def test_operations_project_next_action_dispatches_ready_stream(
         assert executor.calls == data["started_agents"]
     finally:
         manager.close()
+
+
+
+def test_operations_machine_routing_uses_runtime_availability() -> None:
+    governance = SimpleNamespace(
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=_Manager(),
+    )
+    app.state.machine_descriptors = [
+        {
+            "name": "trabajo",
+            "online": False,
+            "docker_available": True,
+            "gpu_available": False,
+        },
+        {
+            "name": "MarketingIndo",
+            "online": True,
+            "docker_available": True,
+            "gpu_available": True,
+        },
+    ]
+
+    response = TestClient(app).get("/v1/operations/status")
+
+    assert response.status_code == 200
+    machines = response.json()["machines"]
+    assert machines["signal"] == "runtime"
+    assert machines["selected"] == "MarketingIndo"
+    assert machines["primary"]["status"] == "offline"
+    assert machines["fallbacks"][0]["status"] == "online"
+    assert machines["fallbacks"][0]["docker_available"] is True
+    assert machines["fallbacks"][0]["gpu_available"] is True

@@ -96,6 +96,63 @@ def _tooling_summary(state: Any) -> dict[str, Any]:
     }
 
 
+def _machine_summary(
+    state: Any,
+    *,
+    primary: str,
+    fallbacks: list[str],
+) -> dict[str, Any]:
+    from openjarvis.governance import MachineDescriptor, MachineRouter
+
+    raw = getattr(state, "machine_descriptors", None)
+    if not raw:
+        return {
+            "selected": None,
+            "signal": "unavailable",
+            "primary": {"name": primary, "status": "configured"},
+            "fallbacks": [
+                {"name": name, "status": "configured"} for name in fallbacks
+            ],
+        }
+
+    machines: list[MachineDescriptor] = []
+    for item in raw:
+        if isinstance(item, MachineDescriptor):
+            machines.append(item)
+        elif isinstance(item, dict):
+            machines.append(
+                MachineDescriptor(
+                    name=str(item.get("name", "") or ""),
+                    online=bool(item.get("online", False)),
+                    docker_available=bool(item.get("docker_available", False)),
+                    gpu_available=bool(item.get("gpu_available", False)),
+                    tags=frozenset(item.get("tags", []) or []),
+                )
+            )
+
+    router = MachineRouter(primary=primary, fallback_order=fallbacks)
+    selected = router.select(machines)
+    by_name = {item.name.casefold(): item for item in machines}
+
+    def _row(name: str) -> dict[str, Any]:
+        descriptor = by_name.get(name.casefold())
+        if descriptor is None:
+            return {"name": name, "status": "unknown"}
+        return {
+            "name": name,
+            "status": "online" if descriptor.online else "offline",
+            "docker_available": descriptor.docker_available,
+            "gpu_available": descriptor.gpu_available,
+        }
+
+    return {
+        "selected": selected.name if selected is not None else None,
+        "signal": "runtime",
+        "primary": _row(primary),
+        "fallbacks": [_row(name) for name in fallbacks],
+    }
+
+
 def _memory_summary(state: Any) -> dict[str, Any]:
     backend = getattr(state, "memory_backend", None)
     if backend is None:
@@ -704,16 +761,11 @@ def operations_status(request: Request) -> dict[str, Any]:
             "preferred_plane": "commander",
             "commander_connected": commander_connected,
         },
-        "machines": {
-            "primary": {
-                "name": primary_machine,
-                "status": "configured",
-            },
-            "fallbacks": [
-                {"name": name, "status": "configured"}
-                for name in fallback_machines
-            ],
-        },
+        "machines": _machine_summary(
+            state,
+            primary=primary_machine,
+            fallbacks=fallback_machines,
+        ),
         "agents": _agent_summary(manager, role_models),
         "projects": _project_summary(manager),
         "quality": _quality_summary(manager),
