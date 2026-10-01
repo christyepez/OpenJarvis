@@ -2651,3 +2651,45 @@ def test_task_next_action_is_noop_for_complete_task(tmp_path) -> None:
         assert payload["result"]["state"] == "complete"
     finally:
         manager.close()
+
+
+
+def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Offline Dispatch",
+                objective="Build API and tests",
+                repository="https://github.com/example/offline-dispatch",
+                runtime_machines="trabajo,MarketingIndo",
+            ).content
+        )
+        project_key = boot["project_key"]
+        coordinator = _project_coordinator(manager, project_key)
+        assert coordinator is not None
+        config = dict(coordinator["config"])
+        config["runtime_online_machines"] = []
+        manager.update_agent(coordinator["id"], config=config)
+        result = json.loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+
+        assert result["dispatched"] == []
+        assert result["blocked"]
+        assert result["blocked"][0]["stream"] == "architecture"
+        assert result["blocked"][0]["reason"] == "runtime_machine_unavailable"
+        workers = [
+            agent
+            for agent in manager.list_agents()
+            if (agent.get("config", {}) or {}).get("project_stream")
+        ]
+        assert workers == []
+    finally:
+        manager.close()

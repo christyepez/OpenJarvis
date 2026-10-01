@@ -2336,6 +2336,16 @@ class ProjectDispatchTool(BaseTool):
             for value in (project_config.get("runtime_machines", []) or [])
             if str(value).strip()
         ]
+        if "runtime_online_machines" in project_config:
+            assignment_machines = [
+                str(value).strip()
+                for value in (
+                    project_config.get("runtime_online_machines", []) or []
+                )
+                if str(value).strip()
+            ]
+        else:
+            assignment_machines = runtime_machines
         tasks = list(self._manager.list_tasks(project["id"]))
         task_by_id = {str(task["id"]): task for task in tasks}
         existing_workers: dict[str, dict[str, Any]] = {}
@@ -2359,9 +2369,22 @@ class ProjectDispatchTool(BaseTool):
                 continue
 
             order = int(progress.get("order", 0) or 0)
+            if (
+                runtime_machines
+                and "runtime_online_machines" in project_config
+                and not assignment_machines
+            ):
+                blocked.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "reason": "runtime_machine_unavailable",
+                    }
+                )
+                continue
             assigned_machine = (
-                runtime_machines[order % len(runtime_machines)]
-                if runtime_machines
+                assignment_machines[order % len(assignment_machines)]
+                if assignment_machines
                 else ""
             )
 

@@ -473,6 +473,7 @@ def test_operations_project_next_action_dispatches_ready_stream(
             engine_name="ollama",
             config=config,
             agent_manager=manager,
+            mcp_tools=[_ListDevicesTool(), _PingTool()],
         )
 
         project_key = payload["project_key"]
@@ -499,7 +500,7 @@ def test_operations_project_next_action_dispatches_ready_stream(
             item for item in project["streams"]
             if item["stream"] == "architecture"
         )
-        assert architecture["runtime_machine"] == "trabajo"
+        assert architecture["runtime_machine"] == "MarketingIndo"
     finally:
         manager.close()
 

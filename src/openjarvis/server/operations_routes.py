@@ -156,6 +156,28 @@ def _bind_runtime_device_ids(
     updated = 0
     for agent in list_agents():
         config = dict(agent.get("config", {}) or {})
+        project_machines = [
+            str(value).strip()
+            for value in (config.get("runtime_machines", []) or [])
+            if str(value).strip()
+        ]
+        if (
+            str(config.get("project_role", "") or "") == "coordinator"
+            and project_machines
+        ):
+            online_machines = [
+                machine
+                for machine in project_machines
+                if bool(
+                    (by_name.get(machine.casefold()) or {}).get("online", False)
+                )
+            ]
+            if config.get("runtime_online_machines") != online_machines:
+                config["runtime_online_machines"] = online_machines
+                update_agent(agent["id"], config=config)
+                updated += 1
+            continue
+
         machine = str(config.get("runtime_machine", "") or "").strip()
         candidates = [
             str(value).strip()
@@ -835,6 +857,42 @@ def operations_project_next_action(
     ]
     if needs_executor and runtime_machines:
         descriptors = getattr(state, "machine_descriptors", None) or []
+        if not descriptors:
+            tool = _commander_device_tool(state)
+            if tool is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Commander list_devices tool unavailable.",
+                )
+            probe = tool.execute()
+            if not getattr(probe, "success", False):
+                raise HTTPException(
+                    status_code=502,
+                    detail=str(
+                        getattr(probe, "content", "")
+                        or "Commander probe failed."
+                    ),
+                )
+            descriptors = _parse_commander_devices(
+                str(getattr(probe, "content", "") or "")
+            )
+            if not descriptors:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Commander returned no parseable devices.",
+                )
+            state.machine_descriptors = descriptors
+            _bind_runtime_device_ids(state, descriptors)
+            status_result = ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            )
+            status = json.loads(status_result.content)
+            runtime_machines = [
+                str(value).strip()
+                for value in (status.get("runtime_machines", []) or [])
+                if str(value).strip()
+            ]
+
         online_names = {
             str(item.get("name", "") or "").casefold()
             for item in descriptors
