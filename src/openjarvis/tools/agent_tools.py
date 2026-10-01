@@ -245,12 +245,13 @@ class AgentSpawnTool(BaseTool):
 
 @ToolRegistry.register("task_dispatch")
 class DomainTaskDispatchTool(BaseTool):
-    """Dispatch a bounded non-project task to a governed managed worker."""
+    """Dispatch and optionally execute a bounded non-project domain task."""
 
     tool_id = "task_dispatch"
 
-    def __init__(self, manager: Any = None) -> None:
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
         self._manager = manager
+        self._executor = executor
 
     @property
     def spec(self) -> ToolSpec:
@@ -384,6 +385,11 @@ class DomainTaskDispatchTool(BaseTool):
                             "model": str(config.get("model", model) or model),
                             "task_key": task_key,
                             "reused": True,
+                            "started": False,
+                            "handoff_ready": bool(
+                                config.get("domain_handoff_ready", False)
+                            ),
+                            "result": str(agent.get("summary_memory", "") or ""),
                         }
                     ),
                     success=True,
@@ -400,9 +406,33 @@ class DomainTaskDispatchTool(BaseTool):
                 "domain": domain,
                 "domain_task_key": task_key,
                 "domain_role": "specialist",
+                "domain_handoff_ready": False,
             },
             agent_id=f"task-{domain}-{uuid.uuid4().hex[:8]}",
         )
+
+        started = False
+        start_error = ""
+        if self._executor is not None:
+            started = True
+            try:
+                self._executor.execute_tick(worker["id"])
+            except Exception as exc:
+                start_error = str(exc)
+
+        current = self._manager.get_agent(worker["id"]) or worker
+        current_config = dict(current.get("config", {}) or {})
+        result_text = str(current.get("summary_memory", "") or "")
+        handoff_ready = bool(started and not start_error and result_text.strip())
+        current_config.update(
+            {
+                "domain_handoff_ready": handoff_ready,
+                "domain_last_completed_at": time.time() if handoff_ready else 0.0,
+            }
+        )
+        if start_error:
+            current_config["domain_last_error"] = start_error
+        self._manager.update_agent(worker["id"], config=current_config)
 
         return ToolResult(
             tool_name=self.tool_id,
@@ -417,9 +447,13 @@ class DomainTaskDispatchTool(BaseTool):
                     "model": model,
                     "task_key": task_key,
                     "reused": False,
+                    "started": started,
+                    "handoff_ready": handoff_ready,
+                    "result": result_text,
+                    "error": start_error,
                 }
             ),
-            success=True,
+            success=not bool(start_error),
         )
 
 

@@ -349,9 +349,10 @@ def test_agent_workspace_binds_native_shell_and_git_defaults(tmp_path) -> None:
     )
 
 
-def test_task_dispatch_receives_live_agent_manager() -> None:
+def test_task_dispatch_receives_live_agent_manager_and_executor() -> None:
     ToolRegistry.register_value("task_dispatch", DomainTaskDispatchTool)
     manager = object()
+    executor = object()
 
     resolved = tool_resolver.resolve_agent_tools(
         {
@@ -361,9 +362,12 @@ def test_task_dispatch_receives_live_agent_manager() -> None:
         engine=object(),
         model="test-model",
         agent_manager=manager,
+        agent_executor=executor,
     )
 
-    assert resolved.by_name["task_dispatch"]._manager is manager
+    tool = resolved.by_name["task_dispatch"]
+    assert tool._manager is manager
+    assert tool._executor is executor
 
 
 def test_domain_worker_memory_tools_inherit_domain_default() -> None:

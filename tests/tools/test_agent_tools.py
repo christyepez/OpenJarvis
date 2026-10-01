@@ -1595,3 +1595,78 @@ def test_project_reaches_complete_only_after_full_quality_pipeline(tmp_path):
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
+
+
+
+def test_task_dispatch_executes_new_domain_worker_and_reuses_handoff(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _DomainExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Budget review complete: spending is within target.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    executor = _DomainExecutor(manager)
+    try:
+        tool = DomainTaskDispatchTool(manager=manager, executor=executor)
+        first = json.loads(
+            tool.execute(
+                instruction="Review my bank budget and expenses for this month"
+            ).content
+        )
+
+        assert first["reused"] is False
+        assert first["started"] is True
+        assert first["handoff_ready"] is True
+        assert "Budget review complete" in first["result"]
+        assert len(executor.calls) == 1
+
+        record = manager.get_agent(first["agent_id"])
+        assert record is not None
+        assert record["config"]["domain_handoff_ready"] is True
+        assert record["config"]["domain_last_completed_at"] > 0
+        assert "Budget review complete" in record["summary_memory"]
+
+        second = json.loads(
+            tool.execute(
+                instruction="Review my bank budget and expenses for this month"
+            ).content
+        )
+        assert second["reused"] is True
+        assert second["started"] is False
+        assert second["handoff_ready"] is True
+        assert second["agent_id"] == first["agent_id"]
+        assert "Budget review complete" in second["result"]
+        assert len(executor.calls) == 1
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_without_executor_creates_worker_without_fake_handoff(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize this research topic",
+                domain="knowledge",
+            ).content
+        )
+
+        assert payload["started"] is False
+        assert payload["handoff_ready"] is False
+        assert payload["result"] == ""
+    finally:
+        manager.close()

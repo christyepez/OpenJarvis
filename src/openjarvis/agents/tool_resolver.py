@@ -36,7 +36,6 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "agent_send",
         "agent_list",
         "agent_kill",
-        "task_dispatch",
         "quality_pipeline",
         "project_bootstrap",
         "project_dispatch",
@@ -47,7 +46,9 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "quality_gate_update",
     }
 )
-_AGENT_EXECUTION_TOOLS = frozenset({"project_advance", "quality_advance"})
+_AGENT_EXECUTION_TOOLS = frozenset(
+    {"project_advance", "quality_advance", "task_dispatch"}
+)
 
 
 class _DefaultParamsTool:
@@ -521,6 +522,7 @@ def resolve_agent_tools(
                         memory_backend=memory_backend,
                         channel_backend=channel_backend,
                         agent_manager=agent_manager,
+                        agent_executor=agent_executor,
                     )
                 )
             except Exception as exc:
