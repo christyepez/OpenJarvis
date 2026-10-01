@@ -1710,6 +1710,7 @@ def test_task_status_returns_domain_handoff_by_task_key(tmp_path) -> None:
         assert payload["task_key"] == dispatched["task_key"]
         assert payload["agent_id"] == dispatched["agent_id"]
         assert payload["state"] == "complete"
+        assert payload["next_action"] == "complete"
         assert payload["domain"] == "professional"
         assert payload["handoff_ready"] is True
         assert "actionable findings" in payload["result"]
@@ -2125,6 +2126,7 @@ def test_task_status_reports_pending_quality_pipeline(tmp_path) -> None:
         )
 
         assert status["state"] == "quality_pending"
+        assert status["next_action"] == f"advance:{dispatched['task_key']}"
         assert status["quality_required"] is True
         assert status["quality_pipeline_id"] == dispatched["quality_pipeline_id"]
         assert status["quality_status"] == "pending"

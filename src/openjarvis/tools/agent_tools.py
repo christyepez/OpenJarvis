@@ -806,6 +806,17 @@ class DomainTaskStatusTool(BaseTool):
             else:
                 state = "created"
 
+            if state == "error":
+                next_action = f"retry:{task_key}"
+            elif state in {"created", "quality_pending"}:
+                next_action = f"advance:{task_key}"
+            elif state == "quality_failed":
+                next_action = f"resolve-quality:{quality_pipeline_id}"
+            elif state == "running":
+                next_action = "wait"
+            else:
+                next_action = "complete"
+
             return ToolResult(
                 tool_name=self.tool_id,
                 content=json.dumps(
@@ -813,6 +824,7 @@ class DomainTaskStatusTool(BaseTool):
                         "task_key": task_key,
                         "agent_id": str(agent.get("id", "") or ""),
                         "state": state,
+                        "next_action": next_action,
                         "status": str(agent.get("status", "") or ""),
                         "domain": str(config.get("domain", "") or ""),
                         "capability": str(config.get("capability", "") or ""),
