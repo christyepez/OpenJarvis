@@ -458,6 +458,106 @@ class DomainTaskDispatchTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskStatusTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_status")
+class DomainTaskStatusTool(BaseTool):
+    """Return the persisted state of one non-project domain task."""
+
+    tool_id = "task_status"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Inspect one persisted non-project task by task_key. Returns "
+                "domain, capability, model, worker status, handoff state, result, "
+                "and any persisted execution error."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task status requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("domain_task_key", "") or "") != task_key:
+                continue
+            if str(agent.get("status", "") or "") == "archived":
+                continue
+
+            handoff_ready = bool(config.get("domain_handoff_ready", False))
+            error = str(config.get("domain_last_error", "") or "")
+            if error:
+                state = "error"
+            elif handoff_ready:
+                state = "handoff_ready"
+            elif str(agent.get("status", "") or "").casefold() in {
+                "running",
+                "active",
+            }:
+                state = "running"
+            else:
+                state = "created"
+
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "task_key": task_key,
+                        "agent_id": str(agent.get("id", "") or ""),
+                        "state": state,
+                        "status": str(agent.get("status", "") or ""),
+                        "domain": str(config.get("domain", "") or ""),
+                        "capability": str(config.get("capability", "") or ""),
+                        "model": str(config.get("model", "") or ""),
+                        "handoff_ready": handoff_ready,
+                        "last_completed_at": float(
+                            config.get("domain_last_completed_at", 0.0) or 0.0
+                        ),
+                        "result": str(agent.get("summary_memory", "") or ""),
+                        "error": error,
+                    }
+                ),
+                success=True,
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=f"Domain task not found: {task_key}",
+            success=False,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectBootstrapTool
 # ---------------------------------------------------------------------------
 
@@ -2870,6 +2970,8 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "DomainTaskDispatchTool",
+    "DomainTaskStatusTool",
     "ProjectAdvanceTool",
     "ProjectBootstrapTool",
     "ProjectDispatchTool",

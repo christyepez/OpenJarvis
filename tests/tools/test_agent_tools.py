@@ -13,6 +13,7 @@ from openjarvis.tools.agent_tools import (
     AgentSendTool,
     AgentSpawnTool,
     DomainTaskDispatchTool,
+    DomainTaskStatusTool,
     ProjectAdvanceTool,
     ProjectBootstrapTool,
     ProjectDispatchTool,
@@ -1668,5 +1669,63 @@ def test_task_dispatch_without_executor_creates_worker_without_fake_handoff(
         assert payload["started"] is False
         assert payload["handoff_ready"] is False
         assert payload["result"] == ""
+    finally:
+        manager.close()
+
+
+
+def test_task_status_returns_domain_handoff_by_task_key(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _DomainExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Professional review completed with actionable findings.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_DomainExecutor(manager),
+            ).execute(
+                instruction="Review this architecture proposal",
+                domain="professional",
+            ).content
+        )
+
+        status = DomainTaskStatusTool(manager=manager).execute(
+            task_key=dispatched["task_key"]
+        )
+        assert status.success is True
+        payload = json.loads(status.content)
+        assert payload["task_key"] == dispatched["task_key"]
+        assert payload["agent_id"] == dispatched["agent_id"]
+        assert payload["state"] == "handoff_ready"
+        assert payload["domain"] == "professional"
+        assert payload["handoff_ready"] is True
+        assert "actionable findings" in payload["result"]
+        assert payload["error"] == ""
+    finally:
+        manager.close()
+
+
+def test_task_status_rejects_unknown_task_key(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = DomainTaskStatusTool(manager=manager).execute(
+            task_key="missing-task"
+        )
+
+        assert result.success is False
+        assert "Domain task not found" in result.content
     finally:
         manager.close()
