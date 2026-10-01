@@ -457,6 +457,21 @@ def _agent_summary(
         else:
             domain_task_state = "created"
 
+        if not domain_task_key:
+            domain_next_action = ""
+        elif domain_task_state == "error":
+            domain_next_action = f"retry:{domain_task_key}"
+        elif domain_task_state in {"created", "quality_pending"}:
+            domain_next_action = f"advance:{domain_task_key}"
+        elif domain_task_state == "quality_failed":
+            domain_next_action = (
+                f"resolve-quality:{domain_quality_pipeline_id}"
+            )
+        elif domain_task_state == "running":
+            domain_next_action = "wait"
+        else:
+            domain_next_action = "complete"
+
         configured_model = str(config.get("model", "") or "").strip()
         if configured_model and configured_model.casefold() != "smart":
             routed_model = configured_model
@@ -480,6 +495,7 @@ def _agent_summary(
                 "domain": domain,
                 "domain_task_key": domain_task_key,
                 "domain_task_state": domain_task_state,
+                "domain_next_action": domain_next_action,
                 "domain_handoff_ready": domain_handoff_ready,
                 "domain_last_completed_at": float(
                     config.get("domain_last_completed_at", 0.0) or 0.0

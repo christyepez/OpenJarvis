@@ -388,6 +388,7 @@ export interface OperationsStatus {
       domain: string;
       domain_task_key: string;
       domain_task_state: string;
+      domain_next_action: string;
       domain_handoff_ready: boolean;
       domain_last_completed_at: number;
       domain_quality_required: boolean;

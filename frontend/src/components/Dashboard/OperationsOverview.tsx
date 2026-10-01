@@ -84,12 +84,20 @@ export function AgentRoutingSummary({
                 .join(' · ')}
             </div>
             {agent.domain_task_key ? (
-              <div
-                className="truncate max-w-[360px] mt-0.5"
-                style={{ color: 'var(--color-text-tertiary)' }}
-              >
-                task: {agent.domain_task_key}
-              </div>
+              <>
+                <div
+                  className="truncate max-w-[360px] mt-0.5"
+                  style={{ color: 'var(--color-text-tertiary)' }}
+                >
+                  task: {agent.domain_task_key}
+                </div>
+                <div
+                  className="truncate max-w-[360px] mt-0.5"
+                  style={{ color: 'var(--color-text-tertiary)' }}
+                >
+                  next: {agent.domain_next_action}
+                </div>
+              </>
             ) : null}
             {agent.domain_handoff_ready && agent.domain_result ? (
               <div

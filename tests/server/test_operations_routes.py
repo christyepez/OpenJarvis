@@ -155,6 +155,7 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["agents"]["agents"][2]["domain"] == "finance"
     assert data["agents"]["agents"][2]["domain_task_key"] == "finance-task-1"
     assert data["agents"]["agents"][2]["domain_task_state"] == "complete"
+    assert data["agents"]["agents"][2]["domain_next_action"] == "complete"
     assert data["agents"]["agents"][2]["routed_model"] == "qwen3.5:4b"
     assert data["agents"]["agents"][2]["domain_handoff_ready"] is True
     assert data["agents"]["agents"][2]["domain_last_completed_at"] == 123.0
