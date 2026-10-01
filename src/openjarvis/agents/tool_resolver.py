@@ -48,7 +48,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
     }
 )
 _AGENT_EXECUTION_TOOLS = frozenset(
-    {"project_advance", "quality_advance", "task_dispatch"}
+    {"project_advance", "quality_advance", "task_dispatch", "task_retry"}
 )
 
 

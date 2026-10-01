@@ -13,6 +13,7 @@ from openjarvis.tools.agent_tools import (
     AgentSendTool,
     AgentSpawnTool,
     DomainTaskDispatchTool,
+    DomainTaskRetryTool,
     DomainTaskStatusTool,
     ProjectAdvanceTool,
     ProjectBootstrapTool,
@@ -1727,5 +1728,98 @@ def test_task_status_rejects_unknown_task_key(tmp_path) -> None:
 
         assert result.success is False
         assert "Domain task not found" in result.content
+    finally:
+        manager.close()
+
+
+
+def test_task_retry_reuses_same_worker_and_recovers_handoff(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _RetryExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Retry completed successfully.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    executor = _RetryExecutor(manager)
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Review this learning plan",
+                domain="learning",
+            ).content
+        )
+        agent_id = dispatched["agent_id"]
+        record = manager.get_agent(agent_id)
+        config = dict(record["config"])
+        config.update(
+            {
+                "domain_last_error": "temporary failure",
+                "domain_handoff_ready": False,
+            }
+        )
+        manager.update_agent(
+            agent_id,
+            config=config,
+            status="error",
+            summary_memory="ERROR: temporary failure",
+        )
+
+        retried = DomainTaskRetryTool(
+            manager=manager,
+            executor=executor,
+        ).execute(task_key=dispatched["task_key"])
+
+        assert retried.success is True
+        payload = json.loads(retried.content)
+        assert payload["agent_id"] == agent_id
+        assert payload["retried"] is True
+        assert payload["handoff_ready"] is True
+        assert payload["error"] == ""
+        assert "Retry completed successfully" in payload["result"]
+        assert executor.calls == [agent_id]
+        assert len(manager.list_agents()) == 1
+
+        status = json.loads(
+            DomainTaskStatusTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+        assert status["state"] == "handoff_ready"
+        assert status["agent_id"] == agent_id
+    finally:
+        manager.close()
+
+
+def test_task_retry_requires_existing_task_and_executor(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        missing_executor = DomainTaskRetryTool(manager=manager).execute(
+            task_key="missing"
+        )
+        assert missing_executor.success is False
+        assert "AgentExecutor" in missing_executor.content
+
+        class _Executor:
+            def execute_tick(self, agent_id):
+                raise AssertionError(agent_id)
+
+        missing_task = DomainTaskRetryTool(
+            manager=manager,
+            executor=_Executor(),
+        ).execute(task_key="missing")
+        assert missing_task.success is False
+        assert "Domain task not found" in missing_task.content
     finally:
         manager.close()

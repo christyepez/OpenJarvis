@@ -558,6 +558,127 @@ class DomainTaskStatusTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskRetryTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_retry")
+class DomainTaskRetryTool(BaseTool):
+    """Retry one persisted non-project domain task on the same worker."""
+
+    tool_id = "task_retry"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Retry an existing non-project task by task_key using the same "
+                "managed worker. Does not create a duplicate worker."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None or self._executor is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task retry requires AgentManager and AgentExecutor.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        target: dict[str, Any] | None = None
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("domain_task_key", "") or "") == task_key:
+                if str(agent.get("status", "") or "") != "archived":
+                    target = agent
+                    break
+
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Domain task not found: {task_key}",
+                success=False,
+            )
+
+        config = dict(target.get("config", {}) or {})
+        config.update(
+            {
+                "domain_handoff_ready": False,
+                "domain_last_error": "",
+            }
+        )
+        self._manager.update_agent(target["id"], config=config)
+
+        start_error = ""
+        try:
+            self._executor.execute_tick(target["id"])
+        except Exception as exc:
+            start_error = str(exc)
+
+        current = self._manager.get_agent(target["id"]) or target
+        current_config = dict(current.get("config", {}) or {})
+        result_text = str(current.get("summary_memory", "") or "")
+        status = str(current.get("status", "") or "")
+        execution_failed = (
+            bool(start_error)
+            or status.casefold() == "error"
+            or result_text.lstrip().startswith("ERROR:")
+        )
+        handoff_ready = bool(not execution_failed and result_text.strip())
+
+        error_text = start_error
+        if not error_text and execution_failed:
+            error_text = result_text or f"worker status: {status}"
+
+        current_config.update(
+            {
+                "domain_handoff_ready": handoff_ready,
+                "domain_last_completed_at": time.time() if handoff_ready else 0.0,
+                "domain_last_error": error_text,
+            }
+        )
+        self._manager.update_agent(target["id"], config=current_config)
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "agent_id": target["id"],
+                    "retried": True,
+                    "handoff_ready": handoff_ready,
+                    "status": status,
+                    "result": result_text,
+                    "error": error_text,
+                }
+            ),
+            success=not execution_failed,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectBootstrapTool
 # ---------------------------------------------------------------------------
 
@@ -2971,6 +3092,7 @@ __all__ = [
     "AgentSendTool",
     "AgentSpawnTool",
     "DomainTaskDispatchTool",
+    "DomainTaskRetryTool",
     "DomainTaskStatusTool",
     "ProjectAdvanceTool",
     "ProjectBootstrapTool",
