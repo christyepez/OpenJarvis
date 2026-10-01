@@ -1487,3 +1487,111 @@ def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
+
+
+
+def test_project_reaches_complete_only_after_full_quality_pipeline(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    class _CompletingQualityExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            agent = self.manager.get_agent(agent_id)
+            task_id = agent["config"]["quality_task_id"]
+            task = self.manager.get_task(task_id)
+            self.manager.update_task(
+                task_id,
+                status="completed",
+                progress=task["progress"],
+                findings=[f"{agent['config']['quality_stage']} reviewer passed"],
+            )
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Backend Service",
+                objective="Implement and release backend service safely",
+                repository="https://github.com/example/backend-service",
+                streams="architecture,backend,integration,qa",
+            ).content
+        )
+        project_key = boot["project_key"]
+
+        for stream, evidence in [
+            ("architecture", "Architecture approved."),
+            ("backend", "Backend implementation validated."),
+            ("integration", "Integration contract validated."),
+            ("qa", "QA acceptance passed."),
+        ]:
+            updated = ProjectStreamUpdateTool(manager=manager).execute(
+                project_key=project_key,
+                stream=stream,
+                status="completed",
+                evidence=evidence,
+            )
+            assert updated.success is True
+
+        executor = _CompletingQualityExecutor(manager)
+        advance = ProjectAdvanceTool(manager=manager, executor=executor)
+
+        started = json.loads(advance.execute(project_key=project_key).content)
+        assert started["action"] == "quality-started"
+        pipeline_id = started["status"]["quality_pipeline_id"]
+        assert started["status"]["next_action"] == f"advance-quality:{pipeline_id}"
+
+        first_gate = json.loads(advance.execute(project_key=project_key).content)
+        assert first_gate["action"] == "quality-advanced"
+        assert first_gate["quality"]["action"] == "gate_requires_evidence"
+        assert first_gate["quality"]["stage"] == "build-tests"
+
+        build = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="build-tests",
+            status="completed",
+            evidence="pytest 412 passed; ruff clean; build successful",
+        )
+        assert build.success is True
+
+        anti_slop = json.loads(advance.execute(project_key=project_key).content)
+        assert anti_slop["quality"]["action"] == "reviewer_executed"
+        assert anti_slop["quality"]["stage"] == "anti-slop"
+
+        thermos = json.loads(advance.execute(project_key=project_key).content)
+        assert thermos["quality"]["action"] == "reviewer_executed"
+        assert thermos["quality"]["stage"] == "thermos"
+
+        release_gate = json.loads(advance.execute(project_key=project_key).content)
+        assert release_gate["quality"]["action"] == "gate_requires_evidence"
+        assert release_gate["quality"]["stage"] == "release"
+
+        release = QualityGateUpdateTool(manager=manager).execute(
+            pipeline_id=pipeline_id,
+            stage="release",
+            status="completed",
+            evidence="Release checklist passed; rollback verified.",
+        )
+        assert release.success is True
+
+        final_status = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert final_status["quality_status"] == "completed"
+        assert final_status["next_action"] == "complete"
+
+        final_advance = json.loads(
+            advance.execute(project_key=project_key).content
+        )
+        assert final_advance["action"] == "complete"
+        assert final_advance["status"]["next_action"] == "complete"
+        assert len(executor.calls) == 2
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
