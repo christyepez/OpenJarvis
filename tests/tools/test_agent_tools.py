@@ -1823,3 +1823,92 @@ def test_task_retry_requires_existing_task_and_executor(tmp_path) -> None:
         assert "Domain task not found" in missing_task.content
     finally:
         manager.close()
+
+
+
+def test_task_dispatch_auto_quality_for_coding_task(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Refactor this Python service and add unit tests",
+                domain="professional",
+            ).content
+        )
+
+        assert payload["capability"] == "coding"
+        assert payload["quality_mode"] == "auto"
+        assert payload["quality_required"] is True
+        assert payload["quality_stages"] == ["anti-slop", "thermos"]
+
+        record = manager.get_agent(payload["agent_id"])
+        assert record["config"]["domain_quality_required"] is True
+        assert record["config"]["domain_quality_stages"] == [
+            "anti-slop",
+            "thermos",
+        ]
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_auto_quality_for_multimodal_task(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Review this dashboard screenshot for visual defects",
+                domain="knowledge",
+            ).content
+        )
+
+        assert payload["capability"] == "multimodal"
+        assert payload["quality_required"] is True
+        assert payload["quality_stages"] == [
+            "multimodal-review",
+            "anti-slop",
+            "thermos",
+        ]
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_simple_personal_task_skips_quality(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes for tomorrow",
+                domain="personal",
+            ).content
+        )
+
+        assert payload["quality_required"] is False
+        assert payload["quality_stages"] == []
+    finally:
+        manager.close()
+
+
+def test_task_dispatch_quality_mode_none_overrides_coding_quality(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Refactor this Python helper",
+                quality_mode="none",
+            ).content
+        )
+
+        assert payload["capability"] == "coding"
+        assert payload["quality_mode"] == "none"
+        assert payload["quality_required"] is False
+        assert payload["quality_stages"] == []
+    finally:
+        manager.close()

@@ -297,6 +297,14 @@ class DomainTaskDispatchTool(BaseTool):
                             "when omitted."
                         ),
                     },
+                    "quality_mode": {
+                        "type": "string",
+                        "enum": ["auto", "none", "required"],
+                        "description": (
+                            "Optional quality policy. auto applies proportional "
+                            "quality by capability."
+                        ),
+                    },
                     "name": {
                         "type": "string",
                         "description": "Optional display name for the managed worker.",
@@ -329,6 +337,7 @@ class DomainTaskDispatchTool(BaseTool):
                 success=False,
             )
 
+        from openjarvis.governance.domain_quality import DomainQualityPlanner
         from openjarvis.governance.execution_router import classify_task_capability
         from openjarvis.memory.context_router import ContextRouter, MemoryDomain
 
@@ -363,6 +372,23 @@ class DomainTaskDispatchTool(BaseTool):
                 success=False,
             )
         capability = explicit_capability or classify_task_capability(instruction)
+        quality_mode = str(
+            params.get("quality_mode", "auto") or "auto"
+        ).strip().casefold()
+        if quality_mode not in {"auto", "none", "required"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Unsupported quality_mode. Supported: auto, none, required"
+                ),
+                success=False,
+            )
+        quality_plan = DomainQualityPlanner().plan(
+            capability=capability,
+            domain=domain,
+            quality_mode=quality_mode,
+        )
+        quality_stages = [stage.value for stage in quality_plan.stages]
         model = str(params.get("model", "") or "").strip() or "smart"
         task_key = (
             str(params.get("task_key", "") or "").strip()
@@ -384,6 +410,23 @@ class DomainTaskDispatchTool(BaseTool):
                             ),
                             "model": str(config.get("model", model) or model),
                             "task_key": task_key,
+                            "quality_mode": str(
+                                config.get("domain_quality_mode", quality_mode)
+                                or quality_mode
+                            ),
+                            "quality_required": bool(
+                                config.get(
+                                    "domain_quality_required",
+                                    quality_plan.required,
+                                )
+                            ),
+                            "quality_stages": list(
+                                config.get(
+                                    "domain_quality_stages",
+                                    quality_stages,
+                                )
+                                or []
+                            ),
                             "reused": True,
                             "started": False,
                             "handoff_ready": bool(
@@ -407,6 +450,10 @@ class DomainTaskDispatchTool(BaseTool):
                 "domain_task_key": task_key,
                 "domain_role": "specialist",
                 "domain_handoff_ready": False,
+                "domain_quality_mode": quality_mode,
+                "domain_quality_required": quality_plan.required,
+                "domain_quality_stages": quality_stages,
+                "domain_quality_reason": quality_plan.reason,
             },
             agent_id=f"task-{domain}-{uuid.uuid4().hex[:8]}",
         )
@@ -446,6 +493,10 @@ class DomainTaskDispatchTool(BaseTool):
                     "capability": capability,
                     "model": model,
                     "task_key": task_key,
+                    "quality_mode": quality_mode,
+                    "quality_required": quality_plan.required,
+                    "quality_stages": quality_stages,
+                    "quality_reason": quality_plan.reason,
                     "reused": False,
                     "started": started,
                     "handoff_ready": handoff_ready,
