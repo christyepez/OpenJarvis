@@ -481,6 +481,19 @@ class DomainTaskDispatchTool(BaseTool):
             current_config["domain_last_error"] = start_error
         self._manager.update_agent(worker["id"], config=current_config)
 
+        quality_payload: dict[str, Any] | None = None
+        quality_error = ""
+        if handoff_ready and quality_plan.required:
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
+                objective=f"Quality review for domain task: {instruction}",
+                domain_task_key=task_key,
+                stages=quality_stages,
+            )
+            if quality_result.success:
+                quality_payload = json.loads(quality_result.content)
+            else:
+                quality_error = quality_result.content
+
         return ToolResult(
             tool_name=self.tool_id,
             content=json.dumps(
@@ -497,6 +510,11 @@ class DomainTaskDispatchTool(BaseTool):
                     "quality_required": quality_plan.required,
                     "quality_stages": quality_stages,
                     "quality_reason": quality_plan.reason,
+                    "quality_pipeline_id": (
+                        str((quality_payload or {}).get("pipeline_id", "") or "")
+                    ),
+                    "quality": quality_payload,
+                    "quality_error": quality_error,
                     "reused": False,
                     "started": started,
                     "handoff_ready": handoff_ready,
@@ -504,7 +522,7 @@ class DomainTaskDispatchTool(BaseTool):
                     "error": start_error,
                 }
             ),
-            success=not bool(start_error),
+            success=not bool(start_error or quality_error),
         )
 
 

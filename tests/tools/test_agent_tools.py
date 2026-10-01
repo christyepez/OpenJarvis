@@ -2005,3 +2005,85 @@ def test_quality_pipeline_rejects_project_and_domain_binding_together(tmp_path) 
         assert "either project_key or domain_task_key" in result.content
     finally:
         manager.close()
+
+
+
+def test_task_dispatch_starts_quality_pipeline_after_coding_handoff(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Coding task completed with tests.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_Executor(manager),
+            ).execute(
+                instruction="Refactor this Python service and add unit tests",
+                domain="professional",
+            ).content
+        )
+
+        assert payload["handoff_ready"] is True
+        assert payload["quality_required"] is True
+        assert payload["quality_pipeline_id"]
+        assert [stage["stage"] for stage in payload["quality"]["stages"]] == [
+            "anti-slop",
+            "thermos",
+        ]
+
+        worker = manager.get_agent(payload["agent_id"])
+        assert (
+            worker["config"]["domain_quality_pipeline_id"]
+            == payload["quality_pipeline_id"]
+        )
+        assert worker["config"]["domain_quality_status"] == "pending"
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_task_dispatch_simple_handoff_does_not_start_quality_pipeline(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Simple summary completed.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        payload = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_Executor(manager),
+            ).execute(
+                instruction="Summarize my notes for tomorrow",
+                domain="personal",
+            ).content
+        )
+
+        assert payload["handoff_ready"] is True
+        assert payload["quality_required"] is False
+        assert payload["quality_pipeline_id"] == ""
+        assert payload["quality"] is None
+        assert payload["quality_error"] == ""
+    finally:
+        manager.close()
