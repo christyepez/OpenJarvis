@@ -526,6 +526,7 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
                 repository="https://github.com/example/portal",
                 workspace=str(repo),
                 streams="architecture,backend,frontend,integration,qa",
+                runtime_machines="trabajo,MarketingIndo",
             ).content
         )
         project_key = boot["project_key"]
@@ -549,6 +550,7 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
         dispatch = ProjectDispatchTool(manager=manager)
         first = json.loads(dispatch.execute(project_key=project_key).content)
         assert [item["stream"] for item in first["dispatched"]] == ["architecture"]
+        assert first["dispatched"][0]["runtime_machine"] == "trabajo"
 
         architecture = _approve_project_handoff(
             manager,
@@ -565,10 +567,16 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
             if item.get("reused") is False
         }
         assert set(workers) == {"backend", "frontend"}
+        assert workers["backend"]["config"]["runtime_machine"] == "MarketingIndo"
+        assert workers["frontend"]["config"]["runtime_machine"] == "trabajo"
         for stream, worker in workers.items():
             assert worker is not None
             assert worker["config"]["workspace"] == by_stream[stream]["workspace"]
             assert worker["config"]["branch"] == by_stream[stream]["branch"]
+            assert worker["config"]["runtime_machine_candidates"] == [
+                "trabajo",
+                "MarketingIndo",
+            ]
 
         reused = ProjectWorktreePrepareTool(manager=manager).execute(
             project_key=project_key,

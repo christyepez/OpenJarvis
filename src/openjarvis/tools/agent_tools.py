@@ -2324,6 +2324,11 @@ class ProjectDispatchTool(BaseTool):
             )
 
         project_config = project.get("config", {}) or {}
+        runtime_machines = [
+            str(value).strip()
+            for value in (project_config.get("runtime_machines", []) or [])
+            if str(value).strip()
+        ]
         tasks = list(self._manager.list_tasks(project["id"]))
         task_by_id = {str(task["id"]): task for task in tasks}
         existing_workers: dict[str, dict[str, Any]] = {}
@@ -2346,14 +2351,25 @@ class ProjectDispatchTool(BaseTool):
             if not stream or (requested and stream not in requested):
                 continue
 
+            order = int(progress.get("order", 0) or 0)
+            assigned_machine = (
+                runtime_machines[order % len(runtime_machines)]
+                if runtime_machines
+                else ""
+            )
+
             existing = existing_workers.get(stream)
             if existing is not None:
+                existing_config = existing.get("config", {}) or {}
                 dispatched.append(
                     {
                         "stream": stream,
                         "task_id": task["id"],
                         "agent_id": existing["id"],
                         "status": str(existing.get("status", "idle")),
+                        "runtime_machine": str(
+                            existing_config.get("runtime_machine", "") or ""
+                        ),
                         "reused": True,
                     }
                 )
@@ -2386,6 +2402,7 @@ class ProjectDispatchTool(BaseTool):
                 f"Repository: {project_config.get('repository', '')}\n"
                 f"Workspace: {stream_workspace}\n"
                 f"Branch: {stream_branch}\n"
+                f"Runtime machine: {assigned_machine or 'local'}\n"
                 f"Stream: {stream}\n"
                 f"Objective: {task.get('description', '')}"
             )
@@ -2403,6 +2420,8 @@ class ProjectDispatchTool(BaseTool):
                     "repository": str(project_config.get("repository", "") or ""),
                     "workspace": stream_workspace,
                     "branch": stream_branch,
+                    "runtime_machine": assigned_machine,
+                    "runtime_machine_candidates": runtime_machines,
                 },
                 agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
             )
@@ -2416,6 +2435,7 @@ class ProjectDispatchTool(BaseTool):
                 {
                     "execution_state": execution_state,
                     "worker_agent_id": worker["id"],
+                    "runtime_machine": assigned_machine,
                 }
             )
             self._manager.update_task(
@@ -2431,6 +2451,7 @@ class ProjectDispatchTool(BaseTool):
                     "agent_id": worker["id"],
                     "status": "active",
                     "capability": capability,
+                    "runtime_machine": assigned_machine,
                     "reused": False,
                 }
             )
