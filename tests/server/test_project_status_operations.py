@@ -123,6 +123,7 @@ def test_operations_project_summary_includes_quality_stage_details(tmp_path) -> 
         summary = _project_summary(manager)["projects"][0]
         assert summary["quality_pipeline_id"] == pipeline["pipeline_id"]
         assert summary["quality_status"] == "pending"
+        assert summary["status"] == "quality_pending"
         assert [stage["stage"] for stage in summary["quality_stages"]] == [
             "build-tests",
             "anti-slop",
@@ -138,5 +139,24 @@ def test_operations_project_summary_includes_quality_stage_details(tmp_path) -> 
         assert summary["next_action"] == (
             f"advance-quality:{pipeline['pipeline_id']}"
         )
+
+        quality_agent = next(
+            agent
+            for agent in manager.list_agents()
+            if (agent.get("config", {}) or {}).get("quality_pipeline_role")
+            == "coordinator"
+        )
+        for task in manager.list_tasks(quality_agent["id"]):
+            manager.update_task(
+                task["id"],
+                status="completed",
+                progress=task["progress"],
+                findings=["validated"],
+            )
+
+        completed_summary = _project_summary(manager)["projects"][0]
+        assert completed_summary["quality_status"] == "completed"
+        assert completed_summary["status"] == "completed"
+        assert completed_summary["next_action"] == "complete"
     finally:
         manager.close()

@@ -200,17 +200,15 @@ def _project_summary(manager: Any) -> dict[str, Any]:
         )
         statuses = {row["status"] for row in streams}
         if "failed" in statuses:
-            status = "failed"
+            stream_status = "failed"
         elif "needs_attention" in statuses:
-            status = "needs_attention"
+            stream_status = "needs_attention"
         elif "active" in statuses or "running" in statuses:
-            status = "active"
+            stream_status = "active"
         elif streams and statuses == {"completed"}:
-            status = "completed"
+            stream_status = "completed"
         else:
-            status = "pending"
-
-        by_status[status] = by_status.get(status, 0) + 1
+            stream_status = "pending"
 
         board: dict[str, Any] = {}
         try:
@@ -226,6 +224,24 @@ def _project_summary(manager: Any) -> dict[str, Any]:
         quality_stages = list(
             (quality_by_id.get(quality_pipeline_id) or {}).get("stages", [])
         )
+        quality_status = str(
+            board.get("quality_status", "not_started") or "not_started"
+        )
+
+        if stream_status in {"failed", "needs_attention", "active", "pending"}:
+            status = stream_status
+        elif quality_status == "failed":
+            status = "failed"
+        elif quality_status == "needs_attention":
+            status = "needs_attention"
+        elif quality_status == "completed" and str(
+            board.get("next_action", "") or ""
+        ) == "complete":
+            status = "completed"
+        else:
+            status = "quality_pending"
+
+        by_status[status] = by_status.get(status, 0) + 1
 
         projects.append(
             {
@@ -247,9 +263,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
                 "quality_pipeline_id": quality_pipeline_id,
-                "quality_status": str(
-                    board.get("quality_status", "not_started") or "not_started"
-                ),
+                "quality_status": quality_status,
                 "quality_stages": quality_stages,
                 "streams": streams,
             }
