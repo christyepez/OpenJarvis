@@ -1059,6 +1059,23 @@ class DomainTaskAdvanceTool(BaseTool):
 
         if before.get("state") == "error":
             action = "retry-required"
+        elif before.get("state") == "created":
+            if self._executor is None:
+                action = "wait-executor"
+            else:
+                execution = DomainTaskRetryTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(task_key=task_key)
+                if not execution.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=execution.content,
+                        success=False,
+                    )
+                execution_payload = json.loads(execution.content)
+                quality_payload = execution_payload.get("quality")
+                action = "task-executed"
         elif not bool(before.get("handoff_ready", False)):
             action = "wait-handoff"
         elif not bool(before.get("quality_required", False)):

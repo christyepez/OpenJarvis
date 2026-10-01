@@ -2457,3 +2457,73 @@ def test_task_dispatch_does_not_silently_retry_existing_error(tmp_path) -> None:
         assert len(manager.list_agents()) == 1
     finally:
         manager.close()
+
+
+
+def test_task_advance_waits_for_executor_when_task_is_created(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+
+        advanced = json.loads(
+            DomainTaskAdvanceTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+
+        assert advanced["action"] == "wait-executor"
+        assert advanced["status"]["state"] == "created"
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+def test_task_advance_executes_created_task_when_executor_becomes_available(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Created task executed successfully.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+        executor = _Executor(manager)
+
+        advanced = json.loads(
+            DomainTaskAdvanceTool(
+                manager=manager,
+                executor=executor,
+            ).execute(task_key=dispatched["task_key"]).content
+        )
+
+        assert advanced["action"] == "task-executed"
+        assert advanced["status"]["state"] == "complete"
+        assert advanced["status"]["handoff_ready"] is True
+        assert executor.calls == [dispatched["agent_id"]]
+        assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
