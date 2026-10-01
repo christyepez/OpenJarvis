@@ -80,6 +80,8 @@ describe('OperationsOverview agent routing', () => {
             routed_model: 'qwen3.5:4b',
             project_stream: 'frontend',
             domain: '',
+            domain_task_key: '',
+            domain_task_state: '',
             domain_handoff_ready: false,
             domain_last_completed_at: 0,
             domain_quality_required: false,
@@ -99,6 +101,8 @@ describe('OperationsOverview agent routing', () => {
             routed_model: 'granite-code:3b',
             project_stream: '',
             domain: 'professional',
+            domain_task_key: 'task-professional-1',
+            domain_task_state: 'quality_pending',
             domain_handoff_ready: true,
             domain_last_completed_at: 1,
             domain_quality_required: true,
@@ -135,7 +139,9 @@ describe('OperationsOverview agent routing', () => {
     expect(html).toContain('qwen3.5:4b');
     expect(html).toContain('Code Reviewer');
     expect(html).toContain('professional · coding · granite-code:3b');
+    expect(html).toContain('task: task-professional-1');
     expect(html).toContain('handoff ready');
+    expect(html).toContain('task: quality_pending');
     expect(html).toContain('quality: pending');
     expect(html).toContain('anti-slop: completed');
     expect(html).toContain('thermos: pending');

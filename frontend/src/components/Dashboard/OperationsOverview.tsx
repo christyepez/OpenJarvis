@@ -83,6 +83,14 @@ export function AgentRoutingSummary({
                 .filter(Boolean)
                 .join(' · ')}
             </div>
+            {agent.domain_task_key ? (
+              <div
+                className="truncate max-w-[360px] mt-0.5"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                task: {agent.domain_task_key}
+              </div>
+            ) : null}
             {agent.domain_handoff_ready && agent.domain_result ? (
               <div
                 className="truncate max-w-[360px] mt-0.5"
@@ -104,6 +112,9 @@ export function AgentRoutingSummary({
           </div>
           <div className="flex flex-wrap justify-end gap-1">
             {agent.domain_handoff_ready ? <Badge>handoff ready</Badge> : null}
+            {agent.domain_task_key ? (
+              <Badge>task: {agent.domain_task_state}</Badge>
+            ) : null}
             {agent.domain ? (
               <Badge>quality: {agent.domain_quality_status}</Badge>
             ) : null}

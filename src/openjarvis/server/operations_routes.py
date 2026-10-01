@@ -428,6 +428,34 @@ def _agent_summary(
         domain_quality_stages = list(
             domain_quality.get("stages", []) or []
         )
+        domain_task_key = str(
+            config.get("domain_task_key", "") or ""
+        )
+        domain_handoff_ready = bool(
+            config.get("domain_handoff_ready", False)
+        )
+        domain_error = str(config.get("domain_last_error", "") or "")
+        if not domain_task_key:
+            domain_task_state = ""
+        elif domain_error:
+            domain_task_state = "error"
+        elif domain_handoff_ready and domain_quality_required:
+            if domain_quality_status == "completed":
+                domain_task_state = "complete"
+            elif domain_quality_status in {
+                "failed",
+                "needs_attention",
+                "missing",
+            }:
+                domain_task_state = "quality_failed"
+            else:
+                domain_task_state = "quality_pending"
+        elif domain_handoff_ready:
+            domain_task_state = "complete"
+        elif status.casefold() in {"running", "active"}:
+            domain_task_state = "running"
+        else:
+            domain_task_state = "created"
 
         configured_model = str(config.get("model", "") or "").strip()
         if configured_model and configured_model.casefold() != "smart":
@@ -450,9 +478,9 @@ def _agent_summary(
                     config.get("project_stream", "") or ""
                 ),
                 "domain": domain,
-                "domain_handoff_ready": bool(
-                    config.get("domain_handoff_ready", False)
-                ),
+                "domain_task_key": domain_task_key,
+                "domain_task_state": domain_task_state,
+                "domain_handoff_ready": domain_handoff_ready,
                 "domain_last_completed_at": float(
                     config.get("domain_last_completed_at", 0.0) or 0.0
                 ),
