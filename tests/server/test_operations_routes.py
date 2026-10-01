@@ -451,6 +451,7 @@ def test_operations_project_next_action_dispatches_ready_stream(
             project_name="Operations Project",
             objective="Build API and tests",
             repository="https://github.com/example/operations-project",
+            runtime_machines="trabajo,MarketingIndo",
         )
         payload = __import__("json").loads(boot.content)
         executor = _Executor(manager)
@@ -487,6 +488,18 @@ def test_operations_project_next_action_dispatches_ready_stream(
         assert data["dispatched_streams"] == ["architecture"]
         assert data["started_agents"]
         assert executor.calls == data["started_agents"]
+
+        status = TestClient(app).get("/v1/operations/status")
+        assert status.status_code == 200
+        projects = status.json()["projects"]["projects"]
+        project = next(
+            item for item in projects if item["project_key"] == project_key
+        )
+        architecture = next(
+            item for item in project["streams"]
+            if item["stream"] == "architecture"
+        )
+        assert architecture["runtime_machine"] == "trabajo"
     finally:
         manager.close()
 

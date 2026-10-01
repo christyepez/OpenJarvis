@@ -283,6 +283,9 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "findings_count": len(task.get("findings", []) or []),
                     "branch": str(progress.get("branch", "") or ""),
                     "workspace": str(progress.get("workspace", "") or ""),
+                    "runtime_machine": str(
+                        progress.get("runtime_machine", "") or ""
+                    ),
                     "depends_on_task_ids": [
                         str(value)
                         for value in (
