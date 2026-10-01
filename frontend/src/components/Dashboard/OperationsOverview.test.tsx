@@ -271,6 +271,7 @@ describe('OperationsOverview project execution boards', () => {
               ready_streams: ['architecture'],
               active_streams: ['backend'],
               handoff_ready_streams: ['backend'],
+              failed_streams: [],
               blocked_streams: ['integration'],
               done_streams: [],
               quality_pipeline_id: 'quality-1',

@@ -2693,3 +2693,74 @@ def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
         assert workers == []
     finally:
         manager.close()
+
+
+
+def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Recovered after runtime failover.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Retry Existing Worker",
+                objective="Build API and tests",
+                repository="https://github.com/example/retry-worker",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatched = json.loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key,
+                streams="architecture",
+            ).content
+        )
+        worker_id = dispatched["dispatched"][0]["agent_id"]
+        manager.update_agent(worker_id, status="error")
+        before = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert before["failed_streams"] == ["architecture"]
+        assert before["next_action"] == "retry-workers:architecture"
+
+        executor = _Executor(manager)
+        advanced = json.loads(
+            ProjectAdvanceTool(
+                manager=manager,
+                executor=executor,
+            ).execute(project_key=project_key).content
+        )
+
+        assert advanced["action"] == "workers-retried"
+        assert advanced["started_agents"] == [worker_id]
+        assert advanced["start_errors"] == []
+        assert executor.calls == [worker_id]
+        workers = [
+            agent
+            for agent in manager.list_agents()
+            if (agent.get("config", {}) or {}).get("project_stream")
+            == "architecture"
+        ]
+        assert len(workers) == 1
+        task_id = dispatched["dispatched"][0]["task_id"]
+        task = manager.get_task(task_id)
+        assert task is not None
+        assert task["progress"]["handoff_ready"] is False
+        assert task["progress"]["worker_status"] == "retrying"
+    finally:
+        manager.close()

@@ -1941,6 +1941,7 @@ class ProjectStatusTool(BaseTool):
         ready: list[str] = []
         active: list[str] = []
         handoff_ready_streams: list[str] = []
+        failed: list[str] = []
         blocked: list[str] = []
         done: list[str] = []
 
@@ -1964,10 +1965,14 @@ class ProjectStatusTool(BaseTool):
             ]
             task_status = str(task.get("status", "pending") or "pending").casefold()
             worker = workers.get(stream)
+            worker_status = str((worker or {}).get("status", "") or "").casefold()
 
             if task_status == "completed":
                 state = "DONE"
                 done.append(stream)
+            elif worker and worker_status == "error":
+                state = "ERROR"
+                failed.append(stream)
             elif task_status in {"active", "running", "in_progress"} or worker:
                 state = "ACTIVE"
                 active.append(stream)
@@ -2014,6 +2019,8 @@ class ProjectStatusTool(BaseTool):
             next_action = f"dispatch:{','.join(ready)}"
         elif handoff_ready_streams:
             next_action = f"review-handoff:{','.join(handoff_ready_streams)}"
+        elif failed:
+            next_action = f"retry-workers:{','.join(failed)}"
         elif active:
             next_action = f"wait-active:{','.join(active)}"
         elif blocked:
@@ -2043,6 +2050,7 @@ class ProjectStatusTool(BaseTool):
                     "ready_streams": ready,
                     "active_streams": active,
                     "handoff_ready_streams": handoff_ready_streams,
+                    "failed_streams": failed,
                     "blocked_streams": blocked,
                     "done_streams": done,
                     "quality_pipeline_id": quality_pipeline_id,
@@ -2109,6 +2117,8 @@ class ProjectAdvanceTool(BaseTool):
 
         dispatch_payload: dict[str, Any] | None = None
         quality_payload: dict[str, Any] | None = None
+        retried_agents: list[str] = []
+        retry_errors: list[dict[str, str]] = []
         action = "complete"
         if ready:
             dispatch_result = ProjectDispatchTool(manager=self._manager).execute(
@@ -2125,6 +2135,49 @@ class ProjectAdvanceTool(BaseTool):
             action = "dispatched"
         elif before.get("handoff_ready_streams"):
             action = "review-handoff"
+        elif before.get("failed_streams"):
+            if self._executor is None:
+                action = "retry-await-executor"
+            else:
+                failed_streams = set(before.get("failed_streams", []) or [])
+                for row in before.get("streams", []) or []:
+                    if str(row.get("stream", "") or "") not in failed_streams:
+                        continue
+                    agent_id = str(row.get("worker_agent_id", "") or "")
+                    task_id = str(row.get("task_id", "") or "")
+                    if not agent_id:
+                        continue
+                    self._manager.update_agent(agent_id, status="idle")
+                    if task_id:
+                        task = self._manager.get_task(task_id)
+                        if task is not None:
+                            progress = dict(task.get("progress", {}) or {})
+                            progress["handoff_ready"] = False
+                            progress["worker_status"] = "retrying"
+                            self._manager.update_task(
+                                task_id,
+                                status=task.get("status", "active"),
+                                progress=progress,
+                            )
+                    try:
+                        self._executor.execute_tick(agent_id)
+                        retried_agents.append(agent_id)
+                    except Exception as exc:
+                        retry_errors.append(
+                            {"agent_id": agent_id, "error": str(exc)}
+                        )
+                        self._manager.update_agent(agent_id, status="error")
+                        if task_id:
+                            task = self._manager.get_task(task_id)
+                            if task is not None:
+                                progress = dict(task.get("progress", {}) or {})
+                                progress["worker_status"] = "error"
+                                self._manager.update_task(
+                                    task_id,
+                                    status=task.get("status", "active"),
+                                    progress=progress,
+                                )
+                action = "workers-retried"
         elif before.get("active_streams"):
             action = "wait-active"
         elif before.get("blocked_streams"):
@@ -2184,8 +2237,8 @@ class ProjectAdvanceTool(BaseTool):
         ):
             action = "resolve-quality"
 
-        started_agents: list[str] = []
-        start_errors: list[dict[str, str]] = []
+        started_agents: list[str] = list(retried_agents)
+        start_errors: list[dict[str, str]] = list(retry_errors)
         if dispatch_payload is not None and self._executor is not None:
             for item in dispatch_payload.get("dispatched", []) or []:
                 if item.get("reused") is True:

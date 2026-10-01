@@ -471,7 +471,9 @@ def _project_summary(manager: Any) -> dict[str, Any]:
             board.get("quality_status", "not_started") or "not_started"
         )
 
-        if stream_status in {"failed", "needs_attention", "active", "pending"}:
+        if board.get("failed_streams"):
+            status = "failed"
+        elif stream_status in {"failed", "needs_attention", "active", "pending"}:
             status = stream_status
         elif quality_status == "failed":
             status = "failed"
@@ -503,6 +505,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 "handoff_ready_streams": list(
                     board.get("handoff_ready_streams", []) or []
                 ),
+                "failed_streams": list(board.get("failed_streams", []) or []),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
                 "quality_pipeline_id": quality_pipeline_id,
@@ -859,8 +862,10 @@ def operations_project_next_action(
 
     status = json.loads(status_result.content)
     next_action = str(status.get("next_action", "") or "")
-    needs_executor = bool(status.get("ready_streams")) or next_action.startswith(
-        "advance-quality:"
+    needs_executor = (
+        bool(status.get("ready_streams"))
+        or next_action.startswith("retry-workers:")
+        or next_action.startswith("advance-quality:")
     )
     runtime_machines = [
         str(value).strip()

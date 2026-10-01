@@ -305,6 +305,9 @@ export function ProjectBoardSummary({
             {project.handoff_ready_streams.length ? (
               <Badge>REVIEW: {project.handoff_ready_streams.length}</Badge>
             ) : null}
+            {project.failed_streams.length ? (
+              <Badge>ERROR: {project.failed_streams.length}</Badge>
+            ) : null}
             {project.blocked_streams.length ? (
               <Badge>BLOCKED: {project.blocked_streams.length}</Badge>
             ) : null}
@@ -333,6 +336,7 @@ export function ProjectBoardSummary({
             {onNextAction &&
             (project.runtime_machines.length === 0 || machineAvailable) &&
             (project.ready_streams.length > 0 ||
+              project.next_action.startsWith('retry-workers:') ||
               project.next_action === 'start-quality-pipeline' ||
               project.next_action.startsWith('advance-quality:')) ? (
               <button

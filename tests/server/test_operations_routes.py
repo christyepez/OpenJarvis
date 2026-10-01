@@ -881,3 +881,91 @@ def test_operations_project_next_action_blocks_when_runtime_offline(
         assert executor.calls == []
     finally:
         manager.close()
+
+
+
+def test_operations_project_next_action_retries_failed_worker(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from urllib.parse import quote
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server import operations_routes
+    from openjarvis.tools.agent_tools import (
+        ProjectBootstrapTool,
+        ProjectDispatchTool,
+    )
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Recovered from failed runtime.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = __import__("json").loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Retry From Operations",
+                objective="Build API and tests",
+                repository="https://github.com/example/retry-operations",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatched = __import__("json").loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key,
+                streams="architecture",
+            ).content
+        )
+        worker_id = dispatched["dispatched"][0]["agent_id"]
+        manager.update_agent(worker_id, status="error")
+
+        executor = _Executor(manager)
+        monkeypatch.setattr(
+            operations_routes,
+            "_operations_executor",
+            lambda state, current_manager: executor,
+        )
+        config = SimpleNamespace(
+            governance=SimpleNamespace(),
+            security=SimpleNamespace(enabled=False),
+            traces=SimpleNamespace(enabled=False),
+            analytics=SimpleNamespace(enabled=False),
+        )
+        app = create_app(
+            _Engine(),
+            "qwen3.5:4b",
+            engine_name="ollama",
+            config=config,
+            agent_manager=manager,
+        )
+        response = TestClient(app).post(
+            "/v1/operations/projects/"
+            + quote(project_key, safe="")
+            + "/next-action"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["action"] == "workers-retried"
+        assert data["started_agents"] == [worker_id]
+        assert executor.calls == [worker_id]
+
+        status = TestClient(app).get("/v1/operations/status").json()
+        project = next(
+            item
+            for item in status["projects"]["projects"]
+            if item["project_key"] == project_key
+        )
+        assert project["failed_streams"] == []
+    finally:
+        manager.close()
