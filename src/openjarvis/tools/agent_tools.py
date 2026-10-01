@@ -2027,6 +2027,13 @@ class ProjectStatusTool(BaseTool):
                 {
                     "project_key": project_key,
                     "project_name": str(project_config.get("project_name", "") or ""),
+                    "runtime_machines": [
+                        str(value)
+                        for value in (
+                            project_config.get("runtime_machines", []) or []
+                        )
+                        if str(value)
+                    ],
                     "summary": {
                         "ready": len(ready),
                         "active": len(active),

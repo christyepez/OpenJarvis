@@ -254,10 +254,12 @@ export function ProjectBoardSummary({
   projects,
   onNextAction,
   busyProjectKey = '',
+  machineAvailable = true,
 }: {
   projects: OperationsStatus['projects'];
   onNextAction?: (projectKey: string) => void;
   busyProjectKey?: string;
+  machineAvailable?: boolean;
 }) {
   if (!projects.projects.length) {
     return (
@@ -325,7 +327,11 @@ export function ProjectBoardSummary({
             {project.handoff_ready_streams.length ? (
               <Badge>handoff review required</Badge>
             ) : null}
+            {project.runtime_machines.length > 0 && !machineAvailable ? (
+              <Badge>runtime unavailable</Badge>
+            ) : null}
             {onNextAction &&
+            (project.runtime_machines.length === 0 || machineAvailable) &&
             (project.ready_streams.length > 0 ||
               project.next_action === 'start-quality-pipeline' ||
               project.next_action.startsWith('advance-quality:')) ? (
@@ -717,6 +723,7 @@ export function OperationsOverview() {
           <ProjectBoardSummary
             projects={status.projects}
             busyProjectKey={busyProjectKey}
+            machineAvailable={status.machines.selected !== null}
             onNextAction={(projectKey) => {
               void runProjectNextAction(projectKey);
             }}

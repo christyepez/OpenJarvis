@@ -809,3 +809,69 @@ def test_operations_machine_probe_marks_worker_unavailable_when_all_offline() ->
     assert worker["config"]["runtime_machine_status"] == "unavailable"
     task = manager.tasks["task-backend-1"]
     assert task["progress"]["runtime_machine_status"] == "unavailable"
+
+
+
+def test_operations_project_next_action_blocks_when_runtime_offline(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from urllib.parse import quote
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server import operations_routes
+    from openjarvis.tools.agent_tools import ProjectBootstrapTool
+
+    class _Executor:
+        def __init__(self):
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = ProjectBootstrapTool(manager=manager).execute(
+            project_name="Offline Runtime Project",
+            objective="Build API and tests",
+            repository="https://github.com/example/offline-runtime",
+            runtime_machines="trabajo,MarketingIndo",
+        )
+        payload = __import__("json").loads(boot.content)
+        executor = _Executor()
+        monkeypatch.setattr(
+            operations_routes,
+            "_operations_executor",
+            lambda state, current_manager: executor,
+        )
+        config = SimpleNamespace(
+            governance=SimpleNamespace(),
+            security=SimpleNamespace(enabled=False),
+            traces=SimpleNamespace(enabled=False),
+            analytics=SimpleNamespace(enabled=False),
+        )
+        app = create_app(
+            _Engine(),
+            "qwen3.5:4b",
+            engine_name="ollama",
+            config=config,
+            agent_manager=manager,
+        )
+        app.state.machine_descriptors = [
+            {"name": "trabajo", "online": False},
+            {"name": "MarketingIndo", "online": False},
+        ]
+
+        project_key = payload["project_key"]
+        response = TestClient(app).post(
+            "/v1/operations/projects/"
+            + quote(project_key, safe="")
+            + "/next-action"
+        )
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "No configured runtime machine is currently available."
+        )
+        assert executor.calls == []
+    finally:
+        manager.close()

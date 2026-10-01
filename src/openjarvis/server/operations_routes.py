@@ -828,6 +828,26 @@ def operations_project_next_action(
     needs_executor = bool(status.get("ready_streams")) or next_action.startswith(
         "advance-quality:"
     )
+    runtime_machines = [
+        str(value).strip()
+        for value in (status.get("runtime_machines", []) or [])
+        if str(value).strip()
+    ]
+    if needs_executor and runtime_machines:
+        descriptors = getattr(state, "machine_descriptors", None) or []
+        online_names = {
+            str(item.get("name", "") or "").casefold()
+            for item in descriptors
+            if isinstance(item, dict) and bool(item.get("online", False))
+        }
+        if descriptors and not any(
+            machine.casefold() in online_names for machine in runtime_machines
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="No configured runtime machine is currently available.",
+            )
+
     executor = _operations_executor(state, manager) if needs_executor else None
 
     result = ProjectAdvanceTool(
