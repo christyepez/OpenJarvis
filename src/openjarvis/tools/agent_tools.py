@@ -2154,7 +2154,7 @@ class QualityPipelineTool(BaseTool):
         stages: list[dict[str, Any]] = []
         previous_task_id = ""
 
-        for stage in plan.stages:
+        for order, stage in enumerate(plan.stages):
             template = templates.get(stage)
             kind = "agent" if template is not None else "gate"
             task = self._manager.create_task(
@@ -2166,6 +2166,7 @@ class QualityPipelineTool(BaseTool):
                 "pipeline_id": pipeline_id,
                 "stage": stage.value,
                 "kind": kind,
+                "order": order,
                 "depends_on_task_id": previous_task_id,
             }
             previous_task_id = task["id"]

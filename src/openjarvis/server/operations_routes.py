@@ -135,6 +135,10 @@ def _project_summary(manager: Any) -> dict[str, Any]:
     from openjarvis.tools.agent_tools import ProjectStatusTool
 
     status_tool = ProjectStatusTool(manager=manager)
+    quality_by_id = {
+        row["pipeline_id"]: row
+        for row in _quality_summary(manager).get("pipelines", [])
+    }
 
     for agent in agents:
         config = agent.get("config", {}) or {}
@@ -216,6 +220,13 @@ def _project_summary(manager: Any) -> dict[str, Any]:
         except Exception:
             board = {}
 
+        quality_pipeline_id = str(
+            board.get("quality_pipeline_id", "") or ""
+        )
+        quality_stages = list(
+            (quality_by_id.get(quality_pipeline_id) or {}).get("stages", [])
+        )
+
         projects.append(
             {
                 "project_key": project_key,
@@ -235,12 +246,11 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 ),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
-                "quality_pipeline_id": str(
-                    board.get("quality_pipeline_id", "") or ""
-                ),
+                "quality_pipeline_id": quality_pipeline_id,
                 "quality_status": str(
                     board.get("quality_status", "not_started") or "not_started"
                 ),
+                "quality_stages": quality_stages,
                 "streams": streams,
             }
         )
@@ -284,7 +294,12 @@ def _quality_summary(manager: Any) -> dict[str, Any]:
             tasks = []
 
         stage_rows: list[dict[str, Any]] = []
-        for task in tasks:
+        for task in sorted(
+            tasks,
+            key=lambda row: int(
+                ((row.get("progress", {}) or {}).get("order", 999))
+            ),
+        ):
             progress = task.get("progress", {}) or {}
             stage_rows.append(
                 {

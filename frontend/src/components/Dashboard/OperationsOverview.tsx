@@ -177,6 +177,15 @@ export function ProjectBoardSummary({
               next: {project.next_action}
             </div>
           ) : null}
+          {project.quality_stages.length ? (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {project.quality_stages.map((stage) => (
+                <Badge key={stage.task_id}>
+                  {stage.stage}: {stage.status}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
           <div className="space-y-1.5 mt-1.5">
             {project.streams.map((stream) => (
               <div key={stream.task_id} className="flex flex-wrap items-center gap-1">

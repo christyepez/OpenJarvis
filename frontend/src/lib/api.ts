@@ -326,6 +326,15 @@ export interface OperationsStatus {
       done_streams: string[];
       quality_pipeline_id: string;
       quality_status: string;
+      quality_stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
       streams: Array<{
         task_id: string;
         stream: string;
