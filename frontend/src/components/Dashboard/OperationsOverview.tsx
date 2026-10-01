@@ -147,7 +147,10 @@ export function ProjectBoardSummary({
                 </div>
               ) : null}
             </div>
-            <Badge>{project.status}</Badge>
+            <div className="flex flex-wrap gap-1">
+              <Badge>{project.status}</Badge>
+              <Badge>quality: {project.quality_status}</Badge>
+            </div>
           </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {project.ready_streams.length ? (

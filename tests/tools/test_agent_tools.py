@@ -23,6 +23,7 @@ from openjarvis.tools.agent_tools import (
     QualityAdvanceTool,
     QualityGateUpdateTool,
     QualityPipelineTool,
+    _project_coordinator,
     _project_stream_capability,
 )
 
@@ -1393,3 +1394,96 @@ def test_worker_assigned_stream_cannot_complete_without_handoff_review(tmp_path)
         assert status["done_streams"] == []
     finally:
         manager.close()
+
+
+
+def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    executor = _RecordingProjectExecutor()
+    _SPAWNED_AGENTS.clear()
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Portal",
+                objective="Define architecture and release safely",
+                repository="https://github.com/example/portal",
+                streams="architecture",
+            ).content
+        )
+        project_key = boot["project_key"]
+
+        completed = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            status="completed",
+            evidence="Architecture decision reviewed by coordinator.",
+        )
+        assert completed.success is True
+
+        integration = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="integration",
+            status="completed",
+            evidence="Integration contract validated.",
+        )
+        assert integration.success is True
+        qa = ProjectStreamUpdateTool(manager=manager).execute(
+            project_key=project_key,
+            stream="qa",
+            status="completed",
+            evidence="QA acceptance checks passed.",
+        )
+        assert qa.success is True
+
+        status_before = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert status_before["done_streams"] == [
+            "architecture",
+            "integration",
+            "qa",
+        ]
+        assert status_before["quality_status"] == "not_started"
+        assert status_before["next_action"] == "start-quality-pipeline"
+
+        advance = ProjectAdvanceTool(
+            manager=manager,
+            executor=executor,
+        )
+        started = json.loads(advance.execute(project_key=project_key).content)
+        assert started["action"] == "quality-started"
+        assert started["quality"]["project_key"] == project_key
+        assert started["quality"]["reused"] is False
+        pipeline_id = started["quality"]["pipeline_id"]
+        assert started["status"]["quality_pipeline_id"] == pipeline_id
+        assert started["status"]["quality_status"] == "pending"
+        assert started["status"]["next_action"] == (
+            f"advance-quality:{pipeline_id}"
+        )
+
+        project = _project_coordinator(manager, project_key)
+        assert project is not None
+        assert project["config"]["quality_pipeline_id"] == pipeline_id
+
+        reused = json.loads(
+            QualityPipelineTool(manager=manager).execute(
+                project_key=project_key,
+                objective="Duplicate quality request must reuse pipeline",
+                release_candidate=True,
+            ).content
+        )
+        assert reused["reused"] is True
+        assert reused["pipeline_id"] == pipeline_id
+
+        gate = json.loads(advance.execute(project_key=project_key).content)
+        assert gate["action"] == "quality-advanced"
+        assert gate["quality"]["action"] == "gate_requires_evidence"
+        assert gate["quality"]["stage"] == "build-tests"
+        assert executor.agent_ids == []
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()

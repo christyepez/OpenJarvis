@@ -694,6 +694,50 @@ def _project_coordinator(manager: Any, project_key: str) -> dict[str, Any] | Non
     return None
 
 
+def _project_quality_state(
+    manager: Any,
+    pipeline_id: str,
+) -> tuple[str, str]:
+    """Return quality status and the deterministic next project action."""
+    if not pipeline_id:
+        return "not_started", "start-quality-pipeline"
+
+    coordinator = next(
+        (
+            record
+            for record in manager.list_agents()
+            if str(
+                (record.get("config", {}) or {}).get("quality_pipeline_id", "")
+            )
+            == pipeline_id
+            and str(
+                (record.get("config", {}) or {}).get(
+                    "quality_pipeline_role", ""
+                )
+            ).casefold()
+            == "coordinator"
+        ),
+        None,
+    )
+    if coordinator is None:
+        return "missing", f"resolve-quality:{pipeline_id}"
+
+    tasks = list(manager.list_tasks(coordinator["id"]))
+    statuses = {
+        str(task.get("status", "pending") or "pending").casefold()
+        for task in tasks
+    }
+    if "failed" in statuses:
+        return "failed", f"resolve-quality:{pipeline_id}"
+    if "needs_attention" in statuses:
+        return "needs_attention", f"resolve-quality:{pipeline_id}"
+    if tasks and statuses == {"completed"}:
+        return "completed", "complete"
+    if "active" in statuses or "running" in statuses:
+        return "active", f"advance-quality:{pipeline_id}"
+    return "pending", f"advance-quality:{pipeline_id}"
+
+
 @ToolRegistry.register("project_worktree_prepare")
 class ProjectWorktreePrepareTool(BaseTool):
     """Create or reuse isolated Git worktrees for parallel project streams."""
@@ -1103,6 +1147,15 @@ class ProjectStatusTool(BaseTool):
                 }
             )
 
+        project_config = project.get("config", {}) or {}
+        quality_pipeline_id = str(
+            project_config.get("quality_pipeline_id", "") or ""
+        )
+        quality_status, quality_action = _project_quality_state(
+            self._manager,
+            quality_pipeline_id,
+        )
+
         if ready:
             next_action = f"dispatch:{','.join(ready)}"
         elif handoff_ready_streams:
@@ -1112,9 +1165,8 @@ class ProjectStatusTool(BaseTool):
         elif blocked:
             next_action = f"resolve-dependencies:{','.join(blocked)}"
         else:
-            next_action = "complete"
+            next_action = quality_action
 
-        project_config = project.get("config", {}) or {}
         return ToolResult(
             tool_name=self.tool_id,
             content=json.dumps(
@@ -1132,6 +1184,8 @@ class ProjectStatusTool(BaseTool):
                     "handoff_ready_streams": handoff_ready_streams,
                     "blocked_streams": blocked,
                     "done_streams": done,
+                    "quality_pipeline_id": quality_pipeline_id,
+                    "quality_status": quality_status,
                     "next_action": next_action,
                     "streams": rows,
                 }
@@ -1193,6 +1247,7 @@ class ProjectAdvanceTool(BaseTool):
         ready = list(before.get("ready_streams", []) or [])
 
         dispatch_payload: dict[str, Any] | None = None
+        quality_payload: dict[str, Any] | None = None
         action = "complete"
         if ready:
             dispatch_result = ProjectDispatchTool(manager=self._manager).execute(
@@ -1213,6 +1268,60 @@ class ProjectAdvanceTool(BaseTool):
             action = "wait-active"
         elif before.get("blocked_streams"):
             action = "resolve-dependencies"
+        elif before.get("next_action") == "start-quality-pipeline":
+            project = _project_coordinator(self._manager, project_key)
+            project_config = dict((project or {}).get("config", {}) or {})
+            stream_names = {
+                str(row.get("stream", "") or "").casefold()
+                for row in (before.get("streams", []) or [])
+            }
+            quality_result = QualityPipelineTool(
+                manager=self._manager
+            ).execute(
+                project_key=project_key,
+                objective=(
+                    "Release quality for project "
+                    + str(
+                        project_config.get("project_name", project_key)
+                        or project_key
+                    )
+                ),
+                has_code_changes=True,
+                has_visual_changes="frontend" in stream_names,
+                material_change=True,
+                release_candidate=True,
+            )
+            if not quality_result.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=quality_result.content,
+                    success=False,
+                )
+            quality_payload = json.loads(quality_result.content)
+            action = "quality-started"
+        elif str(before.get("next_action", "")).startswith(
+            "advance-quality:"
+        ):
+            pipeline_id = str(before.get("quality_pipeline_id", "") or "")
+            if self._executor is None:
+                action = "quality-await-executor"
+            else:
+                quality_result = QualityAdvanceTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(pipeline_id=pipeline_id)
+                if not quality_result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=quality_result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(quality_result.content)
+                action = "quality-advanced"
+        elif str(before.get("next_action", "")).startswith(
+            "resolve-quality:"
+        ):
+            action = "resolve-quality"
 
         started_agents: list[str] = []
         start_errors: list[dict[str, str]] = []
@@ -1250,6 +1359,7 @@ class ProjectAdvanceTool(BaseTool):
                     "started_agents": started_agents,
                     "start_errors": start_errors,
                     "dispatch": dispatch_payload,
+                    "quality": quality_payload,
                     "status": after,
                 }
             ),
@@ -1912,6 +2022,12 @@ class QualityPipelineTool(BaseTool):
                         "type": "string",
                         "description": "Implementation or review objective.",
                     },
+                    "project_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional project to bind this quality pipeline to."
+                        ),
+                    },
                     "has_code_changes": {"type": "boolean", "default": True},
                     "has_visual_changes": {"type": "boolean", "default": False},
                     "material_change": {"type": "boolean", "default": True},
@@ -1939,6 +2055,58 @@ class QualityPipelineTool(BaseTool):
                 success=False,
             )
 
+        project_key = str(params.get("project_key", "") or "").strip()
+        project: dict[str, Any] | None = None
+        if project_key:
+            project = _project_coordinator(self._manager, project_key)
+            if project is None:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=f"Project bootstrap not found: {project_key}",
+                    success=False,
+                )
+            project_config = dict(project.get("config", {}) or {})
+            existing_id = str(
+                project_config.get("quality_pipeline_id", "") or ""
+            )
+            if existing_id:
+                existing = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == existing_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=json.dumps(
+                            {
+                                "pipeline_id": existing_id,
+                                "coordinator_agent_id": existing["id"],
+                                "objective": objective,
+                                "project_key": project_key,
+                                "reused": True,
+                                "stages": self._manager.list_tasks(
+                                    existing["id"]
+                                ),
+                            }
+                        ),
+                        success=True,
+                    )
+
         from openjarvis.governance.quality_pipeline import (
             QualityPipelinePlanner,
             QualityStage,
@@ -1964,9 +2132,23 @@ class QualityPipelineTool(BaseTool):
                 "model": "smart",
                 "quality_pipeline_id": pipeline_id,
                 "quality_pipeline_role": "coordinator",
+                "quality_project_key": project_key,
             },
             agent_id=f"quality-{pipeline_id}",
         )
+
+        if project is not None:
+            project_config = dict(project.get("config", {}) or {})
+            project_config.update(
+                {
+                    "quality_pipeline_id": pipeline_id,
+                    "quality_status": "pending",
+                }
+            )
+            self._manager.update_agent(
+                project["id"],
+                config=project_config,
+            )
 
         spawn = AgentSpawnTool(manager=self._manager)
         stages: list[dict[str, Any]] = []
@@ -2024,6 +2206,7 @@ class QualityPipelineTool(BaseTool):
                     {
                         "quality_pipeline_id": pipeline_id,
                         "quality_pipeline_role": "reviewer",
+                        "quality_project_key": project_key,
                         "quality_task_id": task["id"],
                         "quality_stage": stage.value,
                     }
@@ -2055,6 +2238,8 @@ class QualityPipelineTool(BaseTool):
                     "pipeline_id": pipeline_id,
                     "coordinator_agent_id": coordinator["id"],
                     "objective": objective,
+                    "project_key": project_key,
+                    "reused": False,
                     "stages": stages,
                 }
             ),

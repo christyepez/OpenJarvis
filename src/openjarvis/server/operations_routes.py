@@ -235,6 +235,12 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 ),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
+                "quality_pipeline_id": str(
+                    board.get("quality_pipeline_id", "") or ""
+                ),
+                "quality_status": str(
+                    board.get("quality_status", "not_started") or "not_started"
+                ),
                 "streams": streams,
             }
         )

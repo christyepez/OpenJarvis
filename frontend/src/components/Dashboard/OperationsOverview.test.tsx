@@ -185,6 +185,8 @@ describe('OperationsOverview project execution boards', () => {
               handoff_ready_streams: ['backend'],
               blocked_streams: ['integration'],
               done_streams: [],
+              quality_pipeline_id: '',
+              quality_status: 'not_started',
               streams: [
                 {
                   task_id: 'a1',
@@ -230,6 +232,7 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('REVIEW: 1');
     expect(html).toContain('BLOCKED: 1');
     expect(html).toContain('next: dispatch:architecture');
+    expect(html).toContain('quality: not_started');
     expect(html).toContain('A.architecture: pending');
     expect(html).toContain('B.backend: active');
     expect(html).toContain('openjarvis/portal/backend');

@@ -5,7 +5,7 @@ from openjarvis.server.operations_routes import _project_summary
 from openjarvis.tools.agent_tools import (
     ProjectBootstrapTool,
     ProjectDispatchTool,
-    ProjectStreamUpdateTool,
+    ProjectHandoffReviewTool,
 )
 
 
@@ -34,11 +34,41 @@ def test_operations_project_summary_reuses_execution_board_state(tmp_path) -> No
         assert assigned["active_streams"] == ["architecture"]
         assert assigned["next_action"] == "wait-active:architecture"
 
-        updated = ProjectStreamUpdateTool(manager=manager).execute(
+        coordinator = next(
+            agent
+            for agent in manager.list_agents()
+            if (agent.get("config", {}) or {}).get("project_role")
+            == "coordinator"
+        )
+        task = next(
+            task
+            for task in manager.list_tasks(coordinator["id"])
+            if (task.get("progress", {}) or {}).get("stream")
+            == "architecture"
+        )
+        progress = dict(task.get("progress", {}) or {})
+        progress.update(
+            {
+                "handoff_ready": True,
+                "worker_status": "completed_tick",
+            }
+        )
+        manager.update_task(
+            task["id"],
+            status="active",
+            progress=progress,
+            findings=["Worker handoff ready for review."],
+        )
+
+        review_ready = _project_summary(manager)["projects"][0]
+        assert review_ready["handoff_ready_streams"] == ["architecture"]
+        assert review_ready["next_action"] == "review-handoff:architecture"
+
+        updated = ProjectHandoffReviewTool(manager=manager).execute(
             project_key=project_key,
             stream="architecture",
-            status="completed",
-            evidence="Architecture approved",
+            decision="approve",
+            review_evidence="Architecture reviewed and approved.",
         )
         assert updated.success is True
 
