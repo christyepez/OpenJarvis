@@ -388,6 +388,17 @@ export function ProjectBoardSummary({
                 {stream.retry_count > 0 ? (
                   <Badge>retries: {stream.retry_count}</Badge>
                 ) : null}
+                {stream.manual_retry_authorized ? (
+                  <Badge>manual retry authorized</Badge>
+                ) : null}
+                {stream.manual_retry_evidence ? (
+                  <span
+                    className="text-[10px]"
+                    style={{ color: 'var(--color-text-tertiary)' }}
+                  >
+                    evidence: {stream.manual_retry_evidence}
+                  </span>
+                ) : null}
                 {onAuthorizeRetry && project.exhausted_streams.includes(stream.stream) ? (
                   <button
                     type="button"

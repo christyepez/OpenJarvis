@@ -1055,5 +1055,12 @@ def test_operations_authorizes_exhausted_worker_retry_with_evidence(
         assert project["exhausted_streams"] == []
         assert project["failed_streams"] == ["architecture"]
         assert project["next_action"] == "retry-workers:architecture"
+        stream = next(
+            item for item in project["streams"] if item["stream"] == "architecture"
+        )
+        assert stream["manual_retry_authorized"] is True
+        assert stream["manual_retry_evidence"] == (
+            "Runtime connectivity was restored and verified."
+        )
     finally:
         manager.close()

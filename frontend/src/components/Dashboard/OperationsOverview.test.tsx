@@ -316,6 +316,8 @@ describe('OperationsOverview project execution boards', () => {
                   runtime_machine_status: 'unavailable',
                   retry_count: 0,
                   last_retry_at: 0,
+                  manual_retry_authorized: false,
+                  manual_retry_evidence: '',
                   depends_on_task_ids: [],
                 },
                 {
@@ -335,6 +337,8 @@ describe('OperationsOverview project execution boards', () => {
                   runtime_machine_status: 'online',
                   retry_count: 2,
                   last_retry_at: 123,
+                  manual_retry_authorized: true,
+                  manual_retry_evidence: 'Runtime connectivity restored.',
                   depends_on_task_ids: ['a1'],
                 },
               ],
@@ -356,6 +360,8 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('runtime: unavailable');
     expect(html).toContain('runtime: online');
     expect(html).toContain('retries: 2');
+    expect(html).toContain('manual retry authorized');
+    expect(html).toContain('evidence: Runtime connectivity restored.');
     expect(html).toContain('Run next');
     expect(html).toContain('build-tests: pending');
     expect(html).toContain('anti-slop: pending');

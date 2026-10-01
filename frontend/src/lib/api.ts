@@ -366,6 +366,8 @@ export interface OperationsStatus {
         runtime_machine_status: string;
         retry_count: number;
         last_retry_at: number;
+        manual_retry_authorized: boolean;
+        manual_retry_evidence: string;
         depends_on_task_ids: string[];
       }>;
     }>;

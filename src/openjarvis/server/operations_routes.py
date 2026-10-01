@@ -432,6 +432,12 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "last_retry_at": float(
                         progress.get("last_retry_at", 0.0) or 0.0
                     ),
+                    "manual_retry_authorized": bool(
+                        progress.get("manual_retry_authorized", False)
+                    ),
+                    "manual_retry_evidence": str(
+                        progress.get("manual_retry_evidence", "") or ""
+                    ),
                     "depends_on_task_ids": [
                         str(value)
                         for value in (
