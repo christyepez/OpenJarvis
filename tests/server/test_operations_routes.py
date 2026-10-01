@@ -715,3 +715,97 @@ def test_operations_machine_probe_rebinds_worker_to_online_fallback() -> None:
     assert worker["config"]["runtime_device_id"] == "device-marketing"
     task = manager.tasks["task-backend-1"]
     assert task["progress"]["runtime_machine"] == "MarketingIndo"
+
+
+
+def test_operations_machine_probe_marks_worker_unavailable_when_all_offline() -> None:
+    class _AllOfflineListDevicesTool:
+        tool_id = "mcp_adapter"
+        spec = SimpleNamespace(name="list_devices")
+
+        def execute(self):
+            return SimpleNamespace(
+                success=True,
+                content=(
+                    "Desktop Commander devices\n\n"
+                    "1. trabajo\n"
+                    "   Status: Offline\n"
+                    "   ID: device-trabajo\n\n"
+                    "2. MarketingIndo\n"
+                    "   Status: Offline\n"
+                    "   ID: device-marketing\n"
+                ),
+            )
+
+    class _RuntimeManager:
+        def __init__(self):
+            self.records = [
+                {
+                    "id": "project-backend-1",
+                    "config": {
+                        "runtime_machine": "trabajo",
+                        "runtime_device_id": "device-trabajo",
+                        "runtime_machine_candidates": [
+                            "trabajo",
+                            "MarketingIndo",
+                        ],
+                        "project_task_id": "task-backend-1",
+                    },
+                }
+            ]
+            self.tasks = {
+                "task-backend-1": {
+                    "id": "task-backend-1",
+                    "status": "active",
+                    "progress": {
+                        "runtime_machine": "trabajo",
+                        "runtime_machine_status": "online",
+                    },
+                }
+            }
+
+        def list_agents(self):
+            return self.records
+
+        def update_agent(self, agent_id, **changes):
+            record = next(item for item in self.records if item["id"] == agent_id)
+            record.update(changes)
+            return record
+
+        def get_task(self, task_id):
+            return self.tasks.get(task_id)
+
+        def update_task(self, task_id, **changes):
+            self.tasks[task_id].update(changes)
+            return self.tasks[task_id]
+
+        def close(self):
+            return None
+    manager = _RuntimeManager()
+    governance = SimpleNamespace(
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=manager,
+        mcp_tools=[_AllOfflineListDevicesTool(), _PingTool()],
+    )
+
+    response = TestClient(app).post("/v1/operations/machines/probe")
+
+    assert response.status_code == 200
+    worker = manager.records[0]
+    assert worker["config"]["runtime_device_id"] == ""
+    assert worker["config"]["runtime_machine_status"] == "unavailable"
+    task = manager.tasks["task-backend-1"]
+    assert task["progress"]["runtime_machine_status"] == "unavailable"

@@ -179,9 +179,13 @@ def _bind_runtime_device_ids(
                 machine != selected
                 or str(config.get("runtime_device_id", "") or "") != device_id
             )
-            if changed:
+            status_changed = (
+                str(config.get("runtime_machine_status", "") or "") != "online"
+            )
+            if changed or status_changed:
                 config["runtime_machine"] = selected
                 config["runtime_device_id"] = device_id
+                config["runtime_machine_status"] = "online"
                 update_agent(agent["id"], config=config)
                 updated += 1
 
@@ -190,8 +194,12 @@ def _bind_runtime_device_ids(
                     task = get_task(task_id)
                     if task is not None:
                         progress = dict(task.get("progress", {}) or {})
-                        if progress.get("runtime_machine") != selected:
+                        if (
+                            progress.get("runtime_machine") != selected
+                            or progress.get("runtime_machine_status") != "online"
+                        ):
                             progress["runtime_machine"] = selected
+                            progress["runtime_machine_status"] = "online"
                             update_task(
                                 task_id,
                                 status=task.get("status", "active"),
@@ -199,10 +207,29 @@ def _bind_runtime_device_ids(
                             )
             continue
 
-        if str(config.get("runtime_device_id", "") or ""):
+        unavailable_changed = (
+            bool(str(config.get("runtime_device_id", "") or ""))
+            or str(config.get("runtime_machine_status", "") or "")
+            != "unavailable"
+        )
+        if unavailable_changed:
             config["runtime_device_id"] = ""
+            config["runtime_machine_status"] = "unavailable"
             update_agent(agent["id"], config=config)
             updated += 1
+
+            task_id = str(config.get("project_task_id", "") or "")
+            if task_id and callable(get_task) and callable(update_task):
+                task = get_task(task_id)
+                if task is not None:
+                    progress = dict(task.get("progress", {}) or {})
+                    if progress.get("runtime_machine_status") != "unavailable":
+                        progress["runtime_machine_status"] = "unavailable"
+                        update_task(
+                            task_id,
+                            status=task.get("status", "active"),
+                            progress=progress,
+                        )
 
     return updated
 
