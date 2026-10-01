@@ -256,6 +256,7 @@ describe('OperationsOverview project execution boards', () => {
     const html = renderToStaticMarkup(
       <ProjectBoardSummary
         onNextAction={() => undefined}
+        onAuthorizeRetry={() => undefined}
         projects={{
           total: 1,
           by_status: { pending: 1 },
@@ -272,7 +273,7 @@ describe('OperationsOverview project execution boards', () => {
               active_streams: ['backend'],
               handoff_ready_streams: ['backend'],
               failed_streams: [],
-              exhausted_streams: [],
+              exhausted_streams: ['architecture'],
               blocked_streams: ['integration'],
               done_streams: [],
               quality_pipeline_id: 'quality-1',
@@ -348,6 +349,8 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('READY: 1');
     expect(html).toContain('ACTIVE: 1');
     expect(html).toContain('REVIEW: 1');
+    expect(html).toContain('EXHAUSTED: 1');
+    expect(html).toContain('Authorize retry');
     expect(html).toContain('BLOCKED: 1');
     expect(html).toContain('next: dispatch:architecture');
     expect(html).toContain('runtime: unavailable');

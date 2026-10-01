@@ -498,6 +498,26 @@ export async function executeOperationsProjectNextAction(
   return res.json();
 }
 
+export async function authorizeOperationsWorkerRetry(
+  projectKey: string,
+  stream: string,
+  evidence: string,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/operations/workers/authorize-retry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_key: projectKey,
+      stream,
+      evidence,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to authorize worker retry: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function probeOperationsMachines(): Promise<
   OperationsStatus['machines']
 > {

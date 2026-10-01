@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  authorizeOperationsWorkerRetry,
   executeOperationsProjectNextAction,
   executeOperationsTaskNextAction,
   fetchOperationsStatus,
@@ -253,11 +254,13 @@ export function MemorySummary({
 export function ProjectBoardSummary({
   projects,
   onNextAction,
+  onAuthorizeRetry,
   busyProjectKey = '',
   machineAvailable = true,
 }: {
   projects: OperationsStatus['projects'];
   onNextAction?: (projectKey: string) => void;
+  onAuthorizeRetry?: (projectKey: string, stream: string) => void;
   busyProjectKey?: string;
   machineAvailable?: boolean;
 }) {
@@ -384,6 +387,21 @@ export function ProjectBoardSummary({
                 ) : null}
                 {stream.retry_count > 0 ? (
                   <Badge>retries: {stream.retry_count}</Badge>
+                ) : null}
+                {onAuthorizeRetry && project.exhausted_streams.includes(stream.stream) ? (
+                  <button
+                    type="button"
+                    className="rounded-full px-2 py-0.5 text-[10px] disabled:opacity-50"
+                    style={{
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-secondary)',
+                      background: 'var(--color-surface)',
+                    }}
+                    disabled={busyProjectKey === project.project_key}
+                    onClick={() => onAuthorizeRetry(project.project_key, stream.stream)}
+                  >
+                    Authorize retry
+                  </button>
                 ) : null}
                 {stream.handoff_ready ? (
                   <Badge>handoff ready: {stream.findings_count}</Badge>
@@ -531,6 +549,25 @@ export function OperationsOverview() {
     setActionError('');
     try {
       await executeOperationsProjectNextAction(projectKey);
+      setStatus(await fetchOperationsStatus());
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyProjectKey('');
+    }
+  };
+
+  const authorizeRetry = async (projectKey: string, stream: string) => {
+    const evidence = window.prompt(
+      `Evidence required to authorize retry for ${stream}:`,
+      '',
+    )?.trim();
+    if (!evidence) return;
+
+    setBusyProjectKey(projectKey);
+    setActionError('');
+    try {
+      await authorizeOperationsWorkerRetry(projectKey, stream, evidence);
       setStatus(await fetchOperationsStatus());
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -739,6 +776,9 @@ export function OperationsOverview() {
             machineAvailable={status.machines.selected !== null}
             onNextAction={(projectKey) => {
               void runProjectNextAction(projectKey);
+            }}
+            onAuthorizeRetry={(projectKey, stream) => {
+              void authorizeRetry(projectKey, stream);
             }}
           />
         </Card>
