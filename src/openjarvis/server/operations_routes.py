@@ -145,25 +145,65 @@ def _bind_runtime_device_ids(
     if not callable(list_agents) or not callable(update_agent):
         return 0
 
-    device_ids = {
-        str(item.get("name", "") or "").casefold(): str(
-            item.get("device_id", "") or ""
-        )
+    by_name = {
+        str(item.get("name", "") or "").casefold(): item
         for item in devices
-        if item.get("name") and item.get("device_id")
+        if item.get("name")
     }
+    get_task = getattr(manager, "get_task", None)
+    update_task = getattr(manager, "update_task", None)
+
     updated = 0
     for agent in list_agents():
         config = dict(agent.get("config", {}) or {})
-        machine = str(config.get("runtime_machine", "") or "")
-        device_id = device_ids.get(machine.casefold(), "")
-        if not machine or not device_id:
+        machine = str(config.get("runtime_machine", "") or "").strip()
+        candidates = [
+            str(value).strip()
+            for value in (config.get("runtime_machine_candidates", []) or [])
+            if str(value).strip()
+        ]
+        if machine and machine not in candidates:
+            candidates.insert(0, machine)
+
+        selected = ""
+        for candidate in candidates:
+            descriptor = by_name.get(candidate.casefold())
+            if descriptor and bool(descriptor.get("online", False)):
+                selected = candidate
+                break
+
+        if selected:
+            descriptor = by_name.get(selected.casefold(), {})
+            device_id = str(descriptor.get("device_id", "") or "")
+            changed = (
+                machine != selected
+                or str(config.get("runtime_device_id", "") or "") != device_id
+            )
+            if changed:
+                config["runtime_machine"] = selected
+                config["runtime_device_id"] = device_id
+                update_agent(agent["id"], config=config)
+                updated += 1
+
+                task_id = str(config.get("project_task_id", "") or "")
+                if task_id and callable(get_task) and callable(update_task):
+                    task = get_task(task_id)
+                    if task is not None:
+                        progress = dict(task.get("progress", {}) or {})
+                        if progress.get("runtime_machine") != selected:
+                            progress["runtime_machine"] = selected
+                            update_task(
+                                task_id,
+                                status=task.get("status", "active"),
+                                progress=progress,
+                            )
             continue
-        if str(config.get("runtime_device_id", "") or "") == device_id:
-            continue
-        config["runtime_device_id"] = device_id
-        update_agent(agent["id"], config=config)
-        updated += 1
+
+        if str(config.get("runtime_device_id", "") or ""):
+            config["runtime_device_id"] = ""
+            update_agent(agent["id"], config=config)
+            updated += 1
+
     return updated
 
 
