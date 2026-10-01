@@ -2087,3 +2087,77 @@ def test_task_dispatch_simple_handoff_does_not_start_quality_pipeline(tmp_path) 
         assert payload["quality_error"] == ""
     finally:
         manager.close()
+
+
+
+def test_task_status_reports_pending_quality_pipeline(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Coding handoff ready.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_Executor(manager),
+            ).execute(
+                instruction="Refactor this Python service",
+                domain="professional",
+            ).content
+        )
+
+        status = json.loads(
+            DomainTaskStatusTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+
+        assert status["quality_required"] is True
+        assert status["quality_pipeline_id"] == dispatched["quality_pipeline_id"]
+        assert status["quality_status"] == "pending"
+        assert status["quality_next_action"].startswith("advance-quality:")
+        assert status["quality_stages"] == [
+            {"stage": "anti-slop", "status": "pending"},
+            {"stage": "thermos", "status": "pending"},
+        ]
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_task_status_reports_quality_not_required_for_simple_task(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+
+        status = json.loads(
+            DomainTaskStatusTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+
+        assert status["quality_required"] is False
+        assert status["quality_pipeline_id"] == ""
+        assert status["quality_status"] == "not_required"
+        assert status["quality_next_action"] == "complete"
+        assert status["quality_stages"] == []
+    finally:
+        manager.close()

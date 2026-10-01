@@ -585,6 +585,61 @@ class DomainTaskStatusTool(BaseTool):
 
             handoff_ready = bool(config.get("domain_handoff_ready", False))
             error = str(config.get("domain_last_error", "") or "")
+            quality_required = bool(
+                config.get("domain_quality_required", False)
+            )
+            quality_pipeline_id = str(
+                config.get("domain_quality_pipeline_id", "") or ""
+            )
+            if quality_required:
+                quality_status, quality_next_action = _project_quality_state(
+                    self._manager,
+                    quality_pipeline_id,
+                )
+            else:
+                quality_status, quality_next_action = (
+                    "not_required",
+                    "complete",
+                )
+
+            quality_stages: list[dict[str, Any]] = []
+            if quality_pipeline_id:
+                coordinator = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == quality_pipeline_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if coordinator is not None:
+                    for task in sorted(
+                        self._manager.list_tasks(coordinator["id"]),
+                        key=lambda row: int(
+                            ((row.get("progress", {}) or {}).get("order", 999))
+                        ),
+                    ):
+                        progress = task.get("progress", {}) or {}
+                        quality_stages.append(
+                            {
+                                "stage": str(progress.get("stage", "") or ""),
+                                "status": str(
+                                    task.get("status", "pending") or "pending"
+                                ),
+                            }
+                        )
+
             if error:
                 state = "error"
             elif handoff_ready:
@@ -609,6 +664,11 @@ class DomainTaskStatusTool(BaseTool):
                         "capability": str(config.get("capability", "") or ""),
                         "model": str(config.get("model", "") or ""),
                         "handoff_ready": handoff_ready,
+                        "quality_required": quality_required,
+                        "quality_pipeline_id": quality_pipeline_id,
+                        "quality_status": quality_status,
+                        "quality_next_action": quality_next_action,
+                        "quality_stages": quality_stages,
                         "last_completed_at": float(
                             config.get("domain_last_completed_at", 0.0) or 0.0
                         ),
