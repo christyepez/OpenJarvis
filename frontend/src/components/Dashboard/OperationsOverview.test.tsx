@@ -82,6 +82,10 @@ describe('OperationsOverview agent routing', () => {
             domain: '',
             domain_handoff_ready: false,
             domain_last_completed_at: 0,
+            domain_quality_required: false,
+            domain_quality_pipeline_id: '',
+            domain_quality_status: 'not_required',
+            domain_quality_stages: [],
             domain_result: '',
           },
           {
@@ -97,6 +101,29 @@ describe('OperationsOverview agent routing', () => {
             domain: 'professional',
             domain_handoff_ready: true,
             domain_last_completed_at: 1,
+            domain_quality_required: true,
+            domain_quality_pipeline_id: 'quality-domain-1',
+            domain_quality_status: 'pending',
+            domain_quality_stages: [
+              {
+                task_id: 'dq1',
+                stage: 'anti-slop',
+                kind: 'agent',
+                status: 'completed',
+                reviewer_agent_id: 'reviewer-a',
+                template: 'anti_slop_reviewer',
+                findings_count: 1,
+              },
+              {
+                task_id: 'dq2',
+                stage: 'thermos',
+                kind: 'agent',
+                status: 'pending',
+                reviewer_agent_id: 'reviewer-b',
+                template: 'thermos_reviewer',
+                findings_count: 0,
+              },
+            ],
             domain_result: 'Code review complete and ready for follow-up.',
           },
         ]}
@@ -109,6 +136,9 @@ describe('OperationsOverview agent routing', () => {
     expect(html).toContain('Code Reviewer');
     expect(html).toContain('professional · coding · granite-code:3b');
     expect(html).toContain('handoff ready');
+    expect(html).toContain('quality: pending');
+    expect(html).toContain('anti-slop: completed');
+    expect(html).toContain('thermos: pending');
     expect(html).toContain('Code review complete and ready for follow-up.');
     expect(html).toContain('granite-code:3b');
   });

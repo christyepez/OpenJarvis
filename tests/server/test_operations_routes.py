@@ -155,6 +155,10 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["agents"]["agents"][2]["routed_model"] == "qwen3.5:4b"
     assert data["agents"]["agents"][2]["domain_handoff_ready"] is True
     assert data["agents"]["agents"][2]["domain_last_completed_at"] == 123.0
+    assert data["agents"]["agents"][2]["domain_quality_required"] is False
+    assert data["agents"]["agents"][2]["domain_quality_pipeline_id"] == ""
+    assert data["agents"]["agents"][2]["domain_quality_status"] == "not_required"
+    assert data["agents"]["agents"][2]["domain_quality_stages"] == []
     assert "Budget review complete" in data["agents"]["agents"][2]["domain_result"]
     assert data["agents"]["tasks"]["total"] == 2
     assert data["agents"]["tasks"]["by_status"] == {

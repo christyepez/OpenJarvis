@@ -91,9 +91,22 @@ export function AgentRoutingSummary({
                 {agent.domain_result}
               </div>
             ) : null}
+            {agent.domain_quality_stages.length ? (
+              <div
+                className="truncate max-w-[360px] mt-0.5"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                {agent.domain_quality_stages
+                  .map((stage) => `${stage.stage}: ${stage.status}`)
+                  .join(' · ')}
+              </div>
+            ) : null}
           </div>
           <div className="flex flex-wrap justify-end gap-1">
             {agent.domain_handoff_ready ? <Badge>handoff ready</Badge> : null}
+            {agent.domain ? (
+              <Badge>quality: {agent.domain_quality_status}</Badge>
+            ) : null}
             <Badge>{agent.routed_model || 'unassigned'}</Badge>
           </div>
         </div>

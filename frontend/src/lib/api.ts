@@ -388,6 +388,18 @@ export interface OperationsStatus {
       domain: string;
       domain_handoff_ready: boolean;
       domain_last_completed_at: number;
+      domain_quality_required: boolean;
+      domain_quality_pipeline_id: string;
+      domain_quality_status: string;
+      domain_quality_stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
       domain_result: string;
     }>;
     tasks: {

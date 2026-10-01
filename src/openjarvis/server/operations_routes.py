@@ -384,6 +384,10 @@ def _agent_summary(
         }
     by_status: dict[str, int] = {}
     by_domain: dict[str, int] = {}
+    quality_by_id = {
+        row["pipeline_id"]: row
+        for row in _quality_summary(manager).get("pipelines", [])
+    }
     compact: list[dict[str, Any]] = []
     task_by_status: dict[str, int] = {}
     task_items: list[dict[str, Any]] = []
@@ -408,6 +412,22 @@ def _agent_summary(
         domain = str(config.get("domain", "") or "").strip().casefold()
         if domain:
             by_domain[domain] = by_domain.get(domain, 0) + 1
+
+        domain_quality_required = bool(
+            config.get("domain_quality_required", False)
+        )
+        domain_quality_pipeline_id = str(
+            config.get("domain_quality_pipeline_id", "") or ""
+        )
+        domain_quality = quality_by_id.get(domain_quality_pipeline_id) or {}
+        domain_quality_status = (
+            str(domain_quality.get("status", "") or "")
+            if domain_quality_pipeline_id
+            else ("not_required" if not domain_quality_required else "not_started")
+        )
+        domain_quality_stages = list(
+            domain_quality.get("stages", []) or []
+        )
 
         configured_model = str(config.get("model", "") or "").strip()
         if configured_model and configured_model.casefold() != "smart":
@@ -436,6 +456,10 @@ def _agent_summary(
                 "domain_last_completed_at": float(
                     config.get("domain_last_completed_at", 0.0) or 0.0
                 ),
+                "domain_quality_required": domain_quality_required,
+                "domain_quality_pipeline_id": domain_quality_pipeline_id,
+                "domain_quality_status": domain_quality_status,
+                "domain_quality_stages": domain_quality_stages,
                 "domain_result": str(
                     agent.get("summary_memory", "") or ""
                 )[:500],
