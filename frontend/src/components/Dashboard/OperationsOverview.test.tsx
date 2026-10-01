@@ -217,6 +217,7 @@ describe('OperationsOverview project execution boards', () => {
   it('renders project status, waves, streams and runtime machines', () => {
     const html = renderToStaticMarkup(
       <ProjectBoardSummary
+        onNextAction={() => undefined}
         projects={{
           total: 1,
           by_status: { pending: 1 },
@@ -301,6 +302,7 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('REVIEW: 1');
     expect(html).toContain('BLOCKED: 1');
     expect(html).toContain('next: dispatch:architecture');
+    expect(html).toContain('Run next');
     expect(html).toContain('build-tests: pending');
     expect(html).toContain('anti-slop: pending');
     expect(html).toContain('quality: pending');

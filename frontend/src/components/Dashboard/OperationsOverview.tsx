@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  executeOperationsProjectNextAction,
   executeOperationsTaskNextAction,
   fetchOperationsStatus,
   type OperationsStatus,
@@ -183,8 +184,12 @@ export function MemorySummary({
 
 export function ProjectBoardSummary({
   projects,
+  onNextAction,
+  busyProjectKey = '',
 }: {
   projects: OperationsStatus['projects'];
+  onNextAction?: (projectKey: string) => void;
+  busyProjectKey?: string;
 }) {
   if (!projects.projects.length) {
     return (
@@ -245,6 +250,32 @@ export function ProjectBoardSummary({
               next: {project.next_action}
             </div>
           ) : null}
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {project.next_action.startsWith('resolve-quality:') ? (
+              <Badge>evidence required</Badge>
+            ) : null}
+            {project.handoff_ready_streams.length ? (
+              <Badge>handoff review required</Badge>
+            ) : null}
+            {onNextAction &&
+            (project.ready_streams.length > 0 ||
+              project.next_action === 'start-quality-pipeline' ||
+              project.next_action.startsWith('advance-quality:')) ? (
+              <button
+                type="button"
+                className="rounded-full px-2 py-0.5 text-[11px] disabled:opacity-50"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-surface)',
+                }}
+                disabled={busyProjectKey === project.project_key}
+                onClick={() => onNextAction(project.project_key)}
+              >
+                {busyProjectKey === project.project_key ? 'Running…' : 'Run next'}
+              </button>
+            ) : null}
+          </div>
           {project.quality_stages.length ? (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {project.quality_stages.map((stage) => (
@@ -363,6 +394,7 @@ export function OperationsOverview() {
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
   const [busyTaskKey, setBusyTaskKey] = useState('');
+  const [busyProjectKey, setBusyProjectKey] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -397,6 +429,19 @@ export function OperationsOverview() {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusyTaskKey('');
+    }
+  };
+
+  const runProjectNextAction = async (projectKey: string) => {
+    setBusyProjectKey(projectKey);
+    setActionError('');
+    try {
+      await executeOperationsProjectNextAction(projectKey);
+      setStatus(await fetchOperationsStatus());
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyProjectKey('');
     }
   };
 
@@ -600,7 +645,13 @@ export function OperationsOverview() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 mt-3">
         <Card title="Projects / execution boards">
-          <ProjectBoardSummary projects={status.projects} />
+          <ProjectBoardSummary
+            projects={status.projects}
+            busyProjectKey={busyProjectKey}
+            onNextAction={(projectKey) => {
+              void runProjectNextAction(projectKey);
+            }}
+          />
         </Card>
         <Card title="Agent routing">
           <AgentRoutingSummary

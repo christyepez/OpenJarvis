@@ -456,6 +456,30 @@ export async function executeOperationsTaskNextAction(
   return res.json();
 }
 
+export interface OperationsProjectActionResult {
+  project_key: string;
+  action: string;
+  dispatched_streams: string[];
+  started_agents: string[];
+  start_errors: Array<{ agent_id: string; error: string }>;
+  dispatch: unknown;
+  quality: unknown;
+  status: unknown;
+}
+
+export async function executeOperationsProjectNextAction(
+  projectKey: string,
+): Promise<OperationsProjectActionResult> {
+  const res = await apiFetch(
+    `/v1/operations/projects/${encodeURIComponent(projectKey)}/next-action`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to execute project action: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {
