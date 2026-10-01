@@ -309,6 +309,7 @@ describe('OperationsOverview project execution boards', () => {
                   findings_count: 0,
                   branch: '',
                   workspace: '',
+                  runtime_machine: 'trabajo',
                   depends_on_task_ids: [],
                 },
                 {
@@ -324,6 +325,7 @@ describe('OperationsOverview project execution boards', () => {
                   findings_count: 1,
                   branch: 'openjarvis/portal/backend',
                   workspace: 'C:/worktrees/portal/backend',
+                  runtime_machine: 'MarketingIndo',
                   depends_on_task_ids: ['a1'],
                 },
               ],
@@ -347,6 +349,7 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('A.architecture: pending');
     expect(html).toContain('B.backend: active');
     expect(html).toContain('openjarvis/portal/backend');
+    expect(html).toContain('machine: MarketingIndo');
     expect(html).toContain('handoff ready: 1');
     expect(html).toContain('completed_tick');
     expect(html).toContain('worker: project-backend-1');

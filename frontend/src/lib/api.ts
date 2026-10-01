@@ -360,6 +360,7 @@ export interface OperationsStatus {
         findings_count: number;
         branch: string;
         workspace: string;
+        runtime_machine: string;
         depends_on_task_ids: string[];
       }>;
     }>;

@@ -360,6 +360,9 @@ export function ProjectBoardSummary({
                   {stream.wave}.{stream.stream}: {stream.status}
                 </Badge>
                 {stream.branch ? <Badge>{stream.branch}</Badge> : null}
+                {stream.runtime_machine ? (
+                  <Badge>machine: {stream.runtime_machine}</Badge>
+                ) : null}
                 {stream.handoff_ready ? (
                   <Badge>handoff ready: {stream.findings_count}</Badge>
                 ) : null}
