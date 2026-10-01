@@ -82,3 +82,26 @@ def test_project_orchestrator_uses_safe_project_advance_protocol(tmp_path):
     assert "dispatches only READY streams" in prompt
     assert "never mark a stream DONE without concrete evidence" in prompt
     mgr.close()
+
+
+
+def test_domain_orchestrator_can_reuse_non_project_handoffs(tmp_path):
+    mgr = AgentManager(db_path=str(tmp_path / "test.db"))
+    try:
+        templates = {item["id"]: item for item in mgr.list_templates()}
+        template = templates["domain_orchestrator"]
+
+        assert "task_dispatch" in template["tools"]
+        assert "task_status" in template["tools"]
+
+        agent = mgr.create_from_template(
+            "domain_orchestrator",
+            "General Coordinator",
+            overrides={"instruction": "Coordinate bounded domain work"},
+        )
+        prompt = agent["config"]["system_prompt"]
+        assert "Use task_status" in prompt
+        assert "instead of spawning duplicate work" in prompt
+        assert "Do not turn ordinary non-project work into a software project" in prompt
+    finally:
+        mgr.close()
