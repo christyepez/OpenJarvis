@@ -172,8 +172,20 @@ def _bind_runtime_device_ids(
                     (by_name.get(machine.casefold()) or {}).get("online", False)
                 )
             ]
-            if config.get("runtime_online_machines") != online_machines:
+            runtime_device_ids = {
+                machine: str(
+                    (by_name.get(machine.casefold()) or {}).get("device_id", "")
+                    or ""
+                )
+                for machine in online_machines
+                if (by_name.get(machine.casefold()) or {}).get("device_id")
+            }
+            if (
+                config.get("runtime_online_machines") != online_machines
+                or config.get("runtime_device_ids") != runtime_device_ids
+            ):
                 config["runtime_online_machines"] = online_machines
+                config["runtime_device_ids"] = runtime_device_ids
                 update_agent(agent["id"], config=config)
                 updated += 1
             continue

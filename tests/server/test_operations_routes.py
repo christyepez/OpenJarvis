@@ -489,6 +489,10 @@ def test_operations_project_next_action_dispatches_ready_stream(
         assert data["dispatched_streams"] == ["architecture"]
         assert data["started_agents"]
         assert executor.calls == data["started_agents"]
+        worker = manager.get_agent(data["started_agents"][0])
+        assert worker is not None
+        assert worker["config"]["runtime_machine"] == "MarketingIndo"
+        assert worker["config"]["runtime_device_id"] == "device-marketing"
 
         status = TestClient(app).get("/v1/operations/status")
         assert status.status_code == 200
@@ -501,6 +505,7 @@ def test_operations_project_next_action_dispatches_ready_stream(
             if item["stream"] == "architecture"
         )
         assert architecture["runtime_machine"] == "MarketingIndo"
+        assert architecture["runtime_machine_status"] == "online"
     finally:
         manager.close()
 

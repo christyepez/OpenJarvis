@@ -2346,6 +2346,13 @@ class ProjectDispatchTool(BaseTool):
             ]
         else:
             assignment_machines = runtime_machines
+        runtime_device_ids = {
+            str(name): str(device_id)
+            for name, device_id in (
+                project_config.get("runtime_device_ids", {}) or {}
+            ).items()
+            if str(name) and str(device_id)
+        }
         tasks = list(self._manager.list_tasks(project["id"]))
         task_by_id = {str(task["id"]): task for task in tasks}
         existing_workers: dict[str, dict[str, Any]] = {}
@@ -2451,6 +2458,12 @@ class ProjectDispatchTool(BaseTool):
                     "workspace": stream_workspace,
                     "branch": stream_branch,
                     "runtime_machine": assigned_machine,
+                    "runtime_device_id": runtime_device_ids.get(
+                        assigned_machine, ""
+                    ),
+                    "runtime_machine_status": (
+                        "online" if assigned_machine else ""
+                    ),
                     "runtime_machine_candidates": runtime_machines,
                 },
                 agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
@@ -2466,6 +2479,9 @@ class ProjectDispatchTool(BaseTool):
                     "execution_state": execution_state,
                     "worker_agent_id": worker["id"],
                     "runtime_machine": assigned_machine,
+                    "runtime_machine_status": (
+                        "online" if assigned_machine else ""
+                    ),
                 }
             )
             self._manager.update_task(
