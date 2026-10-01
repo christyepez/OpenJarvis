@@ -23,6 +23,31 @@ class _CommanderTool:
     tool_id = "remote_desktop_commander.shell"
 
 
+
+class _ListDevicesTool:
+    tool_id = "mcp_adapter"
+    spec = SimpleNamespace(name="list_devices")
+
+    def execute(self):
+        return SimpleNamespace(
+            success=True,
+            content=(
+                "Desktop Commander devices\n\n"
+                "1. trabajo\n"
+                "   Status: Offline\n"
+                "   ID: device-trabajo\n\n"
+                "2. MarketingIndo\n"
+                "   Status: Online\n"
+                "   ID: device-marketing\n"
+            ),
+        )
+
+
+class _PingTool:
+    tool_id = "mcp_adapter"
+    spec = SimpleNamespace(name="ping")
+
+
 class _MemoryBackend:
     backend_id = "sqlite"
 
@@ -510,3 +535,42 @@ def test_operations_machine_routing_uses_runtime_availability() -> None:
     assert machines["fallbacks"][0]["status"] == "online"
     assert machines["fallbacks"][0]["docker_available"] is True
     assert machines["fallbacks"][0]["gpu_available"] is True
+
+
+
+def test_operations_machine_probe_uses_commander_mcp_once() -> None:
+    governance = SimpleNamespace(
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=_Manager(),
+        mcp_tools=[_ListDevicesTool(), _PingTool()],
+    )
+    client = TestClient(app)
+
+    probe = client.post("/v1/operations/machines/probe")
+    assert probe.status_code == 200
+    machines = probe.json()
+    assert machines["signal"] == "runtime"
+    assert machines["selected"] == "MarketingIndo"
+    assert machines["primary"]["status"] == "offline"
+    assert machines["fallbacks"][0]["status"] == "online"
+
+    status = client.get("/v1/operations/status")
+    assert status.status_code == 200
+    data = status.json()
+    assert data["execution"]["commander_connected"] is True
+    assert "list_devices" in data["tools"]["mcp"]
+    assert "ping" in data["tools"]["mcp"]
+    assert data["machines"]["selected"] == "MarketingIndo"

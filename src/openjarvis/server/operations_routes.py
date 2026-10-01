@@ -62,6 +62,21 @@ def _safe_health(engine: Any) -> bool | None:
         return False
 
 
+def _mcp_tool_name(tool: Any) -> str:
+    try:
+        spec = getattr(tool, "spec", None)
+        name = getattr(spec, "name", None)
+        if name:
+            return str(name)
+    except Exception:
+        pass
+    return str(
+        getattr(tool, "tool_id", None)
+        or getattr(tool, "name", None)
+        or tool.__class__.__name__
+    )
+
+
 def _tooling_summary(state: Any) -> dict[str, Any]:
     native_tools: list[str] = []
     skills: list[str] = []
@@ -75,12 +90,7 @@ def _tooling_summary(state: Any) -> dict[str, Any]:
 
     mcp_tools: list[str] = []
     for tool in getattr(state, "mcp_tools", []) or []:
-        name = (
-            getattr(tool, "tool_id", None)
-            or getattr(tool, "name", None)
-            or tool.__class__.__name__
-        )
-        mcp_tools.append(str(name))
+        mcp_tools.append(_mcp_tool_name(tool))
 
     return {
         "tools": {
@@ -94,6 +104,39 @@ def _tooling_summary(state: Any) -> dict[str, Any]:
             "items": skills[:40],
         },
     }
+
+
+def _parse_commander_devices(content: str) -> list[dict[str, Any]]:
+    devices: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    for raw_line in str(content or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line[:1].isdigit() and ". " in line:
+            if current and current.get("name"):
+                devices.append(current)
+            current = {
+                "name": line.split(". ", 1)[1].strip(),
+                "online": False,
+            }
+            continue
+        if current is None:
+            continue
+        if line.casefold().startswith("status:"):
+            value = line.split(":", 1)[1].strip().casefold()
+            current["online"] = value == "online"
+    if current and current.get("name"):
+        devices.append(current)
+    return devices
+
+
+def _commander_device_tool(state: Any) -> Any | None:
+    for tool in getattr(state, "mcp_tools", []) or []:
+        name = _mcp_tool_name(tool).casefold()
+        if name == "list_devices" or name.endswith(".list_devices"):
+            return tool
+    return None
 
 
 def _machine_summary(
@@ -687,6 +730,48 @@ def operations_project_next_action(
     return json.loads(result.content)
 
 
+@router.post("/machines/probe")
+def operations_machine_probe(request: Request) -> dict[str, Any]:
+    """Refresh machine availability once through the configured Commander MCP."""
+    state = request.app.state
+    cfg = getattr(state, "config", None)
+    governance = getattr(cfg, "governance", None)
+    primary = str(getattr(governance, "primary_machine", "trabajo") or "trabajo")
+    fallbacks = _csv(
+        getattr(governance, "fallback_machines", "MarketingIndo")
+    )
+
+    tool = _commander_device_tool(state)
+    if tool is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Commander list_devices tool unavailable.",
+        )
+
+    result = tool.execute()
+    if not getattr(result, "success", False):
+        raise HTTPException(
+            status_code=502,
+            detail=str(getattr(result, "content", "") or "Commander probe failed."),
+        )
+
+    devices = _parse_commander_devices(
+        str(getattr(result, "content", "") or "")
+    )
+    if not devices:
+        raise HTTPException(
+            status_code=502,
+            detail="Commander returned no parseable devices.",
+        )
+
+    state.machine_descriptors = devices
+    return _machine_summary(
+        state,
+        primary=primary,
+        fallbacks=fallbacks,
+    )
+
+
 @router.get("/status")
 def operations_status(request: Request) -> dict[str, Any]:
     """Return a read-only operational snapshot for the dashboard."""
@@ -705,8 +790,15 @@ def operations_status(request: Request) -> dict[str, Any]:
     )
     tooling = _tooling_summary(state)
     mcp_names = tooling["tools"]["mcp"]
+    normalized_mcp = {name.casefold() for name in mcp_names}
     commander_connected = any(
-        "commander" in name.casefold() for name in mcp_names
+        "commander" in name for name in normalized_mcp
+    ) or (
+        any(name.endswith("list_devices") for name in normalized_mcp)
+        and any(
+            name.endswith("start_process") or name.endswith("ping")
+            for name in normalized_mcp
+        )
     )
     engine = getattr(state, "engine", None)
     local_models = _safe_models(engine)
