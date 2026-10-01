@@ -49,6 +49,54 @@ export function ModelRoleSummary({
   );
 }
 
+export function MachineRoutingSummary({
+  execution,
+  machines,
+}: {
+  execution: OperationsStatus['execution'];
+  machines: OperationsStatus['machines'];
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span style={{ color: 'var(--color-text)' }}>
+          {machines.selected || machines.primary.name}
+        </span>
+        <Badge>
+          {machines.selected
+            ? `selected · ${machines.signal}`
+            : `configured · ${machines.signal}`}
+        </Badge>
+      </div>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span style={{ color: 'var(--color-text-secondary)' }}>
+          {machines.primary.name}
+        </span>
+        <Badge>{machines.primary.status}</Badge>
+      </div>
+      {machines.fallbacks.map((machine) => (
+        <div
+          key={machine.name}
+          className="flex items-center justify-between gap-2 text-xs"
+        >
+          <span style={{ color: 'var(--color-text-secondary)' }}>
+            fallback → {machine.name}
+          </span>
+          <div className="flex flex-wrap gap-1">
+            <Badge>{machine.status}</Badge>
+            {machine.docker_available ? <Badge>docker</Badge> : null}
+            {machine.gpu_available ? <Badge>gpu</Badge> : null}
+          </div>
+        </div>
+      ))}
+      <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        plane: {execution.preferred_plane} · commander:{' '}
+        {execution.commander_connected ? 'connected' : 'not detected'}
+      </div>
+    </div>
+  );
+}
+
 export function AgentRoutingSummary({
   agents,
   onNextAction,
@@ -551,33 +599,10 @@ export function OperationsOverview() {
         </Card>
 
         <Card title="Machine routing">
-          <div className="flex items-center justify-between gap-2 text-sm">
-            <span style={{ color: 'var(--color-text)' }}>
-              {status.execution.preferred_plane}
-            </span>
-            <Badge>
-              {status.execution.commander_connected
-                ? 'connected'
-                : 'not detected'}
-            </Badge>
-          </div>
-          <div
-            className="flex items-center gap-2 text-sm mt-3"
-            style={{ color: 'var(--color-text)' }}
-          >
-            <span>{status.machines.primary.name}</span>
-            <Badge>{status.machines.primary.status}</Badge>
-          </div>
-          {status.machines.fallbacks.map((machine) => (
-            <div
-              key={machine.name}
-              className="flex items-center gap-2 text-xs mt-2"
-              style={{ color: 'var(--color-text-secondary)' }}
-            >
-              <span>fallback → {machine.name}</span>
-              <Badge>{machine.status}</Badge>
-            </div>
-          ))}
+          <MachineRoutingSummary
+            execution={status.execution}
+            machines={status.machines}
+          />
         </Card>
 
         <Card title="Quality pipeline">

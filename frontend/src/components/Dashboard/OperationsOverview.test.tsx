@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   AgentRoutingSummary,
+  MachineRoutingSummary,
   MemorySummary,
   ModelRoleSummary,
   ProjectBoardSummary,
@@ -63,6 +64,41 @@ describe('OperationsOverview memory status', () => {
   });
 });
 
+
+
+
+describe('OperationsOverview machine routing', () => {
+  it('renders selected fallback runtime capabilities', () => {
+    const html = renderToStaticMarkup(
+      <MachineRoutingSummary
+        execution={{ preferred_plane: 'commander', commander_connected: true }}
+        machines={{
+          selected: 'MarketingIndo',
+          signal: 'runtime',
+          primary: { name: 'trabajo', status: 'offline' },
+          fallbacks: [
+            {
+              name: 'MarketingIndo',
+              status: 'online',
+              docker_available: true,
+              gpu_available: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(html).toContain('MarketingIndo');
+    expect(html).toContain('selected');
+    expect(html).toContain('runtime');
+    expect(html).toContain('trabajo');
+    expect(html).toContain('offline');
+    expect(html).toContain('docker');
+    expect(html).toContain('gpu');
+    expect(html).toContain('commander:');
+    expect(html).toContain('connected');
+  });
+});
 
 describe('OperationsOverview agent routing', () => {
   it('renders capability and routed model for managed agents', () => {

@@ -300,8 +300,20 @@ export interface OperationsStatus {
     commander_connected: boolean;
   };
   machines: {
-    primary: { name: string; status: string };
-    fallbacks: Array<{ name: string; status: string }>;
+    selected: string | null;
+    signal: string;
+    primary: {
+      name: string;
+      status: string;
+      docker_available?: boolean;
+      gpu_available?: boolean;
+    };
+    fallbacks: Array<{
+      name: string;
+      status: string;
+      docker_available?: boolean;
+      gpu_available?: boolean;
+    }>;
   };
   memory: {
     enabled: boolean;
