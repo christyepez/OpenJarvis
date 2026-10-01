@@ -363,6 +363,8 @@ export interface OperationsStatus {
         workspace: string;
         runtime_machine: string;
         runtime_machine_status: string;
+        retry_count: number;
+        last_retry_at: number;
         depends_on_task_ids: string[];
       }>;
     }>;

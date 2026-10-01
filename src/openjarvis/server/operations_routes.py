@@ -426,6 +426,12 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "runtime_machine_status": str(
                         progress.get("runtime_machine_status", "") or ""
                     ),
+                    "retry_count": int(
+                        progress.get("retry_count", 0) or 0
+                    ),
+                    "last_retry_at": float(
+                        progress.get("last_retry_at", 0.0) or 0.0
+                    ),
                     "depends_on_task_ids": [
                         str(value)
                         for value in (

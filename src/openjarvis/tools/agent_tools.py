@@ -2154,6 +2154,10 @@ class ProjectAdvanceTool(BaseTool):
                             progress = dict(task.get("progress", {}) or {})
                             progress["handoff_ready"] = False
                             progress["worker_status"] = "retrying"
+                            progress["retry_count"] = (
+                                int(progress.get("retry_count", 0) or 0) + 1
+                            )
+                            progress["last_retry_at"] = time.time()
                             self._manager.update_task(
                                 task_id,
                                 status=task.get("status", "active"),
@@ -2162,6 +2166,22 @@ class ProjectAdvanceTool(BaseTool):
                     try:
                         self._executor.execute_tick(agent_id)
                         retried_agents.append(agent_id)
+                        if task_id:
+                            task = self._manager.get_task(task_id)
+                            if task is not None:
+                                progress = dict(task.get("progress", {}) or {})
+                                if progress.get("worker_status") == "retrying":
+                                    current = (
+                                        self._manager.get_agent(agent_id) or {}
+                                    )
+                                    progress["worker_status"] = str(
+                                        current.get("status", "idle") or "idle"
+                                    )
+                                    self._manager.update_task(
+                                        task_id,
+                                        status=task.get("status", "active"),
+                                        progress=progress,
+                                    )
                     except Exception as exc:
                         retry_errors.append(
                             {"agent_id": agent_id, "error": str(exc)}

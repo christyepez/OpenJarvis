@@ -376,6 +376,9 @@ export function ProjectBoardSummary({
                 {stream.runtime_machine_status ? (
                   <Badge>runtime: {stream.runtime_machine_status}</Badge>
                 ) : null}
+                {stream.retry_count > 0 ? (
+                  <Badge>retries: {stream.retry_count}</Badge>
+                ) : null}
                 {stream.handoff_ready ? (
                   <Badge>handoff ready: {stream.findings_count}</Badge>
                 ) : null}

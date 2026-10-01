@@ -2761,6 +2761,8 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
         task = manager.get_task(task_id)
         assert task is not None
         assert task["progress"]["handoff_ready"] is False
-        assert task["progress"]["worker_status"] == "retrying"
+        assert task["progress"]["worker_status"] == "idle"
+        assert task["progress"]["retry_count"] == 1
+        assert task["progress"]["last_retry_at"] > 0
     finally:
         manager.close()
