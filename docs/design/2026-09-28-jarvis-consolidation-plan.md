@@ -136,3 +136,56 @@ memory is context, not a replacement for those sources of truth.
 
 Each wave must remain independently testable and must not require a paid provider
 other than the two pre-approved services unless the user explicitly approves it.
+
+
+## Implementation status — 2026-10-01
+
+The consolidation is now operational on `feature/jarvis-consolidation`.
+OpenJarvis remains the only runtime/source of truth; donor repositories are
+used for concepts and contracts rather than parallel execution.
+
+| Wave | Status | Implemented evidence |
+| --- | --- | --- |
+| 1. Foundation | COMPLETE | provider/cost governance, paid-provider approval gates, governed tool hook |
+| 2. Local model discovery | COMPLETE | local inventory, capability-aware routing, local/free preference and model roles |
+| 3. Common-agent governance | COMPLETE | Project/Domain Orchestrators, Graphify skill, Qwen-MM, Anti-Slop, Thermos, quality pipelines |
+| 4. Execution plane | COMPLETE | Commander machine routing, `trabajo`/MarketingIndo failover, bounded retry and evidence authorization |
+| 5. Routing/evaluation | COMPLETE | capability/domain/model routing, JarvisBench metrics, compact EasyTool-inspired tool selection |
+| 6. Operations dashboard | COMPLETE | models, agents/projects/tasks, machines, quality, tools, skills, safe next actions and retry audit evidence |
+
+### Donor capability disposition
+
+- `JARVIS`: ADAPT task/model-routing ideas, TaskBench concepts and EasyTool
+  compact discovery; do not import its legacy runtime.
+- `jarvisAsistent`: ADAPT dashboard/telemetry concepts only; do not reuse its
+  Webpack-specific architecture.
+- `CodexCommonAgents`: ADAPT governance, Graphify-first analysis, common-agent
+  roles and evidence-based quality gates.
+
+
+### Current validation baseline
+
+Validation executed on `trabajo` on 2026-10-01:
+
+- Governance + JarvisBench + compact tool selection: **50 passed**.
+- Task/project orchestration + templates + orchestrator regression: **134 passed**.
+- Operations backend: **15 passed**.
+- Operations frontend: **10 passed**.
+- Production frontend build: **PASS**.
+- Ruff on changed EasyTool/consolidation Python modules: **PASS**.
+
+Recent consolidation checkpoints include:
+
+- `7053c0c1` — authorize exhausted worker retries via Operations.
+- `a7e9ca79` — authorize exhausted retries from Operations UI.
+- `5708d56f` — expose manual retry audit evidence.
+- `3a2c5d74` — add compact tool discovery.
+- `3e68d076` — enable compact tool catalogs for orchestrators.
+
+### Non-blocking technical debt
+
+- FastAPI shutdown still uses deprecated `on_event`; migrate to lifespan
+  separately from consolidation behavior.
+- The frontend production build reports a large main chunk and an ineffective
+  dynamic import for analytics; address with a dedicated bundle-optimization
+  segment rather than mixing it into orchestration changes.
