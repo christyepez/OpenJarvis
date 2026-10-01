@@ -1166,6 +1166,113 @@ class DomainTaskAdvanceTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskNextActionTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_next_action")
+class DomainTaskNextActionTool(BaseTool):
+    """Execute the current safe next action for a persisted domain task."""
+
+    tool_id = "task_next_action"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Execute the current safe next action for a persisted non-project "
+                "task. Retry/advance actions are executed; wait/complete are no-ops; "
+                "quality resolution remains blocked until explicit evidence is "
+                "supplied."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"task_key": {"type": "string"}},
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task next action requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        status_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        status = json.loads(status_result.content)
+        recommended = str(status.get("next_action", "") or "")
+
+        if recommended.startswith("retry:"):
+            result = DomainTaskRetryTool(
+                manager=self._manager,
+                executor=self._executor,
+            ).execute(task_key=task_key)
+            action = "retry"
+            executed = result.success
+            payload = json.loads(result.content) if result.success else result.content
+        elif recommended.startswith("advance:"):
+            result = DomainTaskAdvanceTool(
+                manager=self._manager,
+                executor=self._executor,
+            ).execute(task_key=task_key)
+            action = "advance"
+            executed = result.success
+            payload = json.loads(result.content) if result.success else result.content
+        elif recommended.startswith("resolve-quality:"):
+            action = "quality-evidence-required"
+            executed = False
+            payload = status
+        elif recommended in {"wait", "complete"}:
+            action = recommended or "noop"
+            executed = False
+            payload = status
+        else:
+            action = "unknown"
+            executed = False
+            payload = status
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "recommended_action": recommended,
+                    "action": action,
+                    "executed": executed,
+                    "result": payload,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectBootstrapTool
 # ---------------------------------------------------------------------------
 

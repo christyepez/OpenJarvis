@@ -14,6 +14,7 @@ from openjarvis.tools.agent_tools import (
     AgentSpawnTool,
     DomainTaskAdvanceTool,
     DomainTaskDispatchTool,
+    DomainTaskNextActionTool,
     DomainTaskRetryTool,
     DomainTaskStatusTool,
     ProjectAdvanceTool,
@@ -2527,5 +2528,118 @@ def test_task_advance_executes_created_task_when_executor_becomes_available(
         assert advanced["status"]["handoff_ready"] is True
         assert executor.calls == [dispatched["agent_id"]]
         assert len(manager.list_agents()) == 1
+    finally:
+        manager.close()
+
+
+
+def test_task_next_action_executes_recommended_advance(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(agent_id, "Next action completed.")
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Summarize my notes", domain="personal"
+            ).content
+        )
+        executor = _Executor(manager)
+        payload = json.loads(
+            DomainTaskNextActionTool(manager=manager, executor=executor).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+        assert payload["recommended_action"] == f'advance:{dispatched["task_key"]}'
+        assert payload["action"] == "advance"
+        assert payload["executed"] is True
+        assert payload["result"]["action"] == "task-executed"
+        assert payload["result"]["status"]["state"] == "complete"
+        assert executor.calls == [dispatched["agent_id"]]
+    finally:
+        manager.close()
+
+
+def test_task_next_action_retries_existing_error(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(agent_id, "Retry recovered task.")
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Review my learning plan", domain="learning"
+            ).content
+        )
+        worker = manager.get_agent(dispatched["agent_id"])
+        config = dict(worker["config"])
+        config.update(
+            {
+                "domain_last_error": "temporary failure",
+                "domain_handoff_ready": False,
+            }
+        )
+        manager.update_agent(
+            worker["id"],
+            config=config,
+            status="error",
+            summary_memory="ERROR: temporary failure",
+        )
+        payload = json.loads(
+            DomainTaskNextActionTool(
+                manager=manager, executor=_Executor(manager)
+            ).execute(task_key=dispatched["task_key"]).content
+        )
+        assert payload["recommended_action"] == f'retry:{dispatched["task_key"]}'
+        assert payload["action"] == "retry"
+        assert payload["executed"] is True
+        assert payload["result"]["handoff_ready"] is True
+    finally:
+        manager.close()
+
+
+def test_task_next_action_is_noop_for_complete_task(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(agent_id, "Already complete.")
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager, executor=_Executor(manager)
+            ).execute(instruction="Summarize my notes", domain="personal").content
+        )
+        payload = json.loads(
+            DomainTaskNextActionTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+        assert payload["recommended_action"] == "complete"
+        assert payload["action"] == "complete"
+        assert payload["executed"] is False
+        assert payload["result"]["state"] == "complete"
     finally:
         manager.close()
