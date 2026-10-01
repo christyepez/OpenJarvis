@@ -126,9 +126,45 @@ def _parse_commander_devices(content: str) -> list[dict[str, Any]]:
         if line.casefold().startswith("status:"):
             value = line.split(":", 1)[1].strip().casefold()
             current["online"] = value == "online"
+        elif line.casefold().startswith("id:"):
+            current["device_id"] = line.split(":", 1)[1].strip()
     if current and current.get("name"):
         devices.append(current)
     return devices
+
+
+def _bind_runtime_device_ids(
+    state: Any,
+    devices: list[dict[str, Any]],
+) -> int:
+    manager = getattr(state, "agent_manager", None)
+    if manager is None:
+        return 0
+    list_agents = getattr(manager, "list_agents", None)
+    update_agent = getattr(manager, "update_agent", None)
+    if not callable(list_agents) or not callable(update_agent):
+        return 0
+
+    device_ids = {
+        str(item.get("name", "") or "").casefold(): str(
+            item.get("device_id", "") or ""
+        )
+        for item in devices
+        if item.get("name") and item.get("device_id")
+    }
+    updated = 0
+    for agent in list_agents():
+        config = dict(agent.get("config", {}) or {})
+        machine = str(config.get("runtime_machine", "") or "")
+        device_id = device_ids.get(machine.casefold(), "")
+        if not machine or not device_id:
+            continue
+        if str(config.get("runtime_device_id", "") or "") == device_id:
+            continue
+        config["runtime_device_id"] = device_id
+        update_agent(agent["id"], config=config)
+        updated += 1
+    return updated
 
 
 def _commander_device_tool(state: Any) -> Any | None:
@@ -768,11 +804,14 @@ def operations_machine_probe(request: Request) -> dict[str, Any]:
         )
 
     state.machine_descriptors = devices
-    return _machine_summary(
+    bound_workers = _bind_runtime_device_ids(state, devices)
+    summary = _machine_summary(
         state,
         primary=primary,
         fallbacks=fallbacks,
     )
+    summary["bound_workers"] = bound_workers
+    return summary
 
 
 @router.get("/status")

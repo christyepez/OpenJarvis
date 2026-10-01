@@ -587,3 +587,57 @@ def test_operations_machine_probe_uses_commander_mcp_once() -> None:
     assert "list_devices" in data["tools"]["mcp"]
     assert "ping" in data["tools"]["mcp"]
     assert data["machines"]["selected"] == "MarketingIndo"
+
+
+
+def test_operations_machine_probe_binds_worker_runtime_device_id() -> None:
+    class _RuntimeManager:
+        def __init__(self):
+            self.records = [
+                {
+                    "id": "project-backend-1",
+                    "config": {
+                        "runtime_machine": "MarketingIndo",
+                        "project_stream": "backend",
+                    },
+                }
+            ]
+
+        def list_agents(self):
+            return self.records
+
+        def update_agent(self, agent_id, **changes):
+            record = next(item for item in self.records if item["id"] == agent_id)
+            record.update(changes)
+            return record
+
+        def close(self):
+            return None
+
+    manager = _RuntimeManager()
+    governance = SimpleNamespace(
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=manager,
+        mcp_tools=[_ListDevicesTool(), _PingTool()],
+    )
+
+    response = TestClient(app).post("/v1/operations/machines/probe")
+
+    assert response.status_code == 200
+    assert response.json()["bound_workers"] == 1
+    worker = manager.records[0]
+    assert worker["config"]["runtime_machine"] == "MarketingIndo"
+    assert worker["config"]["runtime_device_id"] == "device-marketing"
