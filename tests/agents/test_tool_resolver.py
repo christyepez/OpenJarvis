@@ -70,6 +70,36 @@ class _MCPOnlyTool(BaseTool):
         return ToolResult(tool_name="mcp_only", content="mcp-only", success=True)
 
 
+
+class _MCPDeviceTool(BaseTool):
+    tool_id = "mcp_device"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="start_process",
+            description="Remote process tool",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "deviceId": {"type": "string"},
+                    "command": {"type": "string"},
+                },
+            },
+        )
+
+    def execute(self, **params) -> ToolResult:
+        self.calls.append(dict(params))
+        return ToolResult(
+            tool_name="start_process",
+            content=str(params.get("deviceId", "")),
+            success=True,
+        )
+
+
 @pytest.fixture(autouse=True)
 def _use_explicit_test_registrations(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep these unit tests independent of import-time registry population."""
@@ -261,6 +291,44 @@ def test_mcp_tools_merge_after_native_tools_without_name_collisions() -> None:
         "shared",
         "mcp_only",
     ]
+
+
+
+
+
+def test_mcp_device_tool_receives_runtime_device_default() -> None:
+    remote = _MCPDeviceTool()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {
+                "tools": [],
+                "runtime_machine": "MarketingIndo",
+                "runtime_device_id": "device-marketing",
+            },
+        },
+        engine=object(),
+        model="test-model",
+        mcp_tools=[remote],
+    )
+
+    result = resolved.by_name["start_process"].execute(command="echo ready")
+
+    assert result.success is True
+    assert result.content == "device-marketing"
+    assert remote.calls == [
+        {
+            "deviceId": "device-marketing",
+            "command": "echo ready",
+        }
+    ]
+
+    override = resolved.by_name["start_process"].execute(
+        command="echo override",
+        deviceId="manual-device",
+    )
+    assert override.content == "manual-device"
 
 
 def test_mcp_tools_can_be_disabled_per_agent() -> None:

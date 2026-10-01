@@ -399,6 +399,9 @@ def resolve_agent_tools(
     seen: set[str] = set()
     workspace = str(config.get("workspace", "") or "").strip()
     domain = str(config.get("domain", "") or "").strip().casefold()
+    runtime_device_id = str(
+        config.get("runtime_device_id", "") or ""
+    ).strip()
 
     def bind_workspace_defaults(tool: Any) -> Any:
         if not workspace:
@@ -422,6 +425,23 @@ def resolve_agent_tools(
             return _DefaultParamsTool(tool, {"domain": domain})
         return tool
 
+    def bind_machine_defaults(tool: Any) -> Any:
+        if not runtime_device_id:
+            return tool
+        spec = getattr(tool, "spec", None)
+        parameters = getattr(spec, "parameters", {}) or {}
+        properties = (
+            parameters.get("properties", {})
+            if isinstance(parameters, Mapping)
+            else {}
+        )
+        if "deviceId" in properties:
+            return _DefaultParamsTool(
+                tool,
+                {"deviceId": runtime_device_id},
+            )
+        return tool
+
     def add_instance(
         tool: Any,
         *,
@@ -429,6 +449,7 @@ def resolve_agent_tools(
     ) -> None:
         tool = bind_workspace_defaults(tool)
         tool = bind_domain_defaults(tool)
+        tool = bind_machine_defaults(tool)
         name = _tool_name(tool)
         if not name or name in seen:
             return
