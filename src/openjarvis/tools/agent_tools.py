@@ -790,6 +790,35 @@ class DomainTaskRetryTool(BaseTool):
         )
         self._manager.update_agent(target["id"], config=current_config)
 
+        quality_pipeline_id = str(
+            current_config.get("domain_quality_pipeline_id", "") or ""
+        )
+        quality_payload: dict[str, Any] | None = None
+        quality_error = ""
+        if (
+            handoff_ready
+            and bool(current_config.get("domain_quality_required", False))
+            and not quality_pipeline_id
+        ):
+            quality_stages = list(
+                current_config.get("domain_quality_stages", []) or []
+            )
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
+                objective=(
+                    "Quality review for recovered domain task: "
+                    + str(current_config.get("instruction", "") or task_key)
+                ),
+                domain_task_key=task_key,
+                stages=quality_stages,
+            )
+            if quality_result.success:
+                quality_payload = json.loads(quality_result.content)
+                quality_pipeline_id = str(
+                    quality_payload.get("pipeline_id", "") or ""
+                )
+            else:
+                quality_error = quality_result.content
+
         return ToolResult(
             tool_name=self.tool_id,
             content=json.dumps(
@@ -801,9 +830,12 @@ class DomainTaskRetryTool(BaseTool):
                     "status": status,
                     "result": result_text,
                     "error": error_text,
+                    "quality_pipeline_id": quality_pipeline_id,
+                    "quality": quality_payload,
+                    "quality_error": quality_error,
                 }
             ),
-            success=not execution_failed,
+            success=not bool(execution_failed or quality_error),
         )
 
 

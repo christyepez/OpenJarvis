@@ -2161,3 +2161,76 @@ def test_task_status_reports_quality_not_required_for_simple_task(tmp_path) -> N
         assert status["quality_stages"] == []
     finally:
         manager.close()
+
+
+
+def test_task_retry_starts_missing_quality_pipeline_after_coding_recovery(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _RetryExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Recovered coding task successfully.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Refactor this Python helper",
+                domain="professional",
+            ).content
+        )
+        assert dispatched["quality_required"] is True
+        assert dispatched["quality_pipeline_id"] == ""
+
+        worker = manager.get_agent(dispatched["agent_id"])
+        config = dict(worker["config"])
+        config.update(
+            {
+                "domain_last_error": "temporary failure",
+                "domain_handoff_ready": False,
+            }
+        )
+        manager.update_agent(
+            worker["id"],
+            config=config,
+            status="error",
+            summary_memory="ERROR: temporary failure",
+        )
+
+        executor = _RetryExecutor(manager)
+        retried = DomainTaskRetryTool(
+            manager=manager,
+            executor=executor,
+        ).execute(task_key=dispatched["task_key"])
+
+        assert retried.success is True
+        payload = json.loads(retried.content)
+        assert payload["agent_id"] == dispatched["agent_id"]
+        assert payload["handoff_ready"] is True
+        assert payload["quality_pipeline_id"]
+        assert [stage["stage"] for stage in payload["quality"]["stages"]] == [
+            "anti-slop",
+            "thermos",
+        ]
+        assert executor.calls == [dispatched["agent_id"]]
+
+        current = manager.get_agent(dispatched["agent_id"])
+        assert (
+            current["config"]["domain_quality_pipeline_id"]
+            == payload["quality_pipeline_id"]
+        )
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
