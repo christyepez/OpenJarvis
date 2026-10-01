@@ -435,6 +435,27 @@ export async function fetchOperationsStatus(): Promise<OperationsStatus> {
   return res.json();
 }
 
+export interface OperationsTaskActionResult {
+  task_key: string;
+  recommended_action: string;
+  action: string;
+  executed: boolean;
+  result: unknown;
+}
+
+export async function executeOperationsTaskNextAction(
+  taskKey: string,
+): Promise<OperationsTaskActionResult> {
+  const res = await apiFetch(
+    `/v1/operations/tasks/${encodeURIComponent(taskKey)}/next-action`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to execute task action: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {

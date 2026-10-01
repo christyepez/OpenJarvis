@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  executeOperationsTaskNextAction,
   fetchOperationsStatus,
   type OperationsStatus,
 } from '../../lib/api';
@@ -49,8 +50,12 @@ export function ModelRoleSummary({
 
 export function AgentRoutingSummary({
   agents,
+  onNextAction,
+  busyTaskKey = '',
 }: {
   agents: OperationsStatus['agents']['agents'];
+  onNextAction?: (taskKey: string) => void;
+  busyTaskKey?: string;
 }) {
   if (!agents.length) {
     return (
@@ -125,6 +130,26 @@ export function AgentRoutingSummary({
             ) : null}
             {agent.domain ? (
               <Badge>quality: {agent.domain_quality_status}</Badge>
+            ) : null}
+            {agent.domain_next_action.startsWith('resolve-quality:') ? (
+              <Badge>evidence required</Badge>
+            ) : null}
+            {onNextAction &&
+            agent.domain_task_key &&
+            /^(advance|retry):/.test(agent.domain_next_action) ? (
+              <button
+                type="button"
+                className="rounded-full px-2 py-0.5 text-[11px] disabled:opacity-50"
+                style={{
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text-secondary)',
+                  background: 'var(--color-surface)',
+                }}
+                disabled={busyTaskKey === agent.domain_task_key}
+                onClick={() => onNextAction(agent.domain_task_key)}
+              >
+                {busyTaskKey === agent.domain_task_key ? 'Running…' : 'Run next'}
+              </button>
             ) : null}
             <Badge>{agent.routed_model || 'unassigned'}</Badge>
           </div>
@@ -336,6 +361,8 @@ function Card({
 export function OperationsOverview() {
   const [status, setStatus] = useState<OperationsStatus | null>(null);
   const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [busyTaskKey, setBusyTaskKey] = useState('');
 
   useEffect(() => {
     let mounted = true;
@@ -360,6 +387,19 @@ export function OperationsOverview() {
     };
   }, []);
 
+  const runNextAction = async (taskKey: string) => {
+    setBusyTaskKey(taskKey);
+    setActionError('');
+    try {
+      await executeOperationsTaskNextAction(taskKey);
+      setStatus(await fetchOperationsStatus());
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyTaskKey('');
+    }
+  };
+
   if (!status) {
     return (
       <div
@@ -379,6 +419,17 @@ export function OperationsOverview() {
     .reduce((sum, [, value]) => sum + value, 0);
   return (
     <div className="mb-6">
+      {actionError ? (
+        <div
+          className="rounded-xl p-3 text-xs mb-3"
+          style={{
+            border: '1px solid var(--color-border)',
+            color: 'var(--color-error)',
+          }}
+        >
+          {actionError}
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 mb-3">
         <Card title="Primary implementer">
           <div className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
@@ -552,7 +603,13 @@ export function OperationsOverview() {
           <ProjectBoardSummary projects={status.projects} />
         </Card>
         <Card title="Agent routing">
-          <AgentRoutingSummary agents={status.agents.agents} />
+          <AgentRoutingSummary
+            agents={status.agents.agents}
+            busyTaskKey={busyTaskKey}
+            onNextAction={(taskKey) => {
+              void runNextAction(taskKey);
+            }}
+          />
         </Card>
         <Card title="Quality runs">
           <QualityRunSummary quality={status.quality} />

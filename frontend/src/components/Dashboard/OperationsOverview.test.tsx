@@ -68,6 +68,7 @@ describe('OperationsOverview agent routing', () => {
   it('renders capability and routed model for managed agents', () => {
     const html = renderToStaticMarkup(
       <AgentRoutingSummary
+        onNextAction={() => undefined}
         agents={[
           {
             id: 'a1',
@@ -143,6 +144,7 @@ describe('OperationsOverview agent routing', () => {
     expect(html).toContain('professional · coding · granite-code:3b');
     expect(html).toContain('task: task-professional-1');
     expect(html).toContain('next: advance:task-professional-1');
+    expect(html).toContain('Run next');
     expect(html).toContain('handoff ready');
     expect(html).toContain('task: quality_pending');
     expect(html).toContain('quality: pending');
