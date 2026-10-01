@@ -1912,3 +1912,96 @@ def test_task_dispatch_quality_mode_none_overrides_coding_quality(tmp_path) -> N
         assert payload["quality_stages"] == []
     finally:
         manager.close()
+
+
+
+def test_quality_pipeline_binds_explicit_stages_to_domain_task(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Refactor this Python helper",
+                domain="professional",
+            ).content
+        )
+
+        result = QualityPipelineTool(manager=manager).execute(
+            objective="Review coding task quality",
+            domain_task_key=dispatched["task_key"],
+            stages=["anti-slop", "thermos"],
+        )
+
+        assert result.success is True
+        payload = json.loads(result.content)
+        assert payload["domain_task_key"] == dispatched["task_key"]
+        assert payload["project_key"] == ""
+        assert payload["reused"] is False
+        assert [stage["stage"] for stage in payload["stages"]] == [
+            "anti-slop",
+            "thermos",
+        ]
+
+        worker = manager.get_agent(dispatched["agent_id"])
+        assert worker["config"]["domain_quality_pipeline_id"] == payload["pipeline_id"]
+        assert worker["config"]["domain_quality_status"] == "pending"
+
+        coordinator = manager.get_agent(payload["coordinator_agent_id"])
+        assert (
+            coordinator["config"]["quality_domain_task_key"]
+            == dispatched["task_key"]
+        )
+        assert coordinator["config"]["quality_project_key"] == ""
+    finally:
+        manager.close()
+
+
+def test_quality_pipeline_reuses_existing_domain_task_pipeline(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(manager=manager).execute(
+                instruction="Review this dashboard screenshot",
+                domain="knowledge",
+            ).content
+        )
+        first = json.loads(
+            QualityPipelineTool(manager=manager).execute(
+                objective="Visual review",
+                domain_task_key=dispatched["task_key"],
+                stages=["multimodal-review", "anti-slop", "thermos"],
+            ).content
+        )
+        second = json.loads(
+            QualityPipelineTool(manager=manager).execute(
+                objective="Duplicate visual review",
+                domain_task_key=dispatched["task_key"],
+                stages=["multimodal-review", "anti-slop", "thermos"],
+            ).content
+        )
+
+        assert second["reused"] is True
+        assert second["pipeline_id"] == first["pipeline_id"]
+    finally:
+        manager.close()
+
+
+def test_quality_pipeline_rejects_project_and_domain_binding_together(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        result = QualityPipelineTool(manager=manager).execute(
+            objective="Ambiguous review",
+            project_key="project-a",
+            domain_task_key="task-a",
+            stages=["thermos"],
+        )
+
+        assert result.success is False
+        assert "either project_key or domain_task_key" in result.content
+    finally:
+        manager.close()

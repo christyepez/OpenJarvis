@@ -2334,6 +2334,30 @@ class QualityPipelineTool(BaseTool):
                             "Optional project to bind this quality pipeline to."
                         ),
                     },
+                    "domain_task_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional non-project task to bind this quality "
+                            "pipeline to."
+                        ),
+                    },
+                    "stages": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "build-tests",
+                                "multimodal-review",
+                                "anti-slop",
+                                "thermos",
+                                "release",
+                            ],
+                        },
+                        "description": (
+                            "Optional explicit ordered quality stages. When omitted, "
+                            "the standard planner is used."
+                        ),
+                    },
                     "has_code_changes": {"type": "boolean", "default": True},
                     "has_visual_changes": {"type": "boolean", "default": False},
                     "material_change": {"type": "boolean", "default": True},
@@ -2362,7 +2386,21 @@ class QualityPipelineTool(BaseTool):
             )
 
         project_key = str(params.get("project_key", "") or "").strip()
+        domain_task_key = str(
+            params.get("domain_task_key", "") or ""
+        ).strip()
+        if project_key and domain_task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Quality pipeline can bind to either project_key or "
+                    "domain_task_key, not both."
+                ),
+                success=False,
+            )
+
         project: dict[str, Any] | None = None
+        domain_agent: dict[str, Any] | None = None
         if project_key:
             project = _project_coordinator(self._manager, project_key)
             if project is None:
@@ -2413,25 +2451,116 @@ class QualityPipelineTool(BaseTool):
                         success=True,
                     )
 
+        if domain_task_key:
+            domain_agent = next(
+                (
+                    record
+                    for record in self._manager.list_agents()
+                    if str(
+                        (record.get("config", {}) or {}).get(
+                            "domain_task_key", ""
+                        )
+                    )
+                    == domain_task_key
+                    and str(record.get("status", "") or "") != "archived"
+                ),
+                None,
+            )
+            if domain_agent is None:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=f"Domain task not found: {domain_task_key}",
+                    success=False,
+                )
+
+            domain_config = dict(domain_agent.get("config", {}) or {})
+            existing_id = str(
+                domain_config.get("domain_quality_pipeline_id", "") or ""
+            )
+            if existing_id:
+                existing = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == existing_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=json.dumps(
+                            {
+                                "pipeline_id": existing_id,
+                                "coordinator_agent_id": existing["id"],
+                                "objective": objective,
+                                "project_key": "",
+                                "domain_task_key": domain_task_key,
+                                "reused": True,
+                                "stages": self._manager.list_tasks(
+                                    existing["id"]
+                                ),
+                            }
+                        ),
+                        success=True,
+                    )
+
         from openjarvis.governance.quality_pipeline import (
             QualityPipelinePlanner,
             QualityStage,
         )
 
-        plan = QualityPipelinePlanner().plan(
-            has_code_changes=bool(params.get("has_code_changes", True)),
-            has_visual_changes=bool(params.get("has_visual_changes", False)),
-            material_change=bool(params.get("material_change", True)),
-            release_candidate=bool(params.get("release_candidate", False)),
-        )
+        explicit_stage_values = params.get("stages")
+        if explicit_stage_values is not None:
+            allowed_stages = {stage.value: stage for stage in QualityStage}
+            selected_stages: list[QualityStage] = []
+            for value in explicit_stage_values:
+                stage_name = str(value or "").strip()
+                stage = allowed_stages.get(stage_name)
+                if stage is None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=f"Unsupported quality stage: {stage_name}",
+                        success=False,
+                    )
+                selected_stages.append(stage)
+            if not selected_stages:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content="Explicit quality stages cannot be empty.",
+                    success=False,
+                )
+        else:
+            plan = QualityPipelinePlanner().plan(
+                has_code_changes=bool(params.get("has_code_changes", True)),
+                has_visual_changes=bool(params.get("has_visual_changes", False)),
+                material_change=bool(params.get("material_change", True)),
+                release_candidate=bool(params.get("release_candidate", False)),
+            )
+            selected_stages = list(plan.stages)
+
         templates = {
             QualityStage.MULTIMODAL_REVIEW: "qwen_mm_reviewer",
             QualityStage.ANTI_SLOP: "anti_slop_reviewer",
             QualityStage.THERMOS: "thermos_reviewer",
         }
         pipeline_id = uuid.uuid4().hex[:12]
+        coordinator_template = (
+            "domain_orchestrator" if domain_task_key else "project_orchestrator"
+        )
         coordinator = self._manager.create_from_template(
-            "project_orchestrator",
+            coordinator_template,
             f"Quality Pipeline {pipeline_id[:6]}",
             overrides={
                 "instruction": objective,
@@ -2439,6 +2568,7 @@ class QualityPipelineTool(BaseTool):
                 "quality_pipeline_id": pipeline_id,
                 "quality_pipeline_role": "coordinator",
                 "quality_project_key": project_key,
+                "quality_domain_task_key": domain_task_key,
             },
             agent_id=f"quality-{pipeline_id}",
         )
@@ -2456,11 +2586,24 @@ class QualityPipelineTool(BaseTool):
                 config=project_config,
             )
 
+        if domain_agent is not None:
+            domain_config = dict(domain_agent.get("config", {}) or {})
+            domain_config.update(
+                {
+                    "domain_quality_pipeline_id": pipeline_id,
+                    "domain_quality_status": "pending",
+                }
+            )
+            self._manager.update_agent(
+                domain_agent["id"],
+                config=domain_config,
+            )
+
         spawn = AgentSpawnTool(manager=self._manager)
         stages: list[dict[str, Any]] = []
         previous_task_id = ""
 
-        for order, stage in enumerate(plan.stages):
+        for order, stage in enumerate(selected_stages):
             template = templates.get(stage)
             kind = "agent" if template is not None else "gate"
             task = self._manager.create_task(
@@ -2514,6 +2657,7 @@ class QualityPipelineTool(BaseTool):
                         "quality_pipeline_id": pipeline_id,
                         "quality_pipeline_role": "reviewer",
                         "quality_project_key": project_key,
+                        "quality_domain_task_key": domain_task_key,
                         "quality_task_id": task["id"],
                         "quality_stage": stage.value,
                     }
@@ -2546,6 +2690,7 @@ class QualityPipelineTool(BaseTool):
                     "coordinator_agent_id": coordinator["id"],
                     "objective": objective,
                     "project_key": project_key,
+                    "domain_task_key": domain_task_key,
                     "reused": False,
                     "stages": stages,
                 }
