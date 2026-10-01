@@ -42,6 +42,7 @@ _AGENT_LIFECYCLE_TOOLS = frozenset(
         "project_dispatch",
         "project_handoff_review",
         "project_status",
+        "project_worker_authorize_retry",
         "project_worktree_prepare",
         "project_stream_update",
         "quality_gate_update",

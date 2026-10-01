@@ -1973,7 +1973,10 @@ class ProjectStatusTool(BaseTool):
                 done.append(stream)
             elif worker and worker_status == "error":
                 retry_count = int(progress.get("retry_count", 0) or 0)
-                if retry_count >= 3:
+                manual_retry = bool(
+                    progress.get("manual_retry_authorized", False)
+                )
+                if retry_count >= 3 and not manual_retry:
                     state = "EXHAUSTED"
                     exhausted.append(stream)
                 else:
@@ -2165,6 +2168,7 @@ class ProjectAdvanceTool(BaseTool):
                             progress = dict(task.get("progress", {}) or {})
                             progress["handoff_ready"] = False
                             progress["worker_status"] = "retrying"
+                            progress["manual_retry_authorized"] = False
                             progress["retry_count"] = (
                                 int(progress.get("retry_count", 0) or 0) + 1
                             )
@@ -2310,6 +2314,129 @@ class ProjectAdvanceTool(BaseTool):
                     "dispatch": dispatch_payload,
                     "quality": quality_payload,
                     "status": after,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("project_worker_authorize_retry")
+class ProjectWorkerAuthorizeRetryTool(BaseTool):
+    """Authorize one explicit retry after a project worker exhausts auto retries."""
+
+    tool_id = "project_worker_authorize_retry"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Authorize one additional retry for an exhausted project worker. "
+                "Requires explicit evidence and preserves the retry counter/history."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["project_key", "stream", "evidence"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Worker retry authorization requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+        if not project_key or not stream or not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key, stream, and evidence are required.",
+                success=False,
+            )
+
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        worker = None
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+                and str(config.get("project_stream", "") or "").casefold() == stream
+                and str(agent.get("status", "") or "") != "archived"
+            ):
+                worker = agent
+                break
+        if worker is None or str(worker.get("status", "") or "").casefold() != "error":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Exhausted worker not found for stream: {stream}",
+                success=False,
+            )
+
+        target = None
+        for task in self._manager.list_tasks(project["id"]):
+            progress = task.get("progress", {}) or {}
+            if str(progress.get("stream", "") or "").casefold() == stream:
+                target = task
+                break
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project task not found for stream: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        retry_count = int(progress.get("retry_count", 0) or 0)
+        if retry_count < 3:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Worker retry limit is not exhausted for stream: {stream}",
+                success=False,
+            )
+
+        progress["manual_retry_authorized"] = True
+        progress["manual_retry_authorized_at"] = time.time()
+        progress["manual_retry_evidence"] = evidence
+        findings = list(target.get("findings", []) or [])
+        findings.append(f"MANUAL RETRY AUTHORIZED: {evidence}")
+        self._manager.update_task(
+            target["id"],
+            status=target.get("status", "active"),
+            progress=progress,
+            findings=findings[-10:],
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "worker_agent_id": worker["id"],
+                    "retry_count": retry_count,
+                    "authorized": True,
+                    "next_action": f"retry-workers:{stream}",
                 }
             ),
             success=True,

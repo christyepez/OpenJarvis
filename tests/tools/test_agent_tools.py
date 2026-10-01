@@ -23,6 +23,7 @@ from openjarvis.tools.agent_tools import (
     ProjectHandoffReviewTool,
     ProjectStatusTool,
     ProjectStreamUpdateTool,
+    ProjectWorkerAuthorizeRetryTool,
     ProjectWorktreePrepareTool,
     QualityAdvanceTool,
     QualityGateUpdateTool,
@@ -2824,5 +2825,95 @@ def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None
         assert advanced["action"] == "resolve-worker"
         assert advanced["started_agents"] == []
         assert executor.calls == []
+    finally:
+        manager.close()
+
+
+
+def test_project_worker_manual_retry_authorization_is_evidence_gated(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = json.loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Manual Retry",
+                objective="Build API and tests",
+                repository="https://github.com/example/manual-retry",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatched = json.loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key,
+                streams="architecture",
+            ).content
+        )
+        item = dispatched["dispatched"][0]
+        manager.update_agent(item["agent_id"], status="error")
+        task = manager.get_task(item["task_id"])
+        progress = dict(task["progress"])
+        progress["retry_count"] = 3
+        manager.update_task(
+            item["task_id"],
+            status=task["status"],
+            progress=progress,
+        )
+        missing = ProjectWorkerAuthorizeRetryTool(manager=manager).execute(
+            project_key=project_key,
+            stream="architecture",
+            evidence="",
+        )
+        assert missing.success is False
+
+        authorized = json.loads(
+            ProjectWorkerAuthorizeRetryTool(manager=manager).execute(
+                project_key=project_key,
+                stream="architecture",
+                evidence="Runtime was rebound and connectivity was verified.",
+            ).content
+        )
+        assert authorized["authorized"] is True
+        assert authorized["retry_count"] == 3
+
+        status = json.loads(
+            ProjectStatusTool(manager=manager).execute(
+                project_key=project_key
+            ).content
+        )
+        assert status["exhausted_streams"] == []
+        assert status["failed_streams"] == ["architecture"]
+        assert status["next_action"] == "retry-workers:architecture"
+        executor = _Executor(manager)
+        advanced = json.loads(
+            ProjectAdvanceTool(
+                manager=manager,
+                executor=executor,
+            ).execute(project_key=project_key).content
+        )
+        assert advanced["action"] == "workers-retried"
+        assert executor.calls == [item["agent_id"]]
+
+        task = manager.get_task(item["task_id"])
+        assert task["progress"]["retry_count"] == 4
+        assert task["progress"]["manual_retry_authorized"] is False
+        assert task["progress"]["manual_retry_evidence"] == (
+            "Runtime was rebound and connectivity was verified."
+        )
+        assert any(
+            finding.startswith("MANUAL RETRY AUTHORIZED:")
+            for finding in task["findings"]
+        )
     finally:
         manager.close()
