@@ -386,6 +386,9 @@ export interface OperationsStatus {
       routed_model: string | null;
       project_stream: string;
       domain: string;
+      domain_handoff_ready: boolean;
+      domain_last_completed_at: number;
+      domain_result: string;
     }>;
     tasks: {
       total: number;

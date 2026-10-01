@@ -83,8 +83,19 @@ export function AgentRoutingSummary({
                 .filter(Boolean)
                 .join(' · ')}
             </div>
+            {agent.domain_handoff_ready && agent.domain_result ? (
+              <div
+                className="truncate max-w-[360px] mt-0.5"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              >
+                {agent.domain_result}
+              </div>
+            ) : null}
           </div>
-          <Badge>{agent.routed_model || 'unassigned'}</Badge>
+          <div className="flex flex-wrap justify-end gap-1">
+            {agent.domain_handoff_ready ? <Badge>handoff ready</Badge> : null}
+            <Badge>{agent.routed_model || 'unassigned'}</Badge>
+          </div>
         </div>
       ))}
     </div>

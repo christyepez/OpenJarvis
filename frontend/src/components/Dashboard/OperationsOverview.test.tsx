@@ -80,6 +80,9 @@ describe('OperationsOverview agent routing', () => {
             routed_model: 'qwen3.5:4b',
             project_stream: 'frontend',
             domain: '',
+            domain_handoff_ready: false,
+            domain_last_completed_at: 0,
+            domain_result: '',
           },
           {
             id: 'a2',
@@ -92,6 +95,9 @@ describe('OperationsOverview agent routing', () => {
             routed_model: 'granite-code:3b',
             project_stream: '',
             domain: 'professional',
+            domain_handoff_ready: true,
+            domain_last_completed_at: 1,
+            domain_result: 'Code review complete and ready for follow-up.',
           },
         ]}
       />,
@@ -102,6 +108,8 @@ describe('OperationsOverview agent routing', () => {
     expect(html).toContain('qwen3.5:4b');
     expect(html).toContain('Code Reviewer');
     expect(html).toContain('professional · coding · granite-code:3b');
+    expect(html).toContain('handoff ready');
+    expect(html).toContain('Code review complete and ready for follow-up.');
     expect(html).toContain('granite-code:3b');
   });
 });

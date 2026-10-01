@@ -59,11 +59,14 @@ class _Manager:
                 "agent_type": "orchestrator",
                 "status": "idle",
                 "current_activity": "",
+                "summary_memory": "Budget review complete; no overspend detected.",
                 "config": {
                     "capability": "general",
                     "model": "smart",
                     "domain": "finance",
                     "domain_role": "specialist",
+                    "domain_handoff_ready": True,
+                    "domain_last_completed_at": 123.0,
                 },
             },
         ]
@@ -150,6 +153,9 @@ def test_operations_status_aggregates_runtime_and_governance() -> None:
     assert data["agents"]["agents"][1]["routed_model"] == "qwen3.5:4b"
     assert data["agents"]["agents"][2]["domain"] == "finance"
     assert data["agents"]["agents"][2]["routed_model"] == "qwen3.5:4b"
+    assert data["agents"]["agents"][2]["domain_handoff_ready"] is True
+    assert data["agents"]["agents"][2]["domain_last_completed_at"] == 123.0
+    assert "Budget review complete" in data["agents"]["agents"][2]["domain_result"]
     assert data["agents"]["tasks"]["total"] == 2
     assert data["agents"]["tasks"]["by_status"] == {
         "active": 1,

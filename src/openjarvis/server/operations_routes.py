@@ -430,6 +430,15 @@ def _agent_summary(
                     config.get("project_stream", "") or ""
                 ),
                 "domain": domain,
+                "domain_handoff_ready": bool(
+                    config.get("domain_handoff_ready", False)
+                ),
+                "domain_last_completed_at": float(
+                    config.get("domain_last_completed_at", 0.0) or 0.0
+                ),
+                "domain_result": str(
+                    agent.get("summary_memory", "") or ""
+                )[:500],
             }
         )
         try:
