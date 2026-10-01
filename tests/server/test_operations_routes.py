@@ -392,3 +392,73 @@ def test_operations_next_action_executes_created_task(
         assert executor.calls == [payload["agent_id"]]
     finally:
         manager.close()
+
+
+
+def test_operations_project_next_action_dispatches_ready_stream(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from urllib.parse import quote
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server import operations_routes
+    from openjarvis.tools.agent_tools import ProjectBootstrapTool
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Project worker started from Operations.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = ProjectBootstrapTool(manager=manager).execute(
+            project_name="Operations Project",
+            objective="Build API and tests",
+            repository="https://github.com/example/operations-project",
+        )
+        payload = __import__("json").loads(boot.content)
+        executor = _Executor(manager)
+        monkeypatch.setattr(
+            operations_routes,
+            "_operations_executor",
+            lambda state, current_manager: executor,
+        )
+
+        config = SimpleNamespace(
+            governance=SimpleNamespace(),
+            security=SimpleNamespace(enabled=False),
+            traces=SimpleNamespace(enabled=False),
+            analytics=SimpleNamespace(enabled=False),
+        )
+        app = create_app(
+            _Engine(),
+            "qwen3.5:4b",
+            engine_name="ollama",
+            config=config,
+            agent_manager=manager,
+        )
+
+        project_key = payload["project_key"]
+        response = TestClient(app).post(
+            "/v1/operations/projects/"
+            + quote(project_key, safe="")
+            + "/next-action"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["action"] == "dispatched"
+        assert data["dispatched_streams"] == ["architecture"]
+        assert data["started_agents"]
+        assert executor.calls == data["started_agents"]
+    finally:
+        manager.close()

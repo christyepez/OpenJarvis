@@ -595,6 +595,41 @@ def operations_task_next_action(
     return json.loads(result.content)
 
 
+@router.post("/projects/{project_key:path}/next-action")
+def operations_project_next_action(
+    request: Request,
+    project_key: str,
+) -> dict[str, Any]:
+    """Advance one persisted project without bypassing its governance gates."""
+    state = request.app.state
+    manager = getattr(state, "agent_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Agent manager unavailable.")
+
+    from openjarvis.tools.agent_tools import ProjectAdvanceTool, ProjectStatusTool
+
+    status_result = ProjectStatusTool(manager=manager).execute(
+        project_key=project_key
+    )
+    if not status_result.success:
+        raise HTTPException(status_code=404, detail=status_result.content)
+
+    status = json.loads(status_result.content)
+    next_action = str(status.get("next_action", "") or "")
+    needs_executor = bool(status.get("ready_streams")) or next_action.startswith(
+        "advance-quality:"
+    )
+    executor = _operations_executor(state, manager) if needs_executor else None
+
+    result = ProjectAdvanceTool(
+        manager=manager,
+        executor=executor,
+    ).execute(project_key=project_key)
+    if not result.success:
+        raise HTTPException(status_code=409, detail=result.content)
+    return json.loads(result.content)
+
+
 @router.get("/status")
 def operations_status(request: Request) -> dict[str, Any]:
     """Return a read-only operational snapshot for the dashboard."""
