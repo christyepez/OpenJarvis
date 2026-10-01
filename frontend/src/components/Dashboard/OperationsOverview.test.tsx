@@ -310,6 +310,7 @@ describe('OperationsOverview project execution boards', () => {
                   branch: '',
                   workspace: '',
                   runtime_machine: 'trabajo',
+                  runtime_machine_status: 'unavailable',
                   depends_on_task_ids: [],
                 },
                 {
@@ -326,6 +327,7 @@ describe('OperationsOverview project execution boards', () => {
                   branch: 'openjarvis/portal/backend',
                   workspace: 'C:/worktrees/portal/backend',
                   runtime_machine: 'MarketingIndo',
+                  runtime_machine_status: 'online',
                   depends_on_task_ids: ['a1'],
                 },
               ],
@@ -342,6 +344,8 @@ describe('OperationsOverview project execution boards', () => {
     expect(html).toContain('REVIEW: 1');
     expect(html).toContain('BLOCKED: 1');
     expect(html).toContain('next: dispatch:architecture');
+    expect(html).toContain('runtime: unavailable');
+    expect(html).toContain('runtime: online');
     expect(html).toContain('Run next');
     expect(html).toContain('build-tests: pending');
     expect(html).toContain('anti-slop: pending');

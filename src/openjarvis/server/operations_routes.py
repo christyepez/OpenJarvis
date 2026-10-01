@@ -389,6 +389,9 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "runtime_machine": str(
                         progress.get("runtime_machine", "") or ""
                     ),
+                    "runtime_machine_status": str(
+                        progress.get("runtime_machine_status", "") or ""
+                    ),
                     "depends_on_task_ids": [
                         str(value)
                         for value in (

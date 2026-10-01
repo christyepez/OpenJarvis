@@ -361,6 +361,7 @@ export interface OperationsStatus {
         branch: string;
         workspace: string;
         runtime_machine: string;
+        runtime_machine_status: string;
         depends_on_task_ids: string[];
       }>;
     }>;
