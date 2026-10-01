@@ -642,8 +642,15 @@ class DomainTaskStatusTool(BaseTool):
 
             if error:
                 state = "error"
+            elif handoff_ready and quality_required:
+                if quality_status == "completed":
+                    state = "complete"
+                elif quality_status in {"failed", "needs_attention", "missing"}:
+                    state = "quality_failed"
+                else:
+                    state = "quality_pending"
             elif handoff_ready:
-                state = "handoff_ready"
+                state = "complete"
             elif str(agent.get("status", "") or "").casefold() in {
                 "running",
                 "active",

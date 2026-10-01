@@ -1709,7 +1709,7 @@ def test_task_status_returns_domain_handoff_by_task_key(tmp_path) -> None:
         payload = json.loads(status.content)
         assert payload["task_key"] == dispatched["task_key"]
         assert payload["agent_id"] == dispatched["agent_id"]
-        assert payload["state"] == "handoff_ready"
+        assert payload["state"] == "complete"
         assert payload["domain"] == "professional"
         assert payload["handoff_ready"] is True
         assert "actionable findings" in payload["result"]
@@ -1795,7 +1795,7 @@ def test_task_retry_reuses_same_worker_and_recovers_handoff(tmp_path) -> None:
                 task_key=dispatched["task_key"]
             ).content
         )
-        assert status["state"] == "handoff_ready"
+        assert status["state"] == "complete"
         assert status["agent_id"] == agent_id
     finally:
         manager.close()
@@ -2124,6 +2124,7 @@ def test_task_status_reports_pending_quality_pipeline(tmp_path) -> None:
             ).content
         )
 
+        assert status["state"] == "quality_pending"
         assert status["quality_required"] is True
         assert status["quality_pipeline_id"] == dispatched["quality_pipeline_id"]
         assert status["quality_status"] == "pending"
@@ -2343,6 +2344,7 @@ def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
             advance.execute(task_key=dispatched["task_key"]).content
         )
         assert final["action"] == "complete"
+        assert final["status"]["state"] == "complete"
         assert final["status"]["quality_status"] == "completed"
         assert len(quality_executor.calls) == 2
     finally:
