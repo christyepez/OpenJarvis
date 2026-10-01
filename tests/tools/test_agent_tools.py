@@ -12,6 +12,7 @@ from openjarvis.tools.agent_tools import (
     AgentListTool,
     AgentSendTool,
     AgentSpawnTool,
+    DomainTaskAdvanceTool,
     DomainTaskDispatchTool,
     DomainTaskRetryTool,
     DomainTaskStatusTool,
@@ -2231,6 +2232,119 @@ def test_task_retry_starts_missing_quality_pipeline_after_coding_recovery(
             current["config"]["domain_quality_pipeline_id"]
             == payload["quality_pipeline_id"]
         )
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+
+def test_task_advance_completes_simple_task_without_quality(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _WorkerExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Simple task complete.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_WorkerExecutor(manager),
+            ).execute(
+                instruction="Summarize my notes",
+                domain="personal",
+            ).content
+        )
+
+        advanced = json.loads(
+            DomainTaskAdvanceTool(manager=manager).execute(
+                task_key=dispatched["task_key"]
+            ).content
+        )
+
+        assert advanced["action"] == "complete"
+        assert advanced["status"]["handoff_ready"] is True
+        assert advanced["status"]["quality_status"] == "not_required"
+    finally:
+        manager.close()
+
+
+def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
+    from openjarvis.agents.manager import AgentManager
+
+    class _WorkerExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+
+        def execute_tick(self, agent_id):
+            self.manager.update_summary_memory(
+                agent_id,
+                "Coding handoff ready.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    class _QualityExecutor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            agent = self.manager.get_agent(agent_id)
+            task_id = agent["config"]["quality_task_id"]
+            task = self.manager.get_task(task_id)
+            self.manager.update_task(
+                task_id,
+                status="completed",
+                progress=task["progress"],
+                findings=[f"{agent['config']['quality_stage']} passed"],
+            )
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    _SPAWNED_AGENTS.clear()
+    try:
+        dispatched = json.loads(
+            DomainTaskDispatchTool(
+                manager=manager,
+                executor=_WorkerExecutor(manager),
+            ).execute(
+                instruction="Refactor this Python service",
+                domain="professional",
+            ).content
+        )
+        quality_executor = _QualityExecutor(manager)
+        advance = DomainTaskAdvanceTool(
+            manager=manager,
+            executor=quality_executor,
+        )
+
+        first = json.loads(
+            advance.execute(task_key=dispatched["task_key"]).content
+        )
+        assert first["action"] == "quality-advanced"
+        assert first["quality"]["action"] == "reviewer_executed"
+        assert first["quality"]["stage"] == "anti-slop"
+
+        second = json.loads(
+            advance.execute(task_key=dispatched["task_key"]).content
+        )
+        assert second["action"] == "quality-advanced"
+        assert second["quality"]["stage"] == "thermos"
+
+        final = json.loads(
+            advance.execute(task_key=dispatched["task_key"]).content
+        )
+        assert final["action"] == "complete"
+        assert final["status"]["quality_status"] == "completed"
+        assert len(quality_executor.calls) == 2
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()

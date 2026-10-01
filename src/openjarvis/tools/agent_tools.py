@@ -840,6 +840,149 @@ class DomainTaskRetryTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskAdvanceTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_advance")
+class DomainTaskAdvanceTool(BaseTool):
+    """Advance one persisted non-project task through its quality lifecycle."""
+
+    tool_id = "task_advance"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance a persisted non-project task safely. Returns complete "
+                "only when the task handoff is ready and any required quality "
+                "pipeline has completed."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task advance requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        status_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        before = json.loads(status_result.content)
+        quality_payload: dict[str, Any] | None = None
+
+        if before.get("state") == "error":
+            action = "retry-required"
+        elif not bool(before.get("handoff_ready", False)):
+            action = "wait-handoff"
+        elif not bool(before.get("quality_required", False)):
+            action = "complete"
+        else:
+            quality_status = str(
+                before.get("quality_status", "not_started") or "not_started"
+            )
+            quality_pipeline_id = str(
+                before.get("quality_pipeline_id", "") or ""
+            )
+
+            if quality_status == "completed":
+                action = "complete"
+            elif quality_status in {"failed", "needs_attention", "missing"}:
+                action = "resolve-quality"
+            elif quality_status == "not_started":
+                agent = self._manager.get_agent(str(before["agent_id"]))
+                config = dict((agent or {}).get("config", {}) or {})
+                quality_stages = list(
+                    config.get("domain_quality_stages", []) or []
+                )
+                result = QualityPipelineTool(manager=self._manager).execute(
+                    objective=(
+                        "Quality review for domain task: "
+                        + str(config.get("instruction", "") or task_key)
+                    ),
+                    domain_task_key=task_key,
+                    stages=quality_stages,
+                )
+                if not result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(result.content)
+                action = "quality-started"
+            elif self._executor is None:
+                action = "quality-await-executor"
+            else:
+                result = QualityAdvanceTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(pipeline_id=quality_pipeline_id)
+                if not result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(result.content)
+                action = "quality-advanced"
+
+        after_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        after = (
+            json.loads(after_result.content)
+            if after_result.success
+            else before
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "action": action,
+                    "quality": quality_payload,
+                    "status": after,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # ProjectBootstrapTool
 # ---------------------------------------------------------------------------
 
@@ -3397,6 +3540,7 @@ __all__ = [
     "AgentListTool",
     "AgentSendTool",
     "AgentSpawnTool",
+    "DomainTaskAdvanceTool",
     "DomainTaskDispatchTool",
     "DomainTaskRetryTool",
     "DomainTaskStatusTool",
