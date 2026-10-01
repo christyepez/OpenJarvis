@@ -850,6 +850,32 @@ def operations_task_next_action(
     return json.loads(result.content)
 
 
+@router.post("/workers/authorize-retry")
+def operations_worker_authorize_retry(
+    request: Request,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Authorize one evidence-backed retry for an exhausted project worker."""
+    state = request.app.state
+    manager = getattr(state, "agent_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Agent manager unavailable.")
+
+    from openjarvis.tools.agent_tools import ProjectWorkerAuthorizeRetryTool
+
+    project_key = str(payload.get("project_key", "") or "").strip()
+    stream = str(payload.get("stream", "") or "").strip()
+    evidence = str(payload.get("evidence", "") or "").strip()
+    result = ProjectWorkerAuthorizeRetryTool(manager=manager).execute(
+        project_key=project_key,
+        stream=stream,
+        evidence=evidence,
+    )
+    if not result.success:
+        raise HTTPException(status_code=409, detail=result.content)
+    return json.loads(result.content)
+
+
 @router.post("/projects/{project_key:path}/next-action")
 def operations_project_next_action(
     request: Request,

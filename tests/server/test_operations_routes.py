@@ -969,3 +969,91 @@ def test_operations_project_next_action_retries_failed_worker(
         assert project["failed_streams"] == []
     finally:
         manager.close()
+
+
+
+def test_operations_authorizes_exhausted_worker_retry_with_evidence(
+    tmp_path,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.tools.agent_tools import (
+        ProjectBootstrapTool,
+        ProjectDispatchTool,
+    )
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        boot = __import__("json").loads(
+            ProjectBootstrapTool(manager=manager).execute(
+                project_name="Authorize Retry API",
+                objective="Build API and tests",
+                repository="https://github.com/example/authorize-retry-api",
+            ).content
+        )
+        project_key = boot["project_key"]
+        dispatched = __import__("json").loads(
+            ProjectDispatchTool(manager=manager).execute(
+                project_key=project_key,
+                streams="architecture",
+            ).content
+        )
+        item = dispatched["dispatched"][0]
+        manager.update_agent(item["agent_id"], status="error")
+        task = manager.get_task(item["task_id"])
+        progress = dict(task["progress"])
+        progress["retry_count"] = 3
+        manager.update_task(
+            item["task_id"],
+            status=task["status"],
+            progress=progress,
+        )
+        config = SimpleNamespace(
+            governance=SimpleNamespace(),
+            security=SimpleNamespace(enabled=False),
+            traces=SimpleNamespace(enabled=False),
+            analytics=SimpleNamespace(enabled=False),
+        )
+        app = create_app(
+            _Engine(),
+            "qwen3.5:4b",
+            engine_name="ollama",
+            config=config,
+            agent_manager=manager,
+        )
+        client = TestClient(app)
+
+        denied = client.post(
+            "/v1/operations/workers/authorize-retry",
+            json={
+                "project_key": project_key,
+                "stream": "architecture",
+                "evidence": "",
+            },
+        )
+        assert denied.status_code == 409
+
+        response = client.post(
+            "/v1/operations/workers/authorize-retry",
+            json={
+                "project_key": project_key,
+                "stream": "architecture",
+                "evidence": "Runtime connectivity was restored and verified.",
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["authorized"] is True
+        assert data["retry_count"] == 3
+        assert data["next_action"] == "retry-workers:architecture"
+
+        status = client.get("/v1/operations/status").json()
+        project = next(
+            item
+            for item in status["projects"]["projects"]
+            if item["project_key"] == project_key
+        )
+        assert project["exhausted_streams"] == []
+        assert project["failed_streams"] == ["architecture"]
+        assert project["next_action"] == "retry-workers:architecture"
+    finally:
+        manager.close()
