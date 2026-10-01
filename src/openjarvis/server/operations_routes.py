@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/v1/operations", tags=["operations"])
 
@@ -535,6 +535,64 @@ def _agent_summary(
             "items": task_items[:20],
         },
     }
+
+
+def _operations_executor(state: Any, manager: Any) -> Any:
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.server.agent_manager_routes import (
+        _get_runtime_event_bus,
+        _make_lightweight_system,
+    )
+
+    executor = AgentExecutor(
+        manager=manager,
+        event_bus=_get_runtime_event_bus(state),
+        trace_store=getattr(state, "trace_store", None),
+    )
+    executor.set_system(
+        _make_lightweight_system(
+            getattr(state, "engine", None),
+            str(getattr(state, "model", "") or ""),
+            getattr(state, "config", None),
+            state,
+        )
+    )
+    return executor
+
+
+@router.post("/tasks/{task_key}/next-action")
+def operations_task_next_action(
+    request: Request,
+    task_key: str,
+) -> dict[str, Any]:
+    """Execute one persisted domain task's current safe next action."""
+    state = request.app.state
+    manager = getattr(state, "agent_manager", None)
+    if manager is None:
+        raise HTTPException(status_code=503, detail="Agent manager unavailable.")
+
+    from openjarvis.tools.agent_tools import (
+        DomainTaskNextActionTool,
+        DomainTaskStatusTool,
+    )
+
+    status_result = DomainTaskStatusTool(manager=manager).execute(task_key=task_key)
+    if not status_result.success:
+        raise HTTPException(status_code=404, detail=status_result.content)
+
+    status = json.loads(status_result.content)
+    recommended = str(status.get("next_action", "") or "")
+    executor = None
+    if recommended.startswith(("retry:", "advance:")):
+        executor = _operations_executor(state, manager)
+
+    result = DomainTaskNextActionTool(
+        manager=manager,
+        executor=executor,
+    ).execute(task_key=task_key)
+    if not result.success:
+        raise HTTPException(status_code=409, detail=result.content)
+    return json.loads(result.content)
 
 
 @router.get("/status")

@@ -300,3 +300,95 @@ def test_project_summary_reports_bootstrap_execution_board(tmp_path) -> None:
         ]
     finally:
         manager.close()
+
+
+
+def test_operations_next_action_noops_completed_domain_task() -> None:
+    config = SimpleNamespace(
+        governance=SimpleNamespace(),
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=_Manager(),
+    )
+
+    response = TestClient(app).post(
+        "/v1/operations/tasks/finance-task-1/next-action"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["recommended_action"] == "complete"
+    assert data["action"] == "complete"
+    assert data["executed"] is False
+
+
+def test_operations_next_action_executes_created_task(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.server import operations_routes
+    from openjarvis.tools.agent_tools import DomainTaskDispatchTool
+
+    class _Executor:
+        def __init__(self, manager):
+            self.manager = manager
+            self.calls = []
+
+        def execute_tick(self, agent_id):
+            self.calls.append(agent_id)
+            self.manager.update_summary_memory(
+                agent_id,
+                "Operations executed the recommended task action.",
+            )
+            self.manager.update_agent(agent_id, status="idle")
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    try:
+        dispatched = DomainTaskDispatchTool(manager=manager).execute(
+            instruction="Summarize my notes",
+            domain="personal",
+        )
+        payload = __import__("json").loads(dispatched.content)
+        executor = _Executor(manager)
+        monkeypatch.setattr(
+            operations_routes,
+            "_operations_executor",
+            lambda state, current_manager: executor,
+        )
+
+        config = SimpleNamespace(
+            governance=SimpleNamespace(),
+            security=SimpleNamespace(enabled=False),
+            traces=SimpleNamespace(enabled=False),
+            analytics=SimpleNamespace(enabled=False),
+        )
+        app = create_app(
+            _Engine(),
+            "qwen3.5:4b",
+            engine_name="ollama",
+            config=config,
+            agent_manager=manager,
+        )
+
+        response = TestClient(app).post(
+            f"/v1/operations/tasks/{payload['task_key']}/next-action"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["recommended_action"] == f"advance:{payload['task_key']}"
+        assert data["action"] == "advance"
+        assert data["executed"] is True
+        assert data["result"]["action"] == "task-executed"
+        assert data["result"]["status"]["state"] == "complete"
+        assert executor.calls == [payload["agent_id"]]
+    finally:
+        manager.close()

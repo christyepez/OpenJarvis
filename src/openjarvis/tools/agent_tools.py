@@ -1242,8 +1242,13 @@ class DomainTaskNextActionTool(BaseTool):
                 executor=self._executor,
             ).execute(task_key=task_key)
             action = "advance"
-            executed = result.success
             payload = json.loads(result.content) if result.success else result.content
+            executed = bool(
+                result.success
+                and isinstance(payload, dict)
+                and payload.get("action")
+                not in {"wait-executor", "wait-handoff", "quality-await-executor"}
+            )
         elif recommended.startswith("resolve-quality:"):
             action = "quality-evidence-required"
             executed = False
