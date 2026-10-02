@@ -386,5 +386,5 @@ async def test_sse_memory_tools_resolve_backend_when_context_injection_is_off(
     resolver.assert_called_once_with(app_config)
     assert app_state.memory_backend is backend
     assert app_state._owns_memory_backend is True
-    backend.store.assert_called_once_with("remember me", source="")
+    backend.store.assert_called_once_with("remember me", source="", metadata={})
     assert engine.observed_tool_result == "Stored as doc-1"
