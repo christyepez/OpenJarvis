@@ -168,9 +168,9 @@ used for concepts and contracts rather than parallel execution.
 Validation executed on `trabajo` through 2026-10-02:
 
 - Governance + benchmark regression: **81 passed**.
-- Task/project orchestration + templates + orchestrator regression: **134 passed**.
+- Task/project orchestration + templates + orchestrator regression: **145 passed**.
 - Operations backend regression after lifespan migration: **14 passed**.
-- Operations frontend: **10 passed**.
+- Frontend regression: **18 files / 102 passed**.
 - Graphify portable runner: **4 passed**, Ruff **PASS**, runtime reports `graphify 0.9.63`.
 - Production frontend build: **PASS**.
 - Main frontend chunk reduced from **1,113.14 kB** to **453.54 kB**.
