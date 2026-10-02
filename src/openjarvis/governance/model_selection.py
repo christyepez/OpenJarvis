@@ -1,4 +1,4 @@
-﻿"""Local-first model candidate discovery and ranking."""
+"""Local-first model candidate discovery and ranking."""
 
 from __future__ import annotations
 
@@ -115,5 +115,3 @@ def recommend_local_model(
         preferred_models=preferred_models,
     )
     return candidates[0].spec if candidates else None
-
-
