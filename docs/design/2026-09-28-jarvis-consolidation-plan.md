@@ -169,7 +169,7 @@ Validation executed on `trabajo` through 2026-10-02:
 
 - Governance + benchmark regression: **81 passed**.
 - Task/project orchestration + templates + orchestrator regression: **145 passed**.
-- Operations backend regression after lifespan migration: **14 passed**.
+- Operations + managed shutdown/MCP regression: **26 passed**, no deprecation warnings.
 - Frontend regression: **18 files / 102 passed**.
 - Graphify portable runner: **4 passed**, Ruff **PASS**, runtime reports `graphify 0.9.63`.
 - Production frontend build: **PASS**.
@@ -190,6 +190,5 @@ Recent consolidation checkpoints include:
 - The managed FastAPI shutdown now uses lifespan instead of deprecated `on_event`.
 - Frontend analytics and secondary routes are lazy-loaded; the main production
   chunk is below 500 kB and the ineffective dynamic-import warning is resolved.
-- Starlette's legacy `TestClient` path still emits one upstream deprecation
-  warning about `httpx`; treat this as dependency/test-harness maintenance, not
-  a consolidation blocker.
+- Starlette `TestClient` now uses the dev-only `httpx2` dependency, removing
+  the previous fallback-to-`httpx` deprecation warning from server test runs.
