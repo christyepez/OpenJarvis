@@ -6,7 +6,7 @@ author = "openjarvis"
 
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "graphify \"{project_path}\""}'
+arguments_template = '{"command": "python -m openjarvis.tools.graphify_runner \"{project_path}\""}'
 output_key = "graphify_run"
 
 [[skill.steps]]
