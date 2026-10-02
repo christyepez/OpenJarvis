@@ -167,7 +167,7 @@ used for concepts and contracts rather than parallel execution.
 
 Validation executed on `trabajo` through 2026-10-02:
 
-- Governance + JarvisBench + compact tool selection: **50 passed**.
+- Governance + benchmark regression: **81 passed**.
 - Task/project orchestration + templates + orchestrator regression: **134 passed**.
 - Operations backend regression after lifespan migration: **14 passed**.
 - Operations frontend: **10 passed**.
