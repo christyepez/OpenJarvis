@@ -448,7 +448,6 @@ def test_quality_reviewer_waits_for_previous_stage(executor, manager):
         assert updated["progress"]["depends_on_task_id"] == dependency["id"]
 
 
-
 def test_project_specialist_tick_persists_handoff_without_auto_complete(
     executor, manager
 ) -> None:
@@ -471,9 +470,7 @@ def test_project_specialist_tick_persists_handoff_without_auto_complete(
         },
     )
 
-    result = AgentResult(
-        content="Implemented API; pytest 24 passed; ready for review."
-    )
+    result = AgentResult(content="Implemented API; pytest 24 passed; ready for review.")
     with patch.object(executor, "_invoke_agent", return_value=result):
         executor.execute_tick(worker["id"])
 

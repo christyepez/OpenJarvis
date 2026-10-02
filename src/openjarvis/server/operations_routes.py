@@ -168,14 +168,11 @@ def _bind_runtime_device_ids(
             online_machines = [
                 machine
                 for machine in project_machines
-                if bool(
-                    (by_name.get(machine.casefold()) or {}).get("online", False)
-                )
+                if bool((by_name.get(machine.casefold()) or {}).get("online", False))
             ]
             runtime_device_ids = {
                 machine: str(
-                    (by_name.get(machine.casefold()) or {}).get("device_id", "")
-                    or ""
+                    (by_name.get(machine.casefold()) or {}).get("device_id", "") or ""
                 )
                 for machine in online_machines
                 if (by_name.get(machine.casefold()) or {}).get("device_id")
@@ -243,8 +240,7 @@ def _bind_runtime_device_ids(
 
         unavailable_changed = (
             bool(str(config.get("runtime_device_id", "") or ""))
-            or str(config.get("runtime_machine_status", "") or "")
-            != "unavailable"
+            or str(config.get("runtime_machine_status", "") or "") != "unavailable"
         )
         if unavailable_changed:
             config["runtime_device_id"] = ""
@@ -290,9 +286,7 @@ def _machine_summary(
             "selected": None,
             "signal": "unavailable",
             "primary": {"name": primary, "status": "configured"},
-            "fallbacks": [
-                {"name": name, "status": "configured"} for name in fallbacks
-            ],
+            "fallbacks": [{"name": name, "status": "configured"} for name in fallbacks],
         }
 
     machines: list[MachineDescriptor] = []
@@ -339,8 +333,7 @@ def _memory_summary(state: Any) -> dict[str, Any]:
         return {"enabled": False, "backend": "", "documents": None}
 
     backend_name = str(
-        getattr(backend, "backend_id", None)
-        or backend.__class__.__name__
+        getattr(backend, "backend_id", None) or backend.__class__.__name__
     )
     documents: int | None = None
     count = getattr(backend, "count", None)
@@ -403,35 +396,21 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     "task_id": str(task.get("id", "")),
                     "stream": stream,
                     "wave": str(progress.get("wave", "") or ""),
-                    "execution_state": str(
-                        progress.get("execution_state", "") or ""
-                    ),
+                    "execution_state": str(progress.get("execution_state", "") or ""),
                     "order": int(progress.get("order", 999) or 0),
                     "status": str(task.get("status", "unknown")),
-                    "worker_agent_id": str(
-                        progress.get("worker_agent_id", "") or ""
-                    ),
-                    "worker_status": str(
-                        progress.get("worker_status", "") or ""
-                    ),
-                    "handoff_ready": bool(
-                        progress.get("handoff_ready", False)
-                    ),
+                    "worker_agent_id": str(progress.get("worker_agent_id", "") or ""),
+                    "worker_status": str(progress.get("worker_status", "") or ""),
+                    "handoff_ready": bool(progress.get("handoff_ready", False)),
                     "findings_count": len(task.get("findings", []) or []),
                     "branch": str(progress.get("branch", "") or ""),
                     "workspace": str(progress.get("workspace", "") or ""),
-                    "runtime_machine": str(
-                        progress.get("runtime_machine", "") or ""
-                    ),
+                    "runtime_machine": str(progress.get("runtime_machine", "") or ""),
                     "runtime_machine_status": str(
                         progress.get("runtime_machine_status", "") or ""
                     ),
-                    "retry_count": int(
-                        progress.get("retry_count", 0) or 0
-                    ),
-                    "last_retry_at": float(
-                        progress.get("last_retry_at", 0.0) or 0.0
-                    ),
+                    "retry_count": int(progress.get("retry_count", 0) or 0),
+                    "last_retry_at": float(progress.get("last_retry_at", 0.0) or 0.0),
                     "manual_retry_authorized": bool(
                         progress.get("manual_retry_authorized", False)
                     ),
@@ -440,9 +419,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     ),
                     "depends_on_task_ids": [
                         str(value)
-                        for value in (
-                            progress.get("depends_on_task_ids", []) or []
-                        )
+                        for value in (progress.get("depends_on_task_ids", []) or [])
                     ],
                 }
             )
@@ -473,9 +450,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
         except Exception:
             board = {}
 
-        quality_pipeline_id = str(
-            board.get("quality_pipeline_id", "") or ""
-        )
+        quality_pipeline_id = str(board.get("quality_pipeline_id", "") or "")
         quality_stages = list(
             (quality_by_id.get(quality_pipeline_id) or {}).get("stages", [])
         )
@@ -491,9 +466,10 @@ def _project_summary(manager: Any) -> dict[str, Any]:
             status = "failed"
         elif quality_status == "needs_attention":
             status = "needs_attention"
-        elif quality_status == "completed" and str(
-            board.get("next_action", "") or ""
-        ) == "complete":
+        elif (
+            quality_status == "completed"
+            and str(board.get("next_action", "") or "") == "complete"
+        ):
             status = "completed"
         else:
             status = "quality_pending"
@@ -507,8 +483,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                 "repository": str(config.get("repository", "") or ""),
                 "orchestrator_agent_id": agent_id,
                 "runtime_machines": [
-                    str(value)
-                    for value in (config.get("runtime_machines", []) or [])
+                    str(value) for value in (config.get("runtime_machines", []) or [])
                 ],
                 "status": status,
                 "next_action": str(board.get("next_action", "") or ""),
@@ -518,9 +493,7 @@ def _project_summary(manager: Any) -> dict[str, Any]:
                     board.get("handoff_ready_streams", []) or []
                 ),
                 "failed_streams": list(board.get("failed_streams", []) or []),
-                "exhausted_streams": list(
-                    board.get("exhausted_streams", []) or []
-                ),
+                "exhausted_streams": list(board.get("exhausted_streams", []) or []),
                 "blocked_streams": list(board.get("blocked_streams", []) or []),
                 "done_streams": list(board.get("done_streams", []) or []),
                 "quality_pipeline_id": quality_pipeline_id,
@@ -553,9 +526,7 @@ def _quality_summary(manager: Any) -> dict[str, Any]:
     for agent in agents:
         config = agent.get("config", {}) or {}
         pipeline_id = str(config.get("quality_pipeline_id", "") or "")
-        pipeline_role = str(
-            config.get("quality_pipeline_role", "") or ""
-        ).casefold()
+        pipeline_role = str(config.get("quality_pipeline_role", "") or "").casefold()
         agent_id = str(agent.get("id", ""))
         is_coordinator = pipeline_role == "coordinator" or (
             not pipeline_role and agent_id.startswith("quality-")
@@ -571,9 +542,7 @@ def _quality_summary(manager: Any) -> dict[str, Any]:
         stage_rows: list[dict[str, Any]] = []
         for task in sorted(
             tasks,
-            key=lambda row: int(
-                ((row.get("progress", {}) or {}).get("order", 999))
-            ),
+            key=lambda row: int(((row.get("progress", {}) or {}).get("order", 999))),
         ):
             progress = task.get("progress", {}) or {}
             stage_rows.append(
@@ -674,9 +643,7 @@ def _agent_summary(
         if domain:
             by_domain[domain] = by_domain.get(domain, 0) + 1
 
-        domain_quality_required = bool(
-            config.get("domain_quality_required", False)
-        )
+        domain_quality_required = bool(config.get("domain_quality_required", False))
         domain_quality_pipeline_id = str(
             config.get("domain_quality_pipeline_id", "") or ""
         )
@@ -686,15 +653,9 @@ def _agent_summary(
             if domain_quality_pipeline_id
             else ("not_required" if not domain_quality_required else "not_started")
         )
-        domain_quality_stages = list(
-            domain_quality.get("stages", []) or []
-        )
-        domain_task_key = str(
-            config.get("domain_task_key", "") or ""
-        )
-        domain_handoff_ready = bool(
-            config.get("domain_handoff_ready", False)
-        )
+        domain_quality_stages = list(domain_quality.get("stages", []) or [])
+        domain_task_key = str(config.get("domain_task_key", "") or "")
+        domain_handoff_ready = bool(config.get("domain_handoff_ready", False))
         domain_error = str(config.get("domain_last_error", "") or "")
         if not domain_task_key:
             domain_task_state = ""
@@ -725,9 +686,7 @@ def _agent_summary(
         elif domain_task_state in {"created", "quality_pending"}:
             domain_next_action = f"advance:{domain_task_key}"
         elif domain_task_state == "quality_failed":
-            domain_next_action = (
-                f"resolve-quality:{domain_quality_pipeline_id}"
-            )
+            domain_next_action = f"resolve-quality:{domain_quality_pipeline_id}"
         elif domain_task_state == "running":
             domain_next_action = "wait"
         else:
@@ -750,9 +709,7 @@ def _agent_summary(
                 "capability": capability,
                 "model_policy": configured_model or "default",
                 "routed_model": routed_model,
-                "project_stream": str(
-                    config.get("project_stream", "") or ""
-                ),
+                "project_stream": str(config.get("project_stream", "") or ""),
                 "domain": domain,
                 "domain_task_key": domain_task_key,
                 "domain_task_state": domain_task_state,
@@ -765,9 +722,7 @@ def _agent_summary(
                 "domain_quality_pipeline_id": domain_quality_pipeline_id,
                 "domain_quality_status": domain_quality_status,
                 "domain_quality_stages": domain_quality_stages,
-                "domain_result": str(
-                    agent.get("summary_memory", "") or ""
-                )[:500],
+                "domain_result": str(agent.get("summary_memory", "") or "")[:500],
             }
         )
         try:
@@ -895,9 +850,7 @@ def operations_project_next_action(
 
     from openjarvis.tools.agent_tools import ProjectAdvanceTool, ProjectStatusTool
 
-    status_result = ProjectStatusTool(manager=manager).execute(
-        project_key=project_key
-    )
+    status_result = ProjectStatusTool(manager=manager).execute(project_key=project_key)
     if not status_result.success:
         raise HTTPException(status_code=404, detail=status_result.content)
 
@@ -927,8 +880,7 @@ def operations_project_next_action(
                 raise HTTPException(
                     status_code=502,
                     detail=str(
-                        getattr(probe, "content", "")
-                        or "Commander probe failed."
+                        getattr(probe, "content", "") or "Commander probe failed."
                     ),
                 )
             descriptors = _parse_commander_devices(
@@ -982,9 +934,7 @@ def operations_machine_probe(request: Request) -> dict[str, Any]:
     cfg = getattr(state, "config", None)
     governance = getattr(cfg, "governance", None)
     primary = str(getattr(governance, "primary_machine", "trabajo") or "trabajo")
-    fallbacks = _csv(
-        getattr(governance, "fallback_machines", "MarketingIndo")
-    )
+    fallbacks = _csv(getattr(governance, "fallback_machines", "MarketingIndo"))
 
     tool = _commander_device_tool(state)
     if tool is None:
@@ -1000,9 +950,7 @@ def operations_machine_probe(request: Request) -> dict[str, Any]:
             detail=str(getattr(result, "content", "") or "Commander probe failed."),
         )
 
-    devices = _parse_commander_devices(
-        str(getattr(result, "content", "") or "")
-    )
+    devices = _parse_commander_devices(str(getattr(result, "content", "") or ""))
     if not devices:
         raise HTTPException(
             status_code=502,
@@ -1033,15 +981,11 @@ def operations_status(request: Request) -> dict[str, Any]:
         "chatgpt:gpt-5.6-sol",
     )
     primary_machine = getattr(governance, "primary_machine", "trabajo")
-    fallback_machines = _csv(
-        getattr(governance, "fallback_machines", "MarketingIndo")
-    )
+    fallback_machines = _csv(getattr(governance, "fallback_machines", "MarketingIndo"))
     tooling = _tooling_summary(state)
     mcp_names = tooling["tools"]["mcp"]
     normalized_mcp = {name.casefold() for name in mcp_names}
-    commander_connected = any(
-        "commander" in name for name in normalized_mcp
-    ) or (
+    commander_connected = any("commander" in name for name in normalized_mcp) or (
         any(name.endswith("list_devices") for name in normalized_mcp)
         and any(
             name.endswith("start_process") or name.endswith("ping")

@@ -16,6 +16,8 @@ def test_machine_router_prefers_trabajo() -> None:
 
     assert selected is not None
     assert selected.name == "trabajo"
+
+
 def test_machine_router_falls_back_to_marketingindo() -> None:
     router = MachineRouter()
     machines = [

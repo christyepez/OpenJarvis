@@ -24,6 +24,7 @@ class _StubEngine(InferenceEngine):
         **kwargs: Any,
     ) -> dict[str, Any]:
         return {"content": "ok", "usage": {}}
+
     async def stream(
         self,
         messages: Sequence[Message],

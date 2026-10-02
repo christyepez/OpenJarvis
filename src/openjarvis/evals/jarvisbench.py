@@ -39,6 +39,8 @@ class JarvisBenchSample:
     cost_usd: float = 0.0
     retries: int = 0
     metadata: dict[str, object] = field(default_factory=dict)
+
+
 @dataclass(frozen=True, slots=True)
 class JarvisBenchSummary:
     samples: int
@@ -128,8 +130,7 @@ def summarize(samples: Iterable[JarvisBenchSample]) -> JarvisBenchSummary:
     domain_rows = [row for row in rows if row.expected_domain]
     capability_rows = [row for row in rows if row.expected_capability]
     model_accuracy = _safe_mean(
-        1.0 if row.selected_model == row.expected_model else 0.0
-        for row in model_rows
+        1.0 if row.selected_model == row.expected_model else 0.0 for row in model_rows
     )
     tool_accuracy = _safe_mean(
         len(row.expected_tools & row.selected_tools) / len(row.expected_tools)

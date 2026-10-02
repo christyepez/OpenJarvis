@@ -23,7 +23,6 @@ class _CommanderTool:
     tool_id = "remote_desktop_commander.shell"
 
 
-
 class _ListDevicesTool:
     tool_id = "mcp_adapter"
     spec = SimpleNamespace(name="list_devices")
@@ -329,7 +328,6 @@ def test_project_summary_reports_bootstrap_execution_board(tmp_path) -> None:
         manager.close()
 
 
-
 def test_operations_next_action_noops_completed_domain_task() -> None:
     config = SimpleNamespace(
         governance=SimpleNamespace(),
@@ -345,9 +343,7 @@ def test_operations_next_action_noops_completed_domain_task() -> None:
         agent_manager=_Manager(),
     )
 
-    response = TestClient(app).post(
-        "/v1/operations/tasks/finance-task-1/next-action"
-    )
+    response = TestClient(app).post("/v1/operations/tasks/finance-task-1/next-action")
 
     assert response.status_code == 200
     data = response.json()
@@ -421,7 +417,6 @@ def test_operations_next_action_executes_created_task(
         manager.close()
 
 
-
 def test_operations_project_next_action_dispatches_ready_stream(
     tmp_path,
     monkeypatch,
@@ -478,9 +473,7 @@ def test_operations_project_next_action_dispatches_ready_stream(
 
         project_key = payload["project_key"]
         response = TestClient(app).post(
-            "/v1/operations/projects/"
-            + quote(project_key, safe="")
-            + "/next-action"
+            "/v1/operations/projects/" + quote(project_key, safe="") + "/next-action"
         )
 
         assert response.status_code == 200
@@ -497,18 +490,14 @@ def test_operations_project_next_action_dispatches_ready_stream(
         status = TestClient(app).get("/v1/operations/status")
         assert status.status_code == 200
         projects = status.json()["projects"]["projects"]
-        project = next(
-            item for item in projects if item["project_key"] == project_key
-        )
+        project = next(item for item in projects if item["project_key"] == project_key)
         architecture = next(
-            item for item in project["streams"]
-            if item["stream"] == "architecture"
+            item for item in project["streams"] if item["stream"] == "architecture"
         )
         assert architecture["runtime_machine"] == "MarketingIndo"
         assert architecture["runtime_machine_status"] == "online"
     finally:
         manager.close()
-
 
 
 def test_operations_machine_routing_uses_runtime_availability() -> None:
@@ -556,7 +545,6 @@ def test_operations_machine_routing_uses_runtime_availability() -> None:
     assert machines["fallbacks"][0]["gpu_available"] is True
 
 
-
 def test_operations_machine_probe_uses_commander_mcp_once() -> None:
     governance = SimpleNamespace(
         primary_machine="trabajo",
@@ -593,7 +581,6 @@ def test_operations_machine_probe_uses_commander_mcp_once() -> None:
     assert "list_devices" in data["tools"]["mcp"]
     assert "ping" in data["tools"]["mcp"]
     assert data["machines"]["selected"] == "MarketingIndo"
-
 
 
 def test_operations_machine_probe_binds_worker_runtime_device_id() -> None:
@@ -649,7 +636,6 @@ def test_operations_machine_probe_binds_worker_runtime_device_id() -> None:
     assert worker["config"]["runtime_device_id"] == "device-marketing"
 
 
-
 def test_operations_machine_probe_rebinds_worker_to_online_fallback() -> None:
     class _RuntimeManager:
         def __init__(self):
@@ -683,6 +669,7 @@ def test_operations_machine_probe_rebinds_worker_to_online_fallback() -> None:
             record = next(item for item in self.records if item["id"] == agent_id)
             record.update(changes)
             return record
+
         def get_task(self, task_id):
             return self.tasks.get(task_id)
 
@@ -721,7 +708,6 @@ def test_operations_machine_probe_rebinds_worker_to_online_fallback() -> None:
     assert worker["config"]["runtime_device_id"] == "device-marketing"
     task = manager.tasks["task-backend-1"]
     assert task["progress"]["runtime_machine"] == "MarketingIndo"
-
 
 
 def test_operations_machine_probe_marks_worker_unavailable_when_all_offline() -> None:
@@ -787,6 +773,7 @@ def test_operations_machine_probe_marks_worker_unavailable_when_all_offline() ->
 
         def close(self):
             return None
+
     manager = _RuntimeManager()
     governance = SimpleNamespace(
         primary_machine="trabajo",
@@ -815,7 +802,6 @@ def test_operations_machine_probe_marks_worker_unavailable_when_all_offline() ->
     assert worker["config"]["runtime_machine_status"] == "unavailable"
     task = manager.tasks["task-backend-1"]
     assert task["progress"]["runtime_machine_status"] == "unavailable"
-
 
 
 def test_operations_project_next_action_blocks_when_runtime_offline(
@@ -870,9 +856,7 @@ def test_operations_project_next_action_blocks_when_runtime_offline(
 
         project_key = payload["project_key"]
         response = TestClient(app).post(
-            "/v1/operations/projects/"
-            + quote(project_key, safe="")
-            + "/next-action"
+            "/v1/operations/projects/" + quote(project_key, safe="") + "/next-action"
         )
         assert response.status_code == 409
         assert response.json()["detail"] == (
@@ -881,7 +865,6 @@ def test_operations_project_next_action_blocks_when_runtime_offline(
         assert executor.calls == []
     finally:
         manager.close()
-
 
 
 def test_operations_project_next_action_retries_failed_worker(
@@ -913,18 +896,22 @@ def test_operations_project_next_action_retries_failed_worker(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = __import__("json").loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Retry From Operations",
                 objective="Build API and tests",
                 repository="https://github.com/example/retry-operations",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatched = __import__("json").loads(
-            ProjectDispatchTool(manager=manager).execute(
+            ProjectDispatchTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         worker_id = dispatched["dispatched"][0]["agent_id"]
         manager.update_agent(worker_id, status="error")
@@ -949,9 +936,7 @@ def test_operations_project_next_action_retries_failed_worker(
             agent_manager=manager,
         )
         response = TestClient(app).post(
-            "/v1/operations/projects/"
-            + quote(project_key, safe="")
-            + "/next-action"
+            "/v1/operations/projects/" + quote(project_key, safe="") + "/next-action"
         )
 
         assert response.status_code == 200
@@ -971,7 +956,6 @@ def test_operations_project_next_action_retries_failed_worker(
         manager.close()
 
 
-
 def test_operations_authorizes_exhausted_worker_retry_with_evidence(
     tmp_path,
 ) -> None:
@@ -984,18 +968,22 @@ def test_operations_authorizes_exhausted_worker_retry_with_evidence(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = __import__("json").loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Authorize Retry API",
                 objective="Build API and tests",
                 repository="https://github.com/example/authorize-retry-api",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatched = __import__("json").loads(
-            ProjectDispatchTool(manager=manager).execute(
+            ProjectDispatchTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         item = dispatched["dispatched"][0]
         manager.update_agent(item["agent_id"], status="error")

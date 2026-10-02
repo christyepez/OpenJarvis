@@ -174,13 +174,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
 
         governance = getattr(config, "governance", None)
-        preferred_raw = str(
-            getattr(governance, "preferred_models", "") or ""
-        )
+        preferred_raw = str(getattr(governance, "preferred_models", "") or "")
         preferred_models = tuple(
-            item.strip()
-            for item in preferred_raw.split(",")
-            if item.strip()
+            item.strip() for item in preferred_raw.split(",") if item.strip()
         )
         model, capability = recommend_model_for_task(
             engine,

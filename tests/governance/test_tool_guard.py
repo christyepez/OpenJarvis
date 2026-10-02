@@ -19,6 +19,8 @@ def test_policy_can_be_built_from_config() -> None:
     cfg = GovernanceConfig(approved_paid="codex,commander")
     policy = CostPolicy.from_config(cfg)
     assert policy.approved_paid == frozenset({"codex", "commander"})
+
+
 def test_guard_blocks_unapproved_paid_provider_until_approved() -> None:
     policy = CostPolicy()
     provider = ProviderDescriptor("paid-x", CostClass.REQUIRES_APPROVAL)

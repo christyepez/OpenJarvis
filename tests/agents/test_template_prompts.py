@@ -64,7 +64,6 @@ def test_create_qwen_mm_template_preserves_multimodal_capability(tmp_path):
     mgr.close()
 
 
-
 def test_project_orchestrator_uses_safe_project_advance_protocol(tmp_path):
     mgr = AgentManager(db_path=str(tmp_path / "test.db"))
     templates = {item["id"]: item for item in mgr.list_templates()}
@@ -83,7 +82,6 @@ def test_project_orchestrator_uses_safe_project_advance_protocol(tmp_path):
     assert "dispatches only READY streams" in prompt
     assert "never mark a stream DONE without concrete evidence" in prompt
     mgr.close()
-
 
 
 def test_domain_orchestrator_can_reuse_non_project_handoffs(tmp_path):

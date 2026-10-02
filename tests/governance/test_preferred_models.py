@@ -24,6 +24,8 @@ def test_user_preference_prioritizes_compatible_local_model() -> None:
     )
 
     assert candidates[0].spec.model_id == "granite-code:3b"
+
+
 def test_gpt_oss_120b_is_not_viable_on_16gb_machine() -> None:
     hw = HardwareInfo(platform="windows", ram_gb=16.0)
 

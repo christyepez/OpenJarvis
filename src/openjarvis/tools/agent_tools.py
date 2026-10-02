@@ -130,9 +130,7 @@ class AgentSpawnTool(BaseTool):
         agent_id = params.get("agent_id") or uuid.uuid4().hex[:12]
         query = str(params.get("query", "") or "")
         tools = str(params.get("tools", "") or "")
-        capability_param = str(
-            params.get("capability", "") or ""
-        ).strip().casefold()
+        capability_param = str(params.get("capability", "") or "").strip().casefold()
         model = str(params.get("model", "") or "").strip()
         name = str(params.get("name", "") or "").strip()
 
@@ -188,9 +186,12 @@ class AgentSpawnTool(BaseTool):
                 )
 
             config = record.get("config", {}) or {}
-            capability = str(
-                config.get("capability", capability or "general")
-            ).strip().casefold() or "general"
+            capability = (
+                str(config.get("capability", capability or "general"))
+                .strip()
+                .casefold()
+                or "general"
+            )
             agent_type = str(record.get("agent_type", agent_type))
             status = str(record.get("status", "idle"))
             managed = True
@@ -356,9 +357,7 @@ class DomainTaskDispatchTool(BaseTool):
             )
 
         domain = route.primary.value
-        explicit_capability = str(
-            params.get("capability", "") or ""
-        ).strip().casefold()
+        explicit_capability = str(params.get("capability", "") or "").strip().casefold()
         if explicit_capability and explicit_capability not in {
             "general",
             "coding",
@@ -372,15 +371,13 @@ class DomainTaskDispatchTool(BaseTool):
                 success=False,
             )
         capability = explicit_capability or classify_task_capability(instruction)
-        quality_mode = str(
-            params.get("quality_mode", "auto") or "auto"
-        ).strip().casefold()
+        quality_mode = (
+            str(params.get("quality_mode", "auto") or "auto").strip().casefold()
+        )
         if quality_mode not in {"auto", "none", "required"}:
             return ToolResult(
                 tool_name=self.tool_id,
-                content=(
-                    "Unsupported quality_mode. Supported: auto, none, required"
-                ),
+                content=("Unsupported quality_mode. Supported: auto, none, required"),
                 success=False,
             )
         quality_plan = DomainQualityPlanner().plan(
@@ -390,9 +387,8 @@ class DomainTaskDispatchTool(BaseTool):
         )
         quality_stages = [stage.value for stage in quality_plan.stages]
         model = str(params.get("model", "") or "").strip() or "smart"
-        task_key = (
-            str(params.get("task_key", "") or "").strip()
-            or self._stable_key(domain, instruction)
+        task_key = str(params.get("task_key", "") or "").strip() or self._stable_key(
+            domain, instruction
         )
 
         for agent in self._manager.list_agents():
@@ -405,12 +401,8 @@ class DomainTaskDispatchTool(BaseTool):
                 start_error = ""
                 quality_payload: dict[str, Any] | None = None
                 quality_error = ""
-                handoff_ready = bool(
-                    current_config.get("domain_handoff_ready", False)
-                )
-                existing_error = str(
-                    current_config.get("domain_last_error", "") or ""
-                )
+                handoff_ready = bool(current_config.get("domain_handoff_ready", False))
+                existing_error = str(current_config.get("domain_last_error", "") or "")
 
                 if (
                     self._executor is not None
@@ -425,23 +417,17 @@ class DomainTaskDispatchTool(BaseTool):
 
                     current = self._manager.get_agent(agent["id"]) or agent
                     current_config = dict(current.get("config", {}) or {})
-                    result_text = str(
-                        current.get("summary_memory", "") or ""
-                    )
+                    result_text = str(current.get("summary_memory", "") or "")
                     status = str(current.get("status", "") or "")
                     execution_failed = (
                         bool(start_error)
                         or status.casefold() == "error"
                         or result_text.lstrip().startswith("ERROR:")
                     )
-                    handoff_ready = bool(
-                        not execution_failed and result_text.strip()
-                    )
+                    handoff_ready = bool(not execution_failed and result_text.strip())
                     error_text = start_error
                     if not error_text and execution_failed:
-                        error_text = (
-                            result_text or f"worker status: {status}"
-                        )
+                        error_text = result_text or f"worker status: {status}"
                     current_config.update(
                         {
                             "domain_handoff_ready": handoff_ready,
@@ -463,16 +449,9 @@ class DomainTaskDispatchTool(BaseTool):
                         )
                     )
                     quality_pipeline_id = str(
-                        current_config.get(
-                            "domain_quality_pipeline_id", ""
-                        )
-                        or ""
+                        current_config.get("domain_quality_pipeline_id", "") or ""
                     )
-                    if (
-                        handoff_ready
-                        and quality_required
-                        and not quality_pipeline_id
-                    ):
+                    if handoff_ready and quality_required and not quality_pipeline_id:
                         current_quality_stages = list(
                             current_config.get(
                                 "domain_quality_stages",
@@ -484,30 +463,23 @@ class DomainTaskDispatchTool(BaseTool):
                             manager=self._manager
                         ).execute(
                             objective=(
-                                "Quality review for domain task: "
-                                + instruction
+                                "Quality review for domain task: " + instruction
                             ),
                             domain_task_key=task_key,
                             stages=current_quality_stages,
                         )
                         if quality_result.success:
-                            quality_payload = json.loads(
-                                quality_result.content
-                            )
+                            quality_payload = json.loads(quality_result.content)
                         else:
                             quality_error = quality_result.content
                 else:
-                    result_text = str(
-                        current.get("summary_memory", "") or ""
-                    )
+                    result_text = str(current.get("summary_memory", "") or "")
 
-                status_result = DomainTaskStatusTool(
-                    manager=self._manager
-                ).execute(task_key=task_key)
+                status_result = DomainTaskStatusTool(manager=self._manager).execute(
+                    task_key=task_key
+                )
                 status_payload = (
-                    json.loads(status_result.content)
-                    if status_result.success
-                    else {}
+                    json.loads(status_result.content) if status_result.success else {}
                 )
 
                 return ToolResult(
@@ -517,19 +489,13 @@ class DomainTaskDispatchTool(BaseTool):
                             "agent_id": agent["id"],
                             "domain": domain,
                             "capability": str(
-                                current_config.get(
-                                    "capability", capability
-                                )
+                                current_config.get("capability", capability)
                                 or capability
                             ),
-                            "model": str(
-                                current_config.get("model", model) or model
-                            ),
+                            "model": str(current_config.get("model", model) or model),
                             "task_key": task_key,
                             "quality_mode": str(
-                                current_config.get(
-                                    "domain_quality_mode", quality_mode
-                                )
+                                current_config.get("domain_quality_mode", quality_mode)
                                 or quality_mode
                             ),
                             "quality_required": bool(
@@ -546,39 +512,25 @@ class DomainTaskDispatchTool(BaseTool):
                                 or []
                             ),
                             "quality_pipeline_id": str(
-                                status_payload.get(
-                                    "quality_pipeline_id", ""
-                                )
-                                or ""
+                                status_payload.get("quality_pipeline_id", "") or ""
                             ),
                             "quality_status": str(
-                                status_payload.get(
-                                    "quality_status", ""
-                                )
-                                or ""
+                                status_payload.get("quality_status", "") or ""
                             ),
                             "quality_next_action": str(
-                                status_payload.get(
-                                    "quality_next_action", ""
-                                )
-                                or ""
+                                status_payload.get("quality_next_action", "") or ""
                             ),
                             "quality": quality_payload,
                             "quality_error": quality_error,
-                            "state": str(
-                                status_payload.get("state", "") or ""
-                            ),
+                            "state": str(status_payload.get("state", "") or ""),
                             "reused": True,
                             "started": started,
                             "handoff_ready": bool(
-                                status_payload.get(
-                                    "handoff_ready", handoff_ready
-                                )
+                                status_payload.get("handoff_ready", handoff_ready)
                             ),
                             "result": result_text,
                             "error": str(
-                                status_payload.get("error", "")
-                                or start_error
+                                status_payload.get("error", "") or start_error
                             ),
                         }
                     ),
@@ -732,9 +684,7 @@ class DomainTaskStatusTool(BaseTool):
 
             handoff_ready = bool(config.get("domain_handoff_ready", False))
             error = str(config.get("domain_last_error", "") or "")
-            quality_required = bool(
-                config.get("domain_quality_required", False)
-            )
+            quality_required = bool(config.get("domain_quality_required", False))
             quality_pipeline_id = str(
                 config.get("domain_quality_pipeline_id", "") or ""
             )
@@ -966,9 +916,7 @@ class DomainTaskRetryTool(BaseTool):
             and bool(current_config.get("domain_quality_required", False))
             and not quality_pipeline_id
         ):
-            quality_stages = list(
-                current_config.get("domain_quality_stages", []) or []
-            )
+            quality_stages = list(current_config.get("domain_quality_stages", []) or [])
             quality_result = QualityPipelineTool(manager=self._manager).execute(
                 objective=(
                     "Quality review for recovered domain task: "
@@ -979,9 +927,7 @@ class DomainTaskRetryTool(BaseTool):
             )
             if quality_result.success:
                 quality_payload = json.loads(quality_result.content)
-                quality_pipeline_id = str(
-                    quality_payload.get("pipeline_id", "") or ""
-                )
+                quality_pipeline_id = str(quality_payload.get("pipeline_id", "") or "")
             else:
                 quality_error = quality_result.content
 
@@ -1096,9 +1042,7 @@ class DomainTaskAdvanceTool(BaseTool):
             quality_status = str(
                 before.get("quality_status", "not_started") or "not_started"
             )
-            quality_pipeline_id = str(
-                before.get("quality_pipeline_id", "") or ""
-            )
+            quality_pipeline_id = str(before.get("quality_pipeline_id", "") or "")
 
             if quality_status == "completed":
                 action = "complete"
@@ -1107,9 +1051,7 @@ class DomainTaskAdvanceTool(BaseTool):
             elif quality_status == "not_started":
                 agent = self._manager.get_agent(str(before["agent_id"]))
                 config = dict((agent or {}).get("config", {}) or {})
-                quality_stages = list(
-                    config.get("domain_quality_stages", []) or []
-                )
+                quality_stages = list(config.get("domain_quality_stages", []) or [])
                 result = QualityPipelineTool(manager=self._manager).execute(
                     objective=(
                         "Quality review for domain task: "
@@ -1145,11 +1087,7 @@ class DomainTaskAdvanceTool(BaseTool):
         after_result = DomainTaskStatusTool(manager=self._manager).execute(
             task_key=task_key
         )
-        after = (
-            json.loads(after_result.content)
-            if after_result.success
-            else before
-        )
+        after = json.loads(after_result.content) if after_result.success else before
 
         return ToolResult(
             tool_name=self.tool_id,
@@ -1356,9 +1294,7 @@ class ProjectBootstrapTool(BaseTool):
                     },
                     "runtime_machines": {
                         "type": "string",
-                        "description": (
-                            "Optional comma-separated runtime machines."
-                        ),
+                        "description": ("Optional comma-separated runtime machines."),
                     },
                 },
                 "required": ["project_name", "objective"],
@@ -1389,13 +1325,10 @@ class ProjectBootstrapTool(BaseTool):
         key = _project_key(project_name, repository)
         for record in self._manager.list_agents():
             config = record.get("config", {}) or {}
-            same_project = (
-                str(config.get("project_bootstrap_key", "") or "") == key
-            )
-            coordinator = (
-                str(config.get("project_role", "") or "") == "coordinator"
-                or not str(config.get("project_stream", "") or "")
-            )
+            same_project = str(config.get("project_bootstrap_key", "") or "") == key
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
             if same_project and coordinator:
                 return ToolResult(
                     tool_name=self.tool_id,
@@ -1525,8 +1458,7 @@ class ProjectBootstrapTool(BaseTool):
 
 def _branch_component(value: str) -> str:
     normalized = "".join(
-        ch.lower() if ch.isalnum() else "-"
-        for ch in str(value or "").strip()
+        ch.lower() if ch.isalnum() else "-" for ch in str(value or "").strip()
     )
     while "--" in normalized:
         normalized = normalized.replace("--", "-")
@@ -1536,13 +1468,10 @@ def _branch_component(value: str) -> str:
 def _project_coordinator(manager: Any, project_key: str) -> dict[str, Any] | None:
     for record in manager.list_agents():
         config = record.get("config", {}) or {}
-        same_project = (
-            str(config.get("project_bootstrap_key", "") or "") == project_key
-        )
-        coordinator = (
-            str(config.get("project_role", "") or "") == "coordinator"
-            or not str(config.get("project_stream", "") or "")
-        )
+        same_project = str(config.get("project_bootstrap_key", "") or "") == project_key
+        coordinator = str(
+            config.get("project_role", "") or ""
+        ) == "coordinator" or not str(config.get("project_stream", "") or "")
         if same_project and coordinator:
             return record
     return None
@@ -1560,14 +1489,10 @@ def _project_quality_state(
         (
             record
             for record in manager.list_agents()
-            if str(
-                (record.get("config", {}) or {}).get("quality_pipeline_id", "")
-            )
+            if str((record.get("config", {}) or {}).get("quality_pipeline_id", ""))
             == pipeline_id
             and str(
-                (record.get("config", {}) or {}).get(
-                    "quality_pipeline_role", ""
-                )
+                (record.get("config", {}) or {}).get("quality_pipeline_role", "")
             ).casefold()
             == "coordinator"
         ),
@@ -1578,8 +1503,7 @@ def _project_quality_state(
 
     tasks = list(manager.list_tasks(coordinator["id"]))
     statuses = {
-        str(task.get("status", "pending") or "pending").casefold()
-        for task in tasks
+        str(task.get("status", "pending") or "pending").casefold() for task in tasks
     }
     if "failed" in statuses:
         return "failed", f"resolve-quality:{pipeline_id}"
@@ -1677,8 +1601,7 @@ class ProjectWorktreePrepareTool(BaseTool):
             return ToolResult(
                 tool_name=self.tool_id,
                 content=(
-                    "A local project workspace is required before preparing "
-                    "worktrees."
+                    "A local project workspace is required before preparing worktrees."
                 ),
                 success=False,
             )
@@ -1955,8 +1878,7 @@ class ProjectStatusTool(BaseTool):
             if not stream:
                 continue
             dependencies = [
-                str(value)
-                for value in (progress.get("depends_on_task_ids", []) or [])
+                str(value) for value in (progress.get("depends_on_task_ids", []) or [])
             ]
             unmet = [
                 dep_id
@@ -1973,9 +1895,7 @@ class ProjectStatusTool(BaseTool):
                 done.append(stream)
             elif worker and worker_status == "error":
                 retry_count = int(progress.get("retry_count", 0) or 0)
-                manual_retry = bool(
-                    progress.get("manual_retry_authorized", False)
-                )
+                manual_retry = bool(progress.get("manual_retry_authorized", False))
                 if retry_count >= 3 and not manual_retry:
                     state = "EXHAUSTED"
                     exhausted.append(stream)
@@ -2016,9 +1936,7 @@ class ProjectStatusTool(BaseTool):
             )
 
         project_config = project.get("config", {}) or {}
-        quality_pipeline_id = str(
-            project_config.get("quality_pipeline_id", "") or ""
-        )
+        quality_pipeline_id = str(project_config.get("quality_pipeline_id", "") or "")
         quality_status, quality_action = _project_quality_state(
             self._manager,
             quality_pipeline_id,
@@ -2047,9 +1965,7 @@ class ProjectStatusTool(BaseTool):
                     "project_name": str(project_config.get("project_name", "") or ""),
                     "runtime_machines": [
                         str(value)
-                        for value in (
-                            project_config.get("runtime_machines", []) or []
-                        )
+                        for value in (project_config.get("runtime_machines", []) or [])
                         if str(value)
                     ],
                     "summary": {
@@ -2186,9 +2102,7 @@ class ProjectAdvanceTool(BaseTool):
                             if task is not None:
                                 progress = dict(task.get("progress", {}) or {})
                                 if progress.get("worker_status") == "retrying":
-                                    current = (
-                                        self._manager.get_agent(agent_id) or {}
-                                    )
+                                    current = self._manager.get_agent(agent_id) or {}
                                     progress["worker_status"] = str(
                                         current.get("status", "idle") or "idle"
                                     )
@@ -2198,9 +2112,7 @@ class ProjectAdvanceTool(BaseTool):
                                         progress=progress,
                                     )
                     except Exception as exc:
-                        retry_errors.append(
-                            {"agent_id": agent_id, "error": str(exc)}
-                        )
+                        retry_errors.append({"agent_id": agent_id, "error": str(exc)})
                         self._manager.update_agent(agent_id, status="error")
                         if task_id:
                             task = self._manager.get_task(task_id)
@@ -2213,9 +2125,7 @@ class ProjectAdvanceTool(BaseTool):
                                     progress=progress,
                                 )
                 action = "workers-retried"
-        elif str(before.get("next_action", "")).startswith(
-            "resolve-worker:"
-        ):
+        elif str(before.get("next_action", "")).startswith("resolve-worker:"):
             action = "resolve-worker"
         elif before.get("active_streams"):
             action = "wait-active"
@@ -2228,15 +2138,12 @@ class ProjectAdvanceTool(BaseTool):
                 str(row.get("stream", "") or "").casefold()
                 for row in (before.get("streams", []) or [])
             }
-            quality_result = QualityPipelineTool(
-                manager=self._manager
-            ).execute(
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
                 project_key=project_key,
                 objective=(
                     "Release quality for project "
                     + str(
-                        project_config.get("project_name", project_key)
-                        or project_key
+                        project_config.get("project_name", project_key) or project_key
                     )
                 ),
                 has_code_changes=True,
@@ -2252,9 +2159,7 @@ class ProjectAdvanceTool(BaseTool):
                 )
             quality_payload = json.loads(quality_result.content)
             action = "quality-started"
-        elif str(before.get("next_action", "")).startswith(
-            "advance-quality:"
-        ):
+        elif str(before.get("next_action", "")).startswith("advance-quality:"):
             pipeline_id = str(before.get("quality_pipeline_id", "") or "")
             if self._executor is None:
                 action = "quality-await-executor"
@@ -2271,9 +2176,7 @@ class ProjectAdvanceTool(BaseTool):
                     )
                 quality_payload = json.loads(quality_result.content)
                 action = "quality-advanced"
-        elif str(before.get("next_action", "")).startswith(
-            "resolve-quality:"
-        ):
+        elif str(before.get("next_action", "")).startswith("resolve-quality:"):
             action = "resolve-quality"
 
         started_agents: list[str] = list(retried_agents)
@@ -2289,18 +2192,12 @@ class ProjectAdvanceTool(BaseTool):
                     self._executor.execute_tick(agent_id)
                     started_agents.append(agent_id)
                 except Exception as exc:
-                    start_errors.append(
-                        {"agent_id": agent_id, "error": str(exc)}
-                    )
+                    start_errors.append({"agent_id": agent_id, "error": str(exc)})
 
         after_result = ProjectStatusTool(manager=self._manager).execute(
             project_key=project_key
         )
-        after = (
-            json.loads(after_result.content)
-            if after_result.success
-            else before
-        )
+        after = json.loads(after_result.content) if after_result.success else before
 
         return ToolResult(
             tool_name=self.tool_id,
@@ -2484,10 +2381,9 @@ class ProjectDispatchTool(BaseTool):
             same_project = (
                 str(config.get("project_bootstrap_key", "") or "") == project_key
             )
-            coordinator = (
-                str(config.get("project_role", "") or "") == "coordinator"
-                or not str(config.get("project_stream", "") or "")
-            )
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
             if same_project and coordinator:
                 return record
         return None
@@ -2499,12 +2395,10 @@ class ProjectDispatchTool(BaseTool):
     ) -> bool:
         progress = task.get("progress", {}) or {}
         dependency_ids = [
-            str(value)
-            for value in (progress.get("depends_on_task_ids", []) or [])
+            str(value) for value in (progress.get("depends_on_task_ids", []) or [])
         ]
         return all(
-            str((task_by_id.get(dep_id) or {}).get("status", "missing"))
-            == "completed"
+            str((task_by_id.get(dep_id) or {}).get("status", "missing")) == "completed"
             for dep_id in dependency_ids
         )
 
@@ -2554,9 +2448,7 @@ class ProjectDispatchTool(BaseTool):
         if "runtime_online_machines" in project_config:
             assignment_machines = [
                 str(value).strip()
-                for value in (
-                    project_config.get("runtime_online_machines", []) or []
-                )
+                for value in (project_config.get("runtime_online_machines", []) or [])
                 if str(value).strip()
             ]
         else:
@@ -2673,12 +2565,8 @@ class ProjectDispatchTool(BaseTool):
                     "workspace": stream_workspace,
                     "branch": stream_branch,
                     "runtime_machine": assigned_machine,
-                    "runtime_device_id": runtime_device_ids.get(
-                        assigned_machine, ""
-                    ),
-                    "runtime_machine_status": (
-                        "online" if assigned_machine else ""
-                    ),
+                    "runtime_device_id": runtime_device_ids.get(assigned_machine, ""),
+                    "runtime_machine_status": ("online" if assigned_machine else ""),
                     "runtime_machine_candidates": runtime_machines,
                 },
                 agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
@@ -2694,9 +2582,7 @@ class ProjectDispatchTool(BaseTool):
                     "execution_state": execution_state,
                     "worker_agent_id": worker["id"],
                     "runtime_machine": assigned_machine,
-                    "runtime_machine_status": (
-                        "online" if assigned_machine else ""
-                    ),
+                    "runtime_machine_status": ("online" if assigned_machine else ""),
                 }
             )
             self._manager.update_task(
@@ -2792,9 +2678,7 @@ class ProjectHandoffReviewTool(BaseTool):
         project_key = str(params.get("project_key", "") or "").strip()
         stream = str(params.get("stream", "") or "").strip().casefold()
         decision = str(params.get("decision", "") or "").strip().casefold()
-        review_evidence = str(
-            params.get("review_evidence", "") or ""
-        ).strip()
+        review_evidence = str(params.get("review_evidence", "") or "").strip()
 
         if not project_key or not stream:
             return ToolResult(
@@ -2828,9 +2712,7 @@ class ProjectHandoffReviewTool(BaseTool):
             (
                 task
                 for task in tasks
-                if str(
-                    (task.get("progress", {}) or {}).get("stream", "")
-                ).casefold()
+                if str((task.get("progress", {}) or {}).get("stream", "")).casefold()
                 == stream
             ),
             None,
@@ -2846,9 +2728,7 @@ class ProjectHandoffReviewTool(BaseTool):
         if not bool(progress.get("handoff_ready", False)):
             return ToolResult(
                 tool_name=self.tool_id,
-                content=(
-                    f"Stream {stream} has no worker handoff ready for review."
-                ),
+                content=(f"Stream {stream} has no worker handoff ready for review."),
                 success=False,
             )
 
@@ -2976,10 +2856,9 @@ class ProjectStreamUpdateTool(BaseTool):
             same_project = (
                 str(config.get("project_bootstrap_key", "") or "") == project_key
             )
-            coordinator = (
-                str(config.get("project_role", "") or "") == "coordinator"
-                or not str(config.get("project_stream", "") or "")
-            )
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
             if same_project and coordinator:
                 return record
         return None
@@ -3044,8 +2923,7 @@ class ProjectStreamUpdateTool(BaseTool):
 
         progress = dict(target.get("progress", {}) or {})
         dependency_ids = [
-            str(value)
-            for value in (progress.get("depends_on_task_ids", []) or [])
+            str(value) for value in (progress.get("depends_on_task_ids", []) or [])
         ]
         blocked = [
             {
@@ -3078,8 +2956,7 @@ class ProjectStreamUpdateTool(BaseTool):
         if (
             status == "completed"
             and str(progress.get("worker_agent_id", "") or "")
-            and str(progress.get("handoff_decision", "") or "").casefold()
-            != "approve"
+            and str(progress.get("handoff_decision", "") or "").casefold() != "approve"
         ):
             return ToolResult(
                 tool_name=self.tool_id,
@@ -3216,9 +3093,7 @@ class QualityPipelineTool(BaseTool):
             )
 
         project_key = str(params.get("project_key", "") or "").strip()
-        domain_task_key = str(
-            params.get("domain_task_key", "") or ""
-        ).strip()
+        domain_task_key = str(params.get("domain_task_key", "") or "").strip()
         if project_key and domain_task_key:
             return ToolResult(
                 tool_name=self.tool_id,
@@ -3240,9 +3115,7 @@ class QualityPipelineTool(BaseTool):
                     success=False,
                 )
             project_config = dict(project.get("config", {}) or {})
-            existing_id = str(
-                project_config.get("quality_pipeline_id", "") or ""
-            )
+            existing_id = str(project_config.get("quality_pipeline_id", "") or "")
             if existing_id:
                 existing = next(
                     (
@@ -3273,9 +3146,7 @@ class QualityPipelineTool(BaseTool):
                                 "objective": objective,
                                 "project_key": project_key,
                                 "reused": True,
-                                "stages": self._manager.list_tasks(
-                                    existing["id"]
-                                ),
+                                "stages": self._manager.list_tasks(existing["id"]),
                             }
                         ),
                         success=True,
@@ -3286,11 +3157,7 @@ class QualityPipelineTool(BaseTool):
                 (
                     record
                     for record in self._manager.list_agents()
-                    if str(
-                        (record.get("config", {}) or {}).get(
-                            "domain_task_key", ""
-                        )
-                    )
+                    if str((record.get("config", {}) or {}).get("domain_task_key", ""))
                     == domain_task_key
                     and str(record.get("status", "") or "") != "archived"
                 ),
@@ -3304,9 +3171,7 @@ class QualityPipelineTool(BaseTool):
                 )
 
             domain_config = dict(domain_agent.get("config", {}) or {})
-            existing_id = str(
-                domain_config.get("domain_quality_pipeline_id", "") or ""
-            )
+            existing_id = str(domain_config.get("domain_quality_pipeline_id", "") or "")
             if existing_id:
                 existing = next(
                     (
@@ -3338,9 +3203,7 @@ class QualityPipelineTool(BaseTool):
                                 "project_key": "",
                                 "domain_task_key": domain_task_key,
                                 "reused": True,
-                                "stages": self._manager.list_tasks(
-                                    existing["id"]
-                                ),
+                                "stages": self._manager.list_tasks(existing["id"]),
                             }
                         ),
                         success=True,
@@ -3735,8 +3598,7 @@ class QualityAdvanceTool(BaseTool):
             (
                 task
                 for task in tasks
-                if str(task.get("status", ""))
-                in {"failed", "needs_attention"}
+                if str(task.get("status", "")) in {"failed", "needs_attention"}
             ),
             None,
         )
@@ -3755,15 +3617,11 @@ class QualityAdvanceTool(BaseTool):
                 success=True,
             )
 
-        pending = [
-            task for task in tasks if str(task.get("status", "")) == "pending"
-        ]
+        pending = [task for task in tasks if str(task.get("status", "")) == "pending"]
         if not pending:
             return ToolResult(
                 tool_name=self.tool_id,
-                content=json.dumps(
-                    {"pipeline_id": pipeline_id, "action": "complete"}
-                ),
+                content=json.dumps({"pipeline_id": pipeline_id, "action": "complete"}),
                 success=True,
             )
 
@@ -3781,9 +3639,7 @@ class QualityAdvanceTool(BaseTool):
         if not ready:
             return ToolResult(
                 tool_name=self.tool_id,
-                content=json.dumps(
-                    {"pipeline_id": pipeline_id, "action": "waiting"}
-                ),
+                content=json.dumps({"pipeline_id": pipeline_id, "action": "waiting"}),
                 success=True,
             )
 

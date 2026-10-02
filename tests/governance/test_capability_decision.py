@@ -28,6 +28,8 @@ def test_capability_decision_blocks_unresolved_dependency_first() -> None:
     )
 
     assert result.decision is CapabilityDecision.BLOCKED
+
+
 def test_capability_decision_extends_then_adapts_then_creates() -> None:
     engine = CapabilityDecisionEngine()
 

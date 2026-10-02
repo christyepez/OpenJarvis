@@ -21,6 +21,7 @@ class ProviderPolicyGuard:
 
     def register(self, tool_name: str, provider: ProviderDescriptor) -> None:
         self._tool_providers[tool_name] = provider
+
     def approve_for_request(self, provider_name: str) -> None:
         """Allow one otherwise-blocked paid provider for the active request."""
         self._request_approvals.add(provider_name.strip().lower())

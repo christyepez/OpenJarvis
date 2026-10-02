@@ -324,9 +324,7 @@ def test_manager_backed_agent_lifecycle(tmp_path):
             for item in listed_payload
         )
 
-        killed = AgentKillTool(manager=manager).execute(
-            agent_id="managed-agent-1"
-        )
+        killed = AgentKillTool(manager=manager).execute(agent_id="managed-agent-1")
         assert json.loads(killed.content)["status"] == "paused"
         assert manager.get_agent("managed-agent-1")["status"] == "paused"
     finally:
@@ -456,9 +454,7 @@ def test_project_bootstrap_creates_persistent_execution_board(tmp_path):
             for stream in ("backend", "frontend", "data", "devops", "security")
         }
         assert by_stream["qa"]["progress"]["wave"] == "D"
-        assert by_stream["qa"]["progress"]["depends_on_task_ids"] == [
-            integration_id
-        ]
+        assert by_stream["qa"]["progress"]["depends_on_task_ids"] == [integration_id]
     finally:
         manager.close()
 
@@ -521,14 +517,16 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend and frontend then integrate and test",
                 repository="https://github.com/example/portal",
                 workspace=str(repo),
                 streams="architecture,backend,frontend,integration,qa",
                 runtime_machines="trabajo,MarketingIndo",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         worktree_root = tmp_path / "worktrees"
@@ -585,8 +583,7 @@ def test_project_worktree_prepare_isolates_parallel_streams(tmp_path):
         )
         assert reused.success is True
         assert all(
-            item["reused"] is True
-            for item in json.loads(reused.content)["prepared"]
+            item["reused"] is True for item in json.loads(reused.content)["prepared"]
         )
     finally:
         manager.close()
@@ -598,13 +595,15 @@ def test_project_dispatch_spawns_only_dependency_ready_workers(tmp_path):
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend and frontend then integrate and test",
                 repository="https://github.com/example/portal",
                 workspace="C:/worktrees/portal",
                 streams="architecture,backend,frontend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatch = ProjectDispatchTool(manager=manager)
@@ -1042,19 +1041,20 @@ def test_task_dispatch_rejects_unknown_domain(tmp_path) -> None:
         manager.close()
 
 
-
 def test_project_status_reports_ready_active_blocked_and_done(tmp_path):
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 repository="https://github.com/example/portal",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         status_tool = ProjectStatusTool(manager=manager)
@@ -1065,9 +1065,9 @@ def test_project_status_reports_ready_active_blocked_and_done(tmp_path):
         assert initial["next_action"] == "dispatch:architecture"
 
         dispatched = json.loads(
-            ProjectDispatchTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectDispatchTool(manager=manager)
+            .execute(project_key=project_key)
+            .content
         )
         assert dispatched["dispatched"][0]["stream"] == "architecture"
 
@@ -1102,19 +1102,20 @@ def test_project_status_requires_manager():
     assert "AgentManager" in result.content
 
 
-
 def test_project_advance_dispatches_only_ready_streams(tmp_path):
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 repository="https://github.com/example/portal",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         advance = ProjectAdvanceTool(manager=manager)
@@ -1153,7 +1154,6 @@ def test_project_advance_requires_manager():
     assert "AgentManager" in result.content
 
 
-
 class _RecordingProjectExecutor:
     def __init__(self) -> None:
         self.agent_ids: list[str] = []
@@ -1169,12 +1169,14 @@ def test_project_advance_starts_only_newly_dispatched_workers(tmp_path):
     executor = _RecordingProjectExecutor()
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 repository="https://github.com/example/portal",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         advance = ProjectAdvanceTool(manager=manager, executor=executor)
@@ -1208,7 +1210,6 @@ def test_project_advance_starts_only_newly_dispatched_workers(tmp_path):
         manager.close()
 
 
-
 def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
     project = next(
         agent
@@ -1228,8 +1229,7 @@ def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
         {
             "handoff_ready": True,
             "worker_agent_id": (
-                str(progress.get("worker_agent_id", "") or "")
-                or f"worker-{stream}"
+                str(progress.get("worker_agent_id", "") or "") or f"worker-{stream}"
             ),
             "worker_status": "completed_tick",
         }
@@ -1241,7 +1241,6 @@ def _mark_project_handoff_ready(manager, project_key: str, stream: str) -> str:
         findings=["Worker implementation complete; tests reported passing."],
     )
     return task["id"]
-
 
 
 def _approve_project_handoff(
@@ -1265,11 +1264,13 @@ def test_project_handoff_review_requires_ready_handoff(tmp_path):
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         result = ProjectHandoffReviewTool(manager=manager).execute(
             project_key=boot["project_key"],
@@ -1292,11 +1293,13 @@ def test_project_handoff_review_approval_completes_stream_with_review_evidence(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         task_id = _mark_project_handoff_ready(
@@ -1321,14 +1324,13 @@ def test_project_handoff_review_approval_completes_stream_with_review_evidence(
         assert task["status"] == "completed"
         assert task["progress"]["handoff_ready"] is False
         assert task["progress"]["handoff_decision"] == "approve"
-        assert "Validated architecture contract" in task["progress"][
-            "handoff_review_evidence"
-        ]
+        assert (
+            "Validated architecture contract"
+            in task["progress"]["handoff_review_evidence"]
+        )
 
         status = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert status["ready_streams"] == ["backend"]
         assert status["next_action"] == "dispatch:backend"
@@ -1342,11 +1344,13 @@ def test_project_handoff_review_rejection_requires_rework(tmp_path):
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         task_id = _mark_project_handoff_ready(
@@ -1373,18 +1377,19 @@ def test_project_handoff_review_rejection_requires_rework(tmp_path):
         manager.close()
 
 
-
 def test_worker_assigned_stream_cannot_complete_without_handoff_review(tmp_path):
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         ProjectDispatchTool(manager=manager).execute(project_key=project_key)
@@ -1399,15 +1404,12 @@ def test_worker_assigned_stream_cannot_complete_without_handoff_review(tmp_path)
         assert bypass.success is False
         assert "project_handoff_review" in bypass.content
         status = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert status["active_streams"] == ["architecture"]
         assert status["done_streams"] == []
     finally:
         manager.close()
-
 
 
 def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
@@ -1418,12 +1420,14 @@ def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
     _SPAWNED_AGENTS.clear()
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Define architecture and release safely",
                 repository="https://github.com/example/portal",
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
 
@@ -1451,9 +1455,7 @@ def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
         assert qa.success is True
 
         status_before = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert status_before["done_streams"] == [
             "architecture",
@@ -1474,20 +1476,20 @@ def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
         pipeline_id = started["quality"]["pipeline_id"]
         assert started["status"]["quality_pipeline_id"] == pipeline_id
         assert started["status"]["quality_status"] == "pending"
-        assert started["status"]["next_action"] == (
-            f"advance-quality:{pipeline_id}"
-        )
+        assert started["status"]["next_action"] == (f"advance-quality:{pipeline_id}")
 
         project = _project_coordinator(manager, project_key)
         assert project is not None
         assert project["config"]["quality_pipeline_id"] == pipeline_id
 
         reused = json.loads(
-            QualityPipelineTool(manager=manager).execute(
+            QualityPipelineTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 objective="Duplicate quality request must reuse pipeline",
                 release_candidate=True,
-            ).content
+            )
+            .content
         )
         assert reused["reused"] is True
         assert reused["pipeline_id"] == pipeline_id
@@ -1500,7 +1502,6 @@ def test_project_completion_starts_one_bound_quality_pipeline(tmp_path):
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
-
 
 
 def test_project_reaches_complete_only_after_full_quality_pipeline(tmp_path):
@@ -1527,12 +1528,14 @@ def test_project_reaches_complete_only_after_full_quality_pipeline(tmp_path):
     _SPAWNED_AGENTS.clear()
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Backend Service",
                 objective="Implement and release backend service safely",
                 repository="https://github.com/example/backend-service",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
 
@@ -1592,23 +1595,18 @@ def test_project_reaches_complete_only_after_full_quality_pipeline(tmp_path):
         assert release.success is True
 
         final_status = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert final_status["quality_status"] == "completed"
         assert final_status["next_action"] == "complete"
 
-        final_advance = json.loads(
-            advance.execute(project_key=project_key).content
-        )
+        final_advance = json.loads(advance.execute(project_key=project_key).content)
         assert final_advance["action"] == "complete"
         assert final_advance["status"]["next_action"] == "complete"
         assert len(executor.calls) == 2
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
-
 
 
 def test_task_dispatch_executes_new_domain_worker_and_reuses_handoff(tmp_path) -> None:
@@ -1672,10 +1670,12 @@ def test_task_dispatch_without_executor_creates_worker_without_fake_handoff(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         payload = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize this research topic",
                 domain="knowledge",
-            ).content
+            )
+            .content
         )
 
         assert payload["started"] is False
@@ -1683,7 +1683,6 @@ def test_task_dispatch_without_executor_creates_worker_without_fake_handoff(
         assert payload["result"] == ""
     finally:
         manager.close()
-
 
 
 def test_task_status_returns_domain_handoff_by_task_key(tmp_path) -> None:
@@ -1706,10 +1705,12 @@ def test_task_status_returns_domain_handoff_by_task_key(tmp_path) -> None:
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_DomainExecutor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Review this architecture proposal",
                 domain="professional",
-            ).content
+            )
+            .content
         )
 
         status = DomainTaskStatusTool(manager=manager).execute(
@@ -1734,15 +1735,12 @@ def test_task_status_rejects_unknown_task_key(tmp_path) -> None:
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
-        result = DomainTaskStatusTool(manager=manager).execute(
-            task_key="missing-task"
-        )
+        result = DomainTaskStatusTool(manager=manager).execute(task_key="missing-task")
 
         assert result.success is False
         assert "Domain task not found" in result.content
     finally:
         manager.close()
-
 
 
 def test_task_retry_reuses_same_worker_and_recovers_handoff(tmp_path) -> None:
@@ -1765,10 +1763,12 @@ def test_task_retry_reuses_same_worker_and_recovers_handoff(tmp_path) -> None:
     executor = _RetryExecutor(manager)
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Review this learning plan",
                 domain="learning",
-            ).content
+            )
+            .content
         )
         agent_id = dispatched["agent_id"]
         record = manager.get_agent(agent_id)
@@ -1802,9 +1802,9 @@ def test_task_retry_reuses_same_worker_and_recovers_handoff(tmp_path) -> None:
         assert len(manager.list_agents()) == 1
 
         status = json.loads(
-            DomainTaskStatusTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskStatusTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
         assert status["state"] == "complete"
         assert status["agent_id"] == agent_id
@@ -1837,17 +1837,18 @@ def test_task_retry_requires_existing_task_and_executor(tmp_path) -> None:
         manager.close()
 
 
-
 def test_task_dispatch_auto_quality_for_coding_task(tmp_path) -> None:
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         payload = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Refactor this Python service and add unit tests",
                 domain="professional",
-            ).content
+            )
+            .content
         )
 
         assert payload["capability"] == "coding"
@@ -1871,10 +1872,12 @@ def test_task_dispatch_auto_quality_for_multimodal_task(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         payload = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Review this dashboard screenshot for visual defects",
                 domain="knowledge",
-            ).content
+            )
+            .content
         )
 
         assert payload["capability"] == "multimodal"
@@ -1894,10 +1897,12 @@ def test_task_dispatch_simple_personal_task_skips_quality(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         payload = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize my notes for tomorrow",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         assert payload["quality_required"] is False
@@ -1912,10 +1917,12 @@ def test_task_dispatch_quality_mode_none_overrides_coding_quality(tmp_path) -> N
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         payload = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Refactor this Python helper",
                 quality_mode="none",
-            ).content
+            )
+            .content
         )
 
         assert payload["capability"] == "coding"
@@ -1926,17 +1933,18 @@ def test_task_dispatch_quality_mode_none_overrides_coding_quality(tmp_path) -> N
         manager.close()
 
 
-
 def test_quality_pipeline_binds_explicit_stages_to_domain_task(tmp_path) -> None:
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Refactor this Python helper",
                 domain="professional",
-            ).content
+            )
+            .content
         )
 
         result = QualityPipelineTool(manager=manager).execute(
@@ -1961,8 +1969,7 @@ def test_quality_pipeline_binds_explicit_stages_to_domain_task(tmp_path) -> None
 
         coordinator = manager.get_agent(payload["coordinator_agent_id"])
         assert (
-            coordinator["config"]["quality_domain_task_key"]
-            == dispatched["task_key"]
+            coordinator["config"]["quality_domain_task_key"] == dispatched["task_key"]
         )
         assert coordinator["config"]["quality_project_key"] == ""
     finally:
@@ -1975,24 +1982,30 @@ def test_quality_pipeline_reuses_existing_domain_task_pipeline(tmp_path) -> None
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Review this dashboard screenshot",
                 domain="knowledge",
-            ).content
+            )
+            .content
         )
         first = json.loads(
-            QualityPipelineTool(manager=manager).execute(
+            QualityPipelineTool(manager=manager)
+            .execute(
                 objective="Visual review",
                 domain_task_key=dispatched["task_key"],
                 stages=["multimodal-review", "anti-slop", "thermos"],
-            ).content
+            )
+            .content
         )
         second = json.loads(
-            QualityPipelineTool(manager=manager).execute(
+            QualityPipelineTool(manager=manager)
+            .execute(
                 objective="Duplicate visual review",
                 domain_task_key=dispatched["task_key"],
                 stages=["multimodal-review", "anti-slop", "thermos"],
-            ).content
+            )
+            .content
         )
 
         assert second["reused"] is True
@@ -2019,7 +2032,6 @@ def test_quality_pipeline_rejects_project_and_domain_binding_together(tmp_path) 
         manager.close()
 
 
-
 def test_task_dispatch_starts_quality_pipeline_after_coding_handoff(tmp_path) -> None:
     from openjarvis.agents.manager import AgentManager
 
@@ -2041,10 +2053,12 @@ def test_task_dispatch_starts_quality_pipeline_after_coding_handoff(tmp_path) ->
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_Executor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Refactor this Python service and add unit tests",
                 domain="professional",
-            ).content
+            )
+            .content
         )
 
         assert payload["handoff_ready"] is True
@@ -2086,10 +2100,12 @@ def test_task_dispatch_simple_handoff_does_not_start_quality_pipeline(tmp_path) 
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_Executor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Summarize my notes for tomorrow",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         assert payload["handoff_ready"] is True
@@ -2099,7 +2115,6 @@ def test_task_dispatch_simple_handoff_does_not_start_quality_pipeline(tmp_path) 
         assert payload["quality_error"] == ""
     finally:
         manager.close()
-
 
 
 def test_task_status_reports_pending_quality_pipeline(tmp_path) -> None:
@@ -2123,16 +2138,18 @@ def test_task_status_reports_pending_quality_pipeline(tmp_path) -> None:
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_Executor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Refactor this Python service",
                 domain="professional",
-            ).content
+            )
+            .content
         )
 
         status = json.loads(
-            DomainTaskStatusTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskStatusTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
 
         assert status["state"] == "quality_pending"
@@ -2156,16 +2173,18 @@ def test_task_status_reports_quality_not_required_for_simple_task(tmp_path) -> N
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         status = json.loads(
-            DomainTaskStatusTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskStatusTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
 
         assert status["quality_required"] is False
@@ -2175,7 +2194,6 @@ def test_task_status_reports_quality_not_required_for_simple_task(tmp_path) -> N
         assert status["quality_stages"] == []
     finally:
         manager.close()
-
 
 
 def test_task_retry_starts_missing_quality_pipeline_after_coding_recovery(
@@ -2200,10 +2218,12 @@ def test_task_retry_starts_missing_quality_pipeline_after_coding_recovery(
     _SPAWNED_AGENTS.clear()
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Refactor this Python helper",
                 domain="professional",
-            ).content
+            )
+            .content
         )
         assert dispatched["quality_required"] is True
         assert dispatched["quality_pipeline_id"] == ""
@@ -2250,7 +2270,6 @@ def test_task_retry_starts_missing_quality_pipeline_after_coding_recovery(
         _SPAWNED_AGENTS.clear()
 
 
-
 def test_task_advance_completes_simple_task_without_quality(tmp_path) -> None:
     from openjarvis.agents.manager import AgentManager
 
@@ -2271,16 +2290,18 @@ def test_task_advance_completes_simple_task_without_quality(tmp_path) -> None:
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_WorkerExecutor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         advanced = json.loads(
-            DomainTaskAdvanceTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskAdvanceTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
 
         assert advanced["action"] == "complete"
@@ -2328,10 +2349,12 @@ def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=_WorkerExecutor(manager),
-            ).execute(
+            )
+            .execute(
                 instruction="Refactor this Python service",
                 domain="professional",
-            ).content
+            )
+            .content
         )
         quality_executor = _QualityExecutor(manager)
         advance = DomainTaskAdvanceTool(
@@ -2339,22 +2362,16 @@ def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
             executor=quality_executor,
         )
 
-        first = json.loads(
-            advance.execute(task_key=dispatched["task_key"]).content
-        )
+        first = json.loads(advance.execute(task_key=dispatched["task_key"]).content)
         assert first["action"] == "quality-advanced"
         assert first["quality"]["action"] == "reviewer_executed"
         assert first["quality"]["stage"] == "anti-slop"
 
-        second = json.loads(
-            advance.execute(task_key=dispatched["task_key"]).content
-        )
+        second = json.loads(advance.execute(task_key=dispatched["task_key"]).content)
         assert second["action"] == "quality-advanced"
         assert second["quality"]["stage"] == "thermos"
 
-        final = json.loads(
-            advance.execute(task_key=dispatched["task_key"]).content
-        )
+        final = json.loads(advance.execute(task_key=dispatched["task_key"]).content)
         assert final["action"] == "complete"
         assert final["status"]["state"] == "complete"
         assert final["status"]["quality_status"] == "completed"
@@ -2362,7 +2379,6 @@ def test_task_advance_runs_domain_quality_one_stage_per_call(tmp_path) -> None:
     finally:
         manager.close()
         _SPAWNED_AGENTS.clear()
-
 
 
 def test_task_dispatch_reuses_created_worker_and_executes_when_executor_arrives(
@@ -2386,10 +2402,12 @@ def test_task_dispatch_reuses_created_worker_and_executes_when_executor_arrives(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         first = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
         assert first["started"] is False
 
@@ -2398,10 +2416,12 @@ def test_task_dispatch_reuses_created_worker_and_executes_when_executor_arrives(
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=executor,
-            ).execute(
+            )
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         assert second["reused"] is True
@@ -2430,10 +2450,12 @@ def test_task_dispatch_does_not_silently_retry_existing_error(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         first = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Review my learning plan",
                 domain="learning",
-            ).content
+            )
+            .content
         )
         worker = manager.get_agent(first["agent_id"])
         config = dict(worker["config"])
@@ -2455,10 +2477,12 @@ def test_task_dispatch_does_not_silently_retry_existing_error(tmp_path) -> None:
             DomainTaskDispatchTool(
                 manager=manager,
                 executor=executor,
-            ).execute(
+            )
+            .execute(
                 instruction="Review my learning plan",
                 domain="learning",
-            ).content
+            )
+            .content
         )
 
         assert second["reused"] is True
@@ -2471,23 +2495,24 @@ def test_task_dispatch_does_not_silently_retry_existing_error(tmp_path) -> None:
         manager.close()
 
 
-
 def test_task_advance_waits_for_executor_when_task_is_created(tmp_path) -> None:
     from openjarvis.agents.manager import AgentManager
 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
 
         advanced = json.loads(
-            DomainTaskAdvanceTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskAdvanceTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
 
         assert advanced["action"] == "wait-executor"
@@ -2518,10 +2543,12 @@ def test_task_advance_executes_created_task_when_executor_becomes_available(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Summarize my notes",
                 domain="personal",
-            ).content
+            )
+            .content
         )
         executor = _Executor(manager)
 
@@ -2529,7 +2556,9 @@ def test_task_advance_executes_created_task_when_executor_becomes_available(
             DomainTaskAdvanceTool(
                 manager=manager,
                 executor=executor,
-            ).execute(task_key=dispatched["task_key"]).content
+            )
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
 
         assert advanced["action"] == "task-executed"
@@ -2539,7 +2568,6 @@ def test_task_advance_executes_created_task_when_executor_becomes_available(
         assert len(manager.list_agents()) == 1
     finally:
         manager.close()
-
 
 
 def test_task_next_action_executes_recommended_advance(tmp_path) -> None:
@@ -2558,17 +2586,17 @@ def test_task_next_action_executes_recommended_advance(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
-                instruction="Summarize my notes", domain="personal"
-            ).content
+            DomainTaskDispatchTool(manager=manager)
+            .execute(instruction="Summarize my notes", domain="personal")
+            .content
         )
         executor = _Executor(manager)
         payload = json.loads(
-            DomainTaskNextActionTool(manager=manager, executor=executor).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskNextActionTool(manager=manager, executor=executor)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
-        assert payload["recommended_action"] == f'advance:{dispatched["task_key"]}'
+        assert payload["recommended_action"] == f"advance:{dispatched['task_key']}"
         assert payload["action"] == "advance"
         assert payload["executed"] is True
         assert payload["result"]["action"] == "task-executed"
@@ -2592,9 +2620,9 @@ def test_task_next_action_retries_existing_error(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
-                instruction="Review my learning plan", domain="learning"
-            ).content
+            DomainTaskDispatchTool(manager=manager)
+            .execute(instruction="Review my learning plan", domain="learning")
+            .content
         )
         worker = manager.get_agent(dispatched["agent_id"])
         config = dict(worker["config"])
@@ -2611,11 +2639,11 @@ def test_task_next_action_retries_existing_error(tmp_path) -> None:
             summary_memory="ERROR: temporary failure",
         )
         payload = json.loads(
-            DomainTaskNextActionTool(
-                manager=manager, executor=_Executor(manager)
-            ).execute(task_key=dispatched["task_key"]).content
+            DomainTaskNextActionTool(manager=manager, executor=_Executor(manager))
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
-        assert payload["recommended_action"] == f'retry:{dispatched["task_key"]}'
+        assert payload["recommended_action"] == f"retry:{dispatched['task_key']}"
         assert payload["action"] == "retry"
         assert payload["executed"] is True
         assert payload["result"]["handoff_ready"] is True
@@ -2637,14 +2665,14 @@ def test_task_next_action_is_noop_for_complete_task(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(
-                manager=manager, executor=_Executor(manager)
-            ).execute(instruction="Summarize my notes", domain="personal").content
+            DomainTaskDispatchTool(manager=manager, executor=_Executor(manager))
+            .execute(instruction="Summarize my notes", domain="personal")
+            .content
         )
         payload = json.loads(
-            DomainTaskNextActionTool(manager=manager).execute(
-                task_key=dispatched["task_key"]
-            ).content
+            DomainTaskNextActionTool(manager=manager)
+            .execute(task_key=dispatched["task_key"])
+            .content
         )
         assert payload["recommended_action"] == "complete"
         assert payload["action"] == "complete"
@@ -2652,7 +2680,6 @@ def test_task_next_action_is_noop_for_complete_task(tmp_path) -> None:
         assert payload["result"]["state"] == "complete"
     finally:
         manager.close()
-
 
 
 def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
@@ -2663,12 +2690,14 @@ def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Offline Dispatch",
                 objective="Build API and tests",
                 repository="https://github.com/example/offline-dispatch",
                 runtime_machines="trabajo,MarketingIndo",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         coordinator = _project_coordinator(manager, project_key)
@@ -2677,9 +2706,9 @@ def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
         config["runtime_online_machines"] = []
         manager.update_agent(coordinator["id"], config=config)
         result = json.loads(
-            ProjectDispatchTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectDispatchTool(manager=manager)
+            .execute(project_key=project_key)
+            .content
         )
 
         assert result["dispatched"] == []
@@ -2694,7 +2723,6 @@ def test_project_dispatch_blocks_when_runtime_machines_are_known_offline(
         assert workers == []
     finally:
         manager.close()
-
 
 
 def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> None:
@@ -2716,25 +2744,27 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Retry Existing Worker",
                 objective="Build API and tests",
                 repository="https://github.com/example/retry-worker",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatched = json.loads(
-            ProjectDispatchTool(manager=manager).execute(
+            ProjectDispatchTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         worker_id = dispatched["dispatched"][0]["agent_id"]
         manager.update_agent(worker_id, status="error")
         before = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert before["failed_streams"] == ["architecture"]
         assert before["next_action"] == "retry-workers:architecture"
@@ -2744,7 +2774,9 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
             ProjectAdvanceTool(
                 manager=manager,
                 executor=executor,
-            ).execute(project_key=project_key).content
+            )
+            .execute(project_key=project_key)
+            .content
         )
 
         assert advanced["action"] == "workers-retried"
@@ -2754,8 +2786,7 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
         workers = [
             agent
             for agent in manager.list_agents()
-            if (agent.get("config", {}) or {}).get("project_stream")
-            == "architecture"
+            if (agent.get("config", {}) or {}).get("project_stream") == "architecture"
         ]
         assert len(workers) == 1
         task_id = dispatched["dispatched"][0]["task_id"]
@@ -2767,7 +2798,6 @@ def test_project_advance_retries_failed_worker_without_duplication(tmp_path) -> 
         assert task["progress"]["last_retry_at"] > 0
     finally:
         manager.close()
-
 
 
 def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None:
@@ -2783,18 +2813,22 @@ def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Exhausted Worker",
                 objective="Build API and tests",
                 repository="https://github.com/example/exhausted-worker",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatched = json.loads(
-            ProjectDispatchTool(manager=manager).execute(
+            ProjectDispatchTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         item = dispatched["dispatched"][0]
         manager.update_agent(item["agent_id"], status="error")
@@ -2807,9 +2841,7 @@ def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None
             progress=progress,
         )
         status = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert status["failed_streams"] == []
         assert status["exhausted_streams"] == ["architecture"]
@@ -2820,14 +2852,15 @@ def test_project_worker_retry_limit_requires_manual_resolution(tmp_path) -> None
             ProjectAdvanceTool(
                 manager=manager,
                 executor=executor,
-            ).execute(project_key=project_key).content
+            )
+            .execute(project_key=project_key)
+            .content
         )
         assert advanced["action"] == "resolve-worker"
         assert advanced["started_agents"] == []
         assert executor.calls == []
     finally:
         manager.close()
-
 
 
 def test_project_worker_manual_retry_authorization_is_evidence_gated(
@@ -2847,18 +2880,22 @@ def test_project_worker_manual_retry_authorization_is_evidence_gated(
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Manual Retry",
                 objective="Build API and tests",
                 repository="https://github.com/example/manual-retry",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
         dispatched = json.loads(
-            ProjectDispatchTool(manager=manager).execute(
+            ProjectDispatchTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 streams="architecture",
-            ).content
+            )
+            .content
         )
         item = dispatched["dispatched"][0]
         manager.update_agent(item["agent_id"], status="error")
@@ -2878,19 +2915,19 @@ def test_project_worker_manual_retry_authorization_is_evidence_gated(
         assert missing.success is False
 
         authorized = json.loads(
-            ProjectWorkerAuthorizeRetryTool(manager=manager).execute(
+            ProjectWorkerAuthorizeRetryTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 stream="architecture",
                 evidence="Runtime was rebound and connectivity was verified.",
-            ).content
+            )
+            .content
         )
         assert authorized["authorized"] is True
         assert authorized["retry_count"] == 3
 
         status = json.loads(
-            ProjectStatusTool(manager=manager).execute(
-                project_key=project_key
-            ).content
+            ProjectStatusTool(manager=manager).execute(project_key=project_key).content
         )
         assert status["exhausted_streams"] == []
         assert status["failed_streams"] == ["architecture"]
@@ -2900,7 +2937,9 @@ def test_project_worker_manual_retry_authorization_is_evidence_gated(
             ProjectAdvanceTool(
                 manager=manager,
                 executor=executor,
-            ).execute(project_key=project_key).content
+            )
+            .execute(project_key=project_key)
+            .content
         )
         assert advanced["action"] == "workers-retried"
         assert executor.calls == [item["agent_id"]]

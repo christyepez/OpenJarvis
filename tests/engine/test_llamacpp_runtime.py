@@ -36,12 +36,12 @@ def test_build_server_command_requires_model() -> None:
             LlamaCppServerConfig(),
             executable="llama-server.exe",
         )
+
+
 def test_find_llamacpp_prefers_path() -> None:
     with patch("openjarvis.engine.llamacpp_runtime.shutil.which") as which:
-        which.side_effect = (
-            lambda name: "C:/tools/llama-server.exe"
-            if "llama-server" in name
-            else None
+        which.side_effect = lambda name: (
+            "C:/tools/llama-server.exe" if "llama-server" in name else None
         )
 
         assert find_llamacpp_executable() == "C:/tools/llama-server.exe"

@@ -15,12 +15,14 @@ def test_operations_project_summary_reuses_execution_board_state(tmp_path) -> No
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Portal",
                 objective="Build backend then integrate and test",
                 repository="https://github.com/example/portal",
                 streams="architecture,backend,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
 
@@ -39,14 +41,12 @@ def test_operations_project_summary_reuses_execution_board_state(tmp_path) -> No
         coordinator = next(
             agent
             for agent in manager.list_agents()
-            if (agent.get("config", {}) or {}).get("project_role")
-            == "coordinator"
+            if (agent.get("config", {}) or {}).get("project_role") == "coordinator"
         )
         task = next(
             task
             for task in manager.list_tasks(coordinator["id"])
-            if (task.get("progress", {}) or {}).get("stream")
-            == "architecture"
+            if (task.get("progress", {}) or {}).get("stream") == "architecture"
         )
         progress = dict(task.get("progress", {}) or {})
         progress.update(
@@ -82,17 +82,18 @@ def test_operations_project_summary_reuses_execution_board_state(tmp_path) -> No
         manager.close()
 
 
-
 def test_operations_project_summary_includes_quality_stage_details(tmp_path) -> None:
     manager = AgentManager(db_path=str(tmp_path / "agents.db"))
     try:
         boot = json.loads(
-            ProjectBootstrapTool(manager=manager).execute(
+            ProjectBootstrapTool(manager=manager)
+            .execute(
                 project_name="Service",
                 objective="Implement and release safely",
                 repository="https://github.com/example/service",
                 streams="architecture,integration,qa",
-            ).content
+            )
+            .content
         )
         project_key = boot["project_key"]
 
@@ -110,14 +111,16 @@ def test_operations_project_summary_includes_quality_stage_details(tmp_path) -> 
             assert result.success is True
 
         pipeline = json.loads(
-            QualityPipelineTool(manager=manager).execute(
+            QualityPipelineTool(manager=manager)
+            .execute(
                 project_key=project_key,
                 objective="Release quality for Service",
                 has_code_changes=True,
                 has_visual_changes=False,
                 material_change=True,
                 release_candidate=True,
-            ).content
+            )
+            .content
         )
 
         summary = _project_summary(manager)["projects"][0]
@@ -136,9 +139,7 @@ def test_operations_project_summary_includes_quality_stage_details(tmp_path) -> 
             "pending",
             "pending",
         ]
-        assert summary["next_action"] == (
-            f"advance-quality:{pipeline['pipeline_id']}"
-        )
+        assert summary["next_action"] == (f"advance-quality:{pipeline['pipeline_id']}")
 
         quality_agent = next(
             agent

@@ -322,9 +322,7 @@ class AgentExecutor:
             progress = dict((task or {}).get("progress", {}) or {})
             progress.update(
                 {
-                    "pipeline_id": str(
-                        config.get("quality_pipeline_id", "") or ""
-                    ),
+                    "pipeline_id": str(config.get("quality_pipeline_id", "") or ""),
                     "stage": str(config.get("quality_stage", "") or ""),
                     "reviewer_agent_id": agent_id,
                 }
@@ -379,9 +377,7 @@ class AgentExecutor:
                     "worker_agent_id": agent_id,
                     "handoff_ready": handoff_ready,
                     "worker_status": (
-                        "completed_tick"
-                        if error is None
-                        else "needs_attention"
+                        "completed_tick" if error is None else "needs_attention"
                     ),
                     "last_handoff_at": time.time(),
                 }

@@ -14,17 +14,21 @@ def test_operations_agent_summary_includes_domain_quality_pipeline(tmp_path) -> 
     _SPAWNED_AGENTS.clear()
     try:
         dispatched = json.loads(
-            DomainTaskDispatchTool(manager=manager).execute(
+            DomainTaskDispatchTool(manager=manager)
+            .execute(
                 instruction="Refactor this Python helper",
                 domain="professional",
-            ).content
+            )
+            .content
         )
         pipeline = json.loads(
-            QualityPipelineTool(manager=manager).execute(
+            QualityPipelineTool(manager=manager)
+            .execute(
                 objective="Review coding task quality",
                 domain_task_key=dispatched["task_key"],
                 stages=["anti-slop", "thermos"],
-            ).content
+            )
+            .content
         )
 
         summary = _agent_summary(manager)

@@ -83,6 +83,8 @@ def match_catalog_model(
         fuzzy.sort(key=lambda item: -item[0])
         return fuzzy[0][1]
     return None
+
+
 @dataclass(frozen=True, slots=True)
 class EngineModelCandidate:
     """One model that is currently routable through one engine."""
@@ -141,8 +143,7 @@ class EngineModelRouter:
         specialization = str(metadata.get("specialization", "")).casefold()
         model_text = f"{spec.model_id} {spec.name}".casefold()
         modalities = {
-            str(value).casefold()
-            for value in (metadata.get("modalities", ()) or ())
+            str(value).casefold() for value in (metadata.get("modalities", ()) or ())
         }
 
         if normalized in {"coding", "code"}:

@@ -92,9 +92,8 @@ def test_oversized_gpt_oss_is_removed_from_local_candidates() -> None:
         preferred_models=("gpt-oss:120b", "llama3.2:3b"),
     )
 
-    assert [candidate.catalog_model_id for candidate in candidates] == [
-        "llama3.2:3b"
-    ]
+    assert [candidate.catalog_model_id for candidate in candidates] == ["llama3.2:3b"]
+
 
 def test_capability_routing_prefers_granite_for_coding() -> None:
     router = EngineModelRouter()

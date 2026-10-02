@@ -11,8 +11,23 @@ from openjarvis.tools._stubs import ToolSpec
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOP_WORDS = frozenset(
     {
-        "a", "an", "and", "for", "from", "in", "of", "on", "or",
-        "the", "to", "use", "with", "this", "that", "my", "please",
+        "a",
+        "an",
+        "and",
+        "for",
+        "from",
+        "in",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "use",
+        "with",
+        "this",
+        "that",
+        "my",
+        "please",
     }
 )
 

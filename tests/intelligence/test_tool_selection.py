@@ -28,6 +28,8 @@ def test_compact_selector_prefers_relevant_tools() -> None:
 
     names = [item["function"]["name"] for item in selected]
     assert "git_status" in names
+
+
 def test_compact_selector_keeps_full_catalog_when_under_limit() -> None:
     specs = [tool("a_tool", "Alpha"), tool("b_tool", "Beta")]
 

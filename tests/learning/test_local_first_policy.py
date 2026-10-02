@@ -14,6 +14,8 @@ def test_local_first_prefers_local_model_over_cloud() -> None:
     selected = router.select_model(build_routing_context("Explain this design"))
 
     assert selected == "qwen3.5:2b"
+
+
 def test_local_first_falls_back_to_cloud_when_no_local_model_exists() -> None:
     register_builtin_models()
     router = LocalFirstRouter(

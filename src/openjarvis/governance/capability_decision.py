@@ -24,6 +24,8 @@ class CapabilityAssessment:
     can_adapt: bool = False
     dependency_blocked: bool = False
     evidence: str = ""
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityResolution:
     decision: CapabilityDecision

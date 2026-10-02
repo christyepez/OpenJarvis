@@ -24,6 +24,8 @@ class MachineRequirement:
     require_docker: bool = False
     require_gpu: bool = False
     preferred_tags: frozenset[str] = frozenset()
+
+
 class MachineRouter:
     """Prefer the configured primary machine, then deterministic fallbacks."""
 
@@ -58,6 +60,7 @@ class MachineRouter:
                 return match
 
         return sorted(eligible, key=lambda item: item.name.lower())[0]
+
     @staticmethod
     def _eligible(machine: MachineDescriptor, req: MachineRequirement) -> bool:
         if not machine.online:

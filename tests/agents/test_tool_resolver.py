@@ -70,7 +70,6 @@ class _MCPOnlyTool(BaseTool):
         return ToolResult(tool_name="mcp_only", content="mcp-only", success=True)
 
 
-
 class _MCPDeviceTool(BaseTool):
     tool_id = "mcp_device"
 
@@ -293,9 +292,6 @@ def test_mcp_tools_merge_after_native_tools_without_name_collisions() -> None:
     ]
 
 
-
-
-
 def test_mcp_device_tool_receives_runtime_device_default() -> None:
     remote = _MCPDeviceTool()
 
@@ -478,7 +474,6 @@ def test_domain_worker_memory_tools_inherit_domain_default() -> None:
         assert backend.metadata[1]["domain"] == "personal"
     finally:
         ToolRegistry.clear()
-
 
 
 def test_project_advance_receives_manager_and_executor():

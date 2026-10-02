@@ -22,6 +22,8 @@ def _is_local_model(model_id: str) -> bool:
         return False
     engines = tuple(getattr(spec, "supported_engines", ()) or ())
     return any(engine != "cloud" for engine in engines)
+
+
 class LocalFirstRouter(RouterPolicy):
     """Prefer local models and delegate final ranking to HeuristicRouter."""
 
@@ -53,6 +55,8 @@ class LocalFirstRouter(RouterPolicy):
             fallback_model=self._fallback,
         )
         return router.select_model(context)
+
+
 def ensure_registered() -> None:
     """Register the local-first policy when not already present."""
     if not RouterPolicyRegistry.contains("local-first"):

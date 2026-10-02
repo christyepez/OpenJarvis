@@ -50,6 +50,8 @@ class LlamaCppServerConfig:
     context_size: int = 8192
     threads: int = 0
     gpu_layers: int = 0
+
+
 def build_server_command(
     config: LlamaCppServerConfig,
     *,

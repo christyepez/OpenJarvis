@@ -29,9 +29,7 @@ class CompactToolSelector:
             parameters = function.get("parameters", {}) or {}
             properties = parameters.get("properties", {})
             parameter_names = (
-                [str(key) for key in properties]
-                if isinstance(properties, dict)
-                else []
+                [str(key) for key in properties] if isinstance(properties, dict) else []
             )
             score = score_tool_relevance(
                 query,

@@ -426,8 +426,7 @@ def test_manager_backed_agent_api_lifecycle(tmp_path):
         listed = client.get("/v1/agents")
         assert listed.status_code == 200
         assert any(
-            item["agent_id"] == "api-managed-1"
-            and item["managed"] is True
+            item["agent_id"] == "api-managed-1" and item["managed"] is True
             for item in listed.json()["running"]
         )
 
