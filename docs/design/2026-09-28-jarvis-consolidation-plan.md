@@ -176,6 +176,9 @@ Validation executed on `trabajo` through 2026-10-02:
 - Main frontend chunk reduced from **1,113.14 kB** to **453.54 kB**.
 - Analytics now builds as a separate lazy chunk (**298.81 kB**); the ineffective dynamic-import warning is gone.
 - Ruff on changed consolidation/server Python modules: **PASS**.
+- `git diff --check main...HEAD`: **PASS**; `uv lock --check`: **PASS**.
+- Distribution build: **PASS** for sdist and wheel.
+- Clean Python 3.12 wheel install: **PASS** (`import openjarvis` and CLI entrypoint import).
 
 Recent consolidation checkpoints include:
 
@@ -192,3 +195,5 @@ Recent consolidation checkpoints include:
   chunk is below 500 kB and the ineffective dynamic-import warning is resolved.
 - Starlette `TestClient` now uses the dev-only `httpx2` dependency, removing
   the previous fallback-to-`httpx` deprecation warning from server test runs.
+- GitHub Actions workflows exist in `main`, but this public fork has not enabled
+  fork workflows yet; enable Actions on the fork before relying on remote CI.
