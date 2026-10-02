@@ -182,6 +182,21 @@ class TestOrchestratorAgent:
         assert result.tool_results[0].tool_name == "calculator"
         assert result.tool_results[0].content == "4"
 
+    def test_compact_tool_advertising_limits_model_schema(self):
+        engine = _make_engine_no_tools()
+        agent = OrchestratorAgent(
+            engine,
+            "test-model",
+            tools=[_CalculatorStub(), _ThinkStub()],
+            max_advertised_tools=1,
+        )
+
+        agent.run("Calculate 5 + 7")
+
+        tools = engine.generate.call_args.kwargs["tools"]
+        assert len(tools) == 1
+        assert tools[0]["function"]["name"] == "calculator"
+
     def test_multiple_tool_calls_same_turn(self):
         engine = _make_engine_multi_tool()
         agent = OrchestratorAgent(

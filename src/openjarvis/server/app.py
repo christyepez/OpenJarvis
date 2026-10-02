@@ -7,6 +7,7 @@ import os
 import pathlib
 import threading
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -18,6 +19,7 @@ from openjarvis.server.comparison import comparison_router
 from openjarvis.server.connectors_router import create_connectors_router
 from openjarvis.server.dashboard import dashboard_router
 from openjarvis.server.digest_routes import create_digest_router
+from openjarvis.server.operations_routes import router as operations_router
 from openjarvis.server.research_router import router as research_router
 from openjarvis.server.routes import router
 from openjarvis.server.upload_router import router as upload_router
@@ -312,7 +314,6 @@ def create_app(
     # AuthMiddleware never sees WS upgrade requests). Empty = auth disabled.
     app.state.api_key = api_key
 
-    @app.on_event("shutdown")
     async def _shutdown_managed_runtime() -> None:
         # Quiesce every producer before touching the shared MCP pool. Route
         # workers are registered under this lock, so none can slip in after
@@ -416,6 +417,13 @@ def create_app(
             except Exception:
                 logger.debug("Memory backend shutdown failed", exc_info=True)
 
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        yield
+        await _shutdown_managed_runtime()
+
+    app.router.lifespan_context = _lifespan
+
     # Wire up trace store if traces are enabled.
     #
     # We deliberately do NOT subscribe the trace store to the bus. The chat
@@ -499,6 +507,7 @@ def create_app(
     app.include_router(upload_router)
     app.include_router(research_router)
     app.include_router(analytics_router)
+    app.include_router(operations_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup

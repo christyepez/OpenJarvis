@@ -120,6 +120,17 @@ class MultiEngine(InferenceEngine):
         self._refresh_map()
         return list(self._model_map.keys())
 
+    def models_by_engine(self) -> Dict[str, List[str]]:
+        """Return currently advertised models grouped by engine key."""
+        grouped: Dict[str, List[str]] = {}
+        for key, engine in self._engines:
+            try:
+                grouped[key] = list(engine.list_models())
+            except Exception as exc:
+                logger.debug("Failed to list models for %s: %s", key, exc)
+                grouped[key] = []
+        return grouped
+
     def engine_key_for(self, model: str) -> str | None:
         """Return the registry key of the engine advertising *model*."""
         key = self._model_key_map.get(model)

@@ -50,15 +50,16 @@ class ThroughputBenchmark(BaseBenchmark):
         per_sample_latency: List[float] = []
         errors = 0
 
+        timer_resolution = time.get_clock_info("perf_counter").resolution
         for _ in range(num_samples):
-            t0 = time.time()
+            t0 = time.perf_counter()
             try:
                 result = engine.generate(messages, model=model)
-                elapsed = time.time() - t0
+                elapsed = max(time.perf_counter() - t0, timer_resolution)
                 usage = result.get("usage", {})
                 tokens = usage.get("completion_tokens", 0)
 
-                tps = tokens / elapsed if elapsed > 0 else 0.0
+                tps = tokens / elapsed if tokens > 0 else 0.0
                 per_sample_tps.append(tps)
                 per_sample_tokens.append(float(tokens))
                 per_sample_latency.append(elapsed)

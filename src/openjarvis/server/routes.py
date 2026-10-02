@@ -160,7 +160,44 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
+    config = getattr(request.app.state, "config", None)
     model = request_body.model
+
+    if model.casefold() == "smart":
+        query_text = ""
+        for message in reversed(request_body.messages):
+            if message.role == "user" and message.content:
+                query_text = message.content
+                break
+
+        from openjarvis.governance.execution_router import recommend_model_for_task
+        from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
+
+        governance = getattr(config, "governance", None)
+        preferred_raw = str(getattr(governance, "preferred_models", "") or "")
+        preferred_models = tuple(
+            item.strip() for item in preferred_raw.split(",") if item.strip()
+        )
+        model, capability = recommend_model_for_task(
+            engine,
+            query_text,
+            BUILTIN_MODELS,
+            preferred_models=preferred_models,
+        )
+        if not model:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Smart routing could not find an installed local model; "
+                    "choose a model explicitly or install a local worker."
+                ),
+            )
+        logging.getLogger("openjarvis.server").debug(
+            "Smart model route selected %s for capability=%s",
+            model,
+            capability,
+        )
+
     use_server_agent = (
         agent is not None
         and not request_body.tools
@@ -168,7 +205,6 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     )
 
     # Inject memory context into messages before dispatching
-    config = getattr(request.app.state, "config", None)
     memory_backend = getattr(request.app.state, "memory_backend", None)
     if (
         config is not None

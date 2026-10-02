@@ -140,6 +140,7 @@ def execute_secured_tool(
     capability_policy: Any = None,
     rate_limiter: Any = None,
     agent_id: str,
+    confirmed: bool = False,
 ):
     """Run one direct operation through the canonical ToolExecutor gates."""
     from openjarvis.core.types import ToolCall
@@ -148,6 +149,8 @@ def execute_secured_tool(
     executor = ToolExecutor(
         [tool],
         bus=bus,
+        interactive=confirmed,
+        confirm_callback=(lambda _prompt: True) if confirmed else None,
         capability_policy=capability_policy,
         rate_limiter=rate_limiter,
         agent_id=agent_id,

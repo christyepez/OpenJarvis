@@ -69,6 +69,7 @@ class OrchestratorAgent(ToolUsingAgent):
         agent_id: Optional[str] = None,
         rate_limiter: Optional[Any] = None,
         before_tool_call: Optional[Callable[[str, dict[str, Any]], bool]] = None,
+        max_advertised_tools: int = 0,
     ) -> None:
         super().__init__(
             engine,
@@ -89,6 +90,7 @@ class OrchestratorAgent(ToolUsingAgent):
         self._system_prompt = system_prompt
         self._parallel_tools = parallel_tools
         self._before_tool_call = before_tool_call
+        self._max_advertised_tools = max(0, int(max_advertised_tools or 0))
 
     def run(
         self,
@@ -357,8 +359,20 @@ class OrchestratorAgent(ToolUsingAgent):
             system_prompt=self._system_prompt,
         )
 
-        # Get OpenAI-format tool definitions
+        # Get OpenAI-format tool definitions. Optionally advertise only
+        # the most relevant subset while keeping the full executor available.
         openai_tools = self._executor.get_openai_tools() if self._tools else []
+        if (
+            self._max_advertised_tools
+            and len(openai_tools) > self._max_advertised_tools
+        ):
+            from openjarvis.intelligence.tool_selection import CompactToolSelector
+
+            openai_tools = CompactToolSelector().select(
+                input,
+                openai_tools,
+                limit=self._max_advertised_tools,
+            )
 
         all_tool_results: list[ToolResult] = []
         turns = 0

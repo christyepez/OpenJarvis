@@ -238,3 +238,282 @@ def test_new_agent_without_model_keeps_system_default_unpinned(manager) -> None:
     agent = manager.create_agent("inherits-system-model", config={})
 
     assert "model" not in agent["config"]
+
+
+class _LocalWorkerEngine:
+    engine_id = "ollama"
+
+    def list_models(self):
+        return ["qwen3.5:4b", "granite-code:3b"]
+
+
+def _local_first_system():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        model="cloud-default",
+        config=SimpleNamespace(
+            governance=SimpleNamespace(
+                prefer_local=True,
+                preferred_models="qwen3.5:4b,granite-code:3b",
+            )
+        ),
+    )
+
+
+def test_managed_worker_preserves_explicit_model() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"model": "explicit-model", "instruction": "Write Python code"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Write Python code",
+    )
+
+    assert selected == "explicit-model"
+
+
+def test_managed_worker_routes_coding_instruction_locally() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"instruction": "Refactor this Python service and add unit tests"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Refactor this Python service and add unit tests",
+    )
+
+    assert selected == "granite-code:3b"
+
+
+def test_managed_worker_routes_general_instruction_locally() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {"instruction": "Summarize the latest project notes"},
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Summarize the latest project notes",
+    )
+
+    assert selected == "qwen3.5:4b"
+
+
+def test_smart_managed_worker_never_falls_back_to_cloud_default() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    class _CloudOnlyEngine:
+        engine_id = "cloud"
+
+        def list_models(self):
+            return ["gpt-4o"]
+
+    selected = _resolve_managed_worker_model(
+        {"model": "smart", "instruction": "Summarize this"},
+        _local_first_system(),
+        _CloudOnlyEngine(),
+        "Summarize this",
+    )
+
+    assert selected == ""
+
+
+def test_managed_worker_honors_explicit_capability_hint() -> None:
+    from openjarvis.agents.executor import _resolve_managed_worker_model
+
+    selected = _resolve_managed_worker_model(
+        {
+            "capability": "multimodal",
+            "instruction": "Review the Python code shown in this screenshot",
+        },
+        _local_first_system(),
+        _LocalWorkerEngine(),
+        "Review the Python code shown in this screenshot",
+    )
+
+    assert selected == "qwen3.5:4b"
+
+
+def test_quality_task_completes_with_findings(executor, manager):
+    agent = manager.create_agent(
+        name="quality-reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-1",
+            "quality_stage": "anti-slop",
+        },
+    )
+    task = manager.create_task(agent["id"], "anti-slop: review changes")
+    config = dict(agent["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(agent["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        return_value=AgentResult(content="No material issues found."),
+    ):
+        executor.execute_tick(agent["id"])
+
+    updated = manager.list_tasks(agent["id"])[0]
+    assert updated["status"] == "completed"
+    assert updated["progress"]["pipeline_id"] == "pipeline-1"
+    assert updated["progress"]["stage"] == "anti-slop"
+    assert updated["findings"] == ["No material issues found."]
+
+
+def test_quality_task_failure_is_persisted(executor, manager):
+    agent = manager.create_agent(
+        name="quality-reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-2",
+            "quality_stage": "thermos",
+        },
+    )
+    task = manager.create_task(agent["id"], "thermos: review release")
+    config = dict(agent["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(agent["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        side_effect=FatalError("review failed"),
+    ):
+        executor.execute_tick(agent["id"])
+
+    updated = manager.list_tasks(agent["id"])[0]
+    assert updated["status"] == "failed"
+    assert updated["progress"]["pipeline_id"] == "pipeline-2"
+    assert updated["progress"]["stage"] == "thermos"
+    assert updated["findings"] == ["review failed"]
+
+
+def test_quality_reviewer_waits_for_previous_stage(executor, manager):
+    coordinator = manager.create_agent(
+        name="quality coordinator",
+        agent_type="orchestrator",
+        config={"quality_pipeline_id": "pipeline-chain"},
+    )
+    dependency = manager.create_task(
+        coordinator["id"],
+        "build-tests",
+        status="pending",
+    )
+    reviewer = manager.create_agent(
+        name="visual reviewer",
+        agent_type="monitor_operative",
+        config={
+            "quality_pipeline_id": "pipeline-chain",
+            "quality_pipeline_role": "reviewer",
+            "quality_stage": "multimodal-review",
+        },
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "multimodal-review",
+        status="pending",
+    )
+    manager.update_task(
+        task["id"],
+        progress={
+            "pipeline_id": "pipeline-chain",
+            "stage": "multimodal-review",
+            "kind": "agent",
+            "depends_on_task_id": dependency["id"],
+            "reviewer_agent_id": reviewer["id"],
+        },
+    )
+    config = dict(reviewer["config"])
+    config["quality_task_id"] = task["id"]
+    manager.update_agent(reviewer["id"], config=config)
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        return_value=AgentResult(content="visual review complete"),
+    ) as invoke:
+        executor.execute_tick(reviewer["id"])
+        invoke.assert_not_called()
+        assert manager.get_task(task["id"])["status"] == "pending"
+
+        manager.update_task(dependency["id"], status="completed")
+        executor.execute_tick(reviewer["id"])
+
+        invoke.assert_called_once()
+        updated = manager.get_task(task["id"])
+        assert updated["status"] == "completed"
+        assert updated["progress"]["depends_on_task_id"] == dependency["id"]
+
+
+def test_project_specialist_tick_persists_handoff_without_auto_complete(
+    executor, manager
+) -> None:
+    coordinator = manager.create_agent(
+        name="Project Coordinator",
+        agent_type="orchestrator",
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "backend: implement API",
+        status="active",
+    )
+    worker = manager.create_agent(
+        name="Backend Specialist",
+        agent_type="orchestrator",
+        config={
+            "project_role": "specialist",
+            "project_stream": "backend",
+            "project_task_id": task["id"],
+        },
+    )
+
+    result = AgentResult(content="Implemented API; pytest 24 passed; ready for review.")
+    with patch.object(executor, "_invoke_agent", return_value=result):
+        executor.execute_tick(worker["id"])
+
+    updated = manager.get_task(task["id"])
+    assert updated["status"] == "active"
+    assert updated["progress"]["handoff_ready"] is True
+    assert updated["progress"]["worker_status"] == "completed_tick"
+    assert updated["progress"]["worker_agent_id"] == worker["id"]
+    assert updated["progress"]["last_handoff_at"] > 0
+    assert updated["findings"] == [result.content]
+
+
+def test_project_specialist_failure_marks_handoff_needs_attention(
+    executor, manager
+) -> None:
+    coordinator = manager.create_agent(
+        name="Project Coordinator",
+        agent_type="orchestrator",
+    )
+    task = manager.create_task(
+        coordinator["id"],
+        "backend: implement API",
+        status="active",
+    )
+    worker = manager.create_agent(
+        name="Backend Specialist",
+        agent_type="orchestrator",
+        config={
+            "project_role": "specialist",
+            "project_stream": "backend",
+            "project_task_id": task["id"],
+        },
+    )
+
+    with patch.object(
+        executor,
+        "_invoke_agent",
+        side_effect=FatalError("worker failed"),
+    ):
+        executor.execute_tick(worker["id"])
+
+    updated = manager.get_task(task["id"])
+    assert updated["status"] == "needs_attention"
+    assert updated["progress"]["handoff_ready"] is False
+    assert updated["progress"]["worker_status"] == "needs_attention"
+    assert "worker failed" in updated["findings"][-1]

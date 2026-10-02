@@ -25,6 +25,7 @@ class AgentTemplate:
     tools: List[str] = field(default_factory=list)
     max_turns: int = 10
     temperature: float = 0.7
+    capability: str = "general"
 
 
 def load_template(path: str | Path) -> AgentTemplate:
@@ -64,6 +65,7 @@ def load_template(path: str | Path) -> AgentTemplate:
         tools=agent_data.get("tools", []),
         max_turns=agent_data.get("max_turns", 10),
         temperature=agent_data.get("temperature", 0.7),
+        capability=agent_data.get("capability", "general"),
     )
 
 

@@ -4,7 +4,6 @@ import { BrowserRouter } from 'react-router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App';
 import { initApiBase } from './lib/api';
-import { initAnalytics } from './lib/analytics';
 import './index.css';
 
 function applyTheme() {
@@ -30,7 +29,7 @@ applyTheme();
 initApiBase().finally(() => {
   // Kick off analytics init in the background — it's never awaited so
   // a slow/failed identity fetch never delays UI render.
-  void initAnalytics();
+  void import('./lib/analytics').then(({ initAnalytics }) => initAnalytics());
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>

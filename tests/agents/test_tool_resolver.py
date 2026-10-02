@@ -12,6 +12,7 @@ from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
 from openjarvis.tools import description_loader
 from openjarvis.tools._stubs import BaseTool, ToolSpec
+from openjarvis.tools.agent_tools import DomainTaskDispatchTool
 
 
 class _AlphaTool(BaseTool):
@@ -67,6 +68,35 @@ class _MCPOnlyTool(BaseTool):
 
     def execute(self, **params) -> ToolResult:
         return ToolResult(tool_name="mcp_only", content="mcp-only", success=True)
+
+
+class _MCPDeviceTool(BaseTool):
+    tool_id = "mcp_device"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="start_process",
+            description="Remote process tool",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "deviceId": {"type": "string"},
+                    "command": {"type": "string"},
+                },
+            },
+        )
+
+    def execute(self, **params) -> ToolResult:
+        self.calls.append(dict(params))
+        return ToolResult(
+            tool_name="start_process",
+            content=str(params.get("deviceId", "")),
+            success=True,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -262,6 +292,41 @@ def test_mcp_tools_merge_after_native_tools_without_name_collisions() -> None:
     ]
 
 
+def test_mcp_device_tool_receives_runtime_device_default() -> None:
+    remote = _MCPDeviceTool()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {
+                "tools": [],
+                "runtime_machine": "MarketingIndo",
+                "runtime_device_id": "device-marketing",
+            },
+        },
+        engine=object(),
+        model="test-model",
+        mcp_tools=[remote],
+    )
+
+    result = resolved.by_name["start_process"].execute(command="echo ready")
+
+    assert result.success is True
+    assert result.content == "device-marketing"
+    assert remote.calls == [
+        {
+            "deviceId": "device-marketing",
+            "command": "echo ready",
+        }
+    ]
+
+    override = resolved.by_name["start_process"].execute(
+        command="echo override",
+        deviceId="manual-device",
+    )
+    assert override.content == "manual-device"
+
+
 def test_mcp_tools_can_be_disabled_per_agent() -> None:
     ToolRegistry.register_value("shared", _NativeSharedTool)
 
@@ -282,3 +347,149 @@ def test_mcp_tools_can_be_disabled_per_agent() -> None:
 
     assert [tool.spec.name for tool in resolved.instances] == ["shared"]
     assert resolved.mcp_clients == []
+
+
+def test_agent_workspace_binds_native_shell_and_git_defaults(tmp_path) -> None:
+    class _WorkspaceShellTool(BaseTool):
+        tool_id = "shell_exec"
+
+        @property
+        def spec(self) -> ToolSpec:
+            return ToolSpec(name="shell_exec", description="workspace shell")
+
+        def execute(self, **params) -> ToolResult:
+            return ToolResult(
+                tool_name="shell_exec",
+                content=str(params.get("working_dir", "")),
+                success=True,
+            )
+
+    class _WorkspaceGitTool(BaseTool):
+        tool_id = "git_status"
+
+        @property
+        def spec(self) -> ToolSpec:
+            return ToolSpec(name="git_status", description="workspace git")
+
+        def execute(self, **params) -> ToolResult:
+            return ToolResult(
+                tool_name="git_status",
+                content=str(params.get("repo_path", "")),
+                success=True,
+            )
+
+    _WorkspaceShellTool.__module__ = "openjarvis.tools.shell_exec"
+    _WorkspaceGitTool.__module__ = "openjarvis.tools.git_tool"
+    ToolRegistry.register_value("shell_exec", _WorkspaceShellTool)
+    ToolRegistry.register_value("git_status", _WorkspaceGitTool)
+
+    workspace = str(tmp_path / "worktree")
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {
+                "workspace": workspace,
+                "tools": ["shell_exec", "git_status"],
+            },
+        },
+        engine=object(),
+        model="test-model",
+    )
+
+    assert resolved.by_name["shell_exec"].execute(command="pwd").content == workspace
+    assert resolved.by_name["git_status"].execute().content == workspace
+    assert (
+        resolved.by_name["shell_exec"]
+        .execute(
+            command="pwd",
+            working_dir="override",
+        )
+        .content
+        == "override"
+    )
+    assert (
+        resolved.by_name["git_status"].execute(repo_path="override").content
+        == "override"
+    )
+
+
+def test_task_dispatch_receives_live_agent_manager_and_executor() -> None:
+    ToolRegistry.register_value("task_dispatch", DomainTaskDispatchTool)
+    manager = object()
+    executor = object()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "orchestrator",
+            "config": {"tools": ["task_dispatch"]},
+        },
+        engine=object(),
+        model="test-model",
+        agent_manager=manager,
+        agent_executor=executor,
+    )
+
+    tool = resolved.by_name["task_dispatch"]
+    assert tool._manager is manager
+    assert tool._executor is executor
+
+
+def test_domain_worker_memory_tools_inherit_domain_default() -> None:
+    from openjarvis.tools.storage_tools import MemoryStoreTool
+
+    class _Backend:
+        def __init__(self) -> None:
+            self.metadata: list[dict[str, object]] = []
+
+        def store(self, content, *, source="", metadata=None):
+            self.metadata.append(dict(metadata or {}))
+            return f"doc-{len(self.metadata)}"
+
+    backend = _Backend()
+    ToolRegistry.clear()
+    ToolRegistry.register_value("memory_store", MemoryStoreTool)
+    try:
+        resolved = tool_resolver.resolve_agent_tools(
+            {
+                "agent_type": "orchestrator",
+                "config": {
+                    "domain": "finance",
+                    "tools": ["memory_store"],
+                },
+            },
+            engine=object(),
+            model="test-model",
+            memory_backend=backend,
+        )
+
+        first = resolved.by_name["memory_store"].execute(content="Budget decision")
+        second = resolved.by_name["memory_store"].execute(
+            content="Personal preference",
+            domain="personal",
+        )
+
+        assert first.success is True
+        assert second.success is True
+        assert backend.metadata[0]["domain"] == "finance"
+        assert backend.metadata[1]["domain"] == "personal"
+    finally:
+        ToolRegistry.clear()
+
+
+def test_project_advance_receives_manager_and_executor():
+    from openjarvis.agents.tool_resolver import instantiate_registered_tool
+    from openjarvis.tools.agent_tools import ProjectAdvanceTool
+
+    manager = object()
+    executor = object()
+    tool = instantiate_registered_tool(
+        ProjectAdvanceTool,
+        "project_advance",
+        engine=None,
+        model="",
+        agent_manager=manager,
+        agent_executor=executor,
+    )
+
+    assert tool._manager is manager
+    assert tool._executor is executor

@@ -386,3 +386,101 @@ class TestTraceRoutes:
         client = TestClient(_make_app())
         resp = client.get("/v1/traces")
         assert resp.status_code == 200
+
+
+def test_manager_backed_agent_api_lifecycle(tmp_path):
+    import json
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.tools.agent_tools import _SPAWNED_AGENTS
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    app = _make_app()
+    app.state.agent_manager = manager
+    client = TestClient(app)
+    _SPAWNED_AGENTS.clear()
+
+    try:
+        created = client.post(
+            "/v1/agents",
+            json={
+                "agent_type": "orchestrator",
+                "agent_id": "api-managed-1",
+                "name": "API Code Worker",
+                "query": "Refactor this Python API and add unit tests",
+                "tools": ["file_read", "think"],
+                "model": "smart",
+            },
+        )
+        assert created.status_code == 200
+        payload = json.loads(created.json()["content"])
+        assert payload["managed"] is True
+        assert payload["status"] == "idle"
+        assert payload["capability"] == "coding"
+
+        record = manager.get_agent("api-managed-1")
+        assert record is not None
+        assert record["config"]["model"] == "smart"
+        assert record["config"]["capability"] == "coding"
+
+        listed = client.get("/v1/agents")
+        assert listed.status_code == 200
+        assert any(
+            item["agent_id"] == "api-managed-1" and item["managed"] is True
+            for item in listed.json()["running"]
+        )
+
+        messaged = client.post(
+            "/v1/agents/api-managed-1/message",
+            json={"message": "Start with the controller layer."},
+        )
+        assert messaged.status_code == 200
+        assert messaged.json()["status"] == "queued"
+        assert messaged.json()["queued"] is True
+
+        stopped = client.delete("/v1/agents/api-managed-1")
+        assert stopped.status_code == 200
+        assert stopped.json()["status"] == "paused"
+        assert manager.get_agent("api-managed-1")["status"] == "paused"
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()
+
+
+def test_manager_backed_agent_api_spawns_template(tmp_path):
+    import json
+
+    from openjarvis.agents.manager import AgentManager
+    from openjarvis.tools.agent_tools import _SPAWNED_AGENTS
+
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    app = _make_app()
+    app.state.agent_manager = manager
+    client = TestClient(app)
+    _SPAWNED_AGENTS.clear()
+
+    try:
+        response = client.post(
+            "/v1/agents",
+            json={
+                "template": "qwen_mm_reviewer",
+                "agent_id": "api-visual-1",
+                "name": "API Visual QA",
+                "query": "Review this dashboard screenshot",
+                "model": "smart",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = json.loads(response.json()["content"])
+        assert payload["agent_type"] == "orchestrator"
+        assert payload["capability"] == "multimodal"
+        assert payload["managed"] is True
+
+        record = manager.get_agent("api-visual-1")
+        assert record is not None
+        assert record["config"]["capability"] == "multimodal"
+        assert "dashboard screenshot" in record["config"]["system_prompt"]
+    finally:
+        manager.close()
+        _SPAWNED_AGENTS.clear()

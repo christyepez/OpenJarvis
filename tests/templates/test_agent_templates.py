@@ -33,6 +33,7 @@ def test_load_single_template() -> None:
     assert len(tpl.tools) > 0
     assert isinstance(tpl.max_turns, int)
     assert isinstance(tpl.temperature, float)
+    assert tpl.capability == "coding"
 
 
 def test_discover_all_templates() -> None:

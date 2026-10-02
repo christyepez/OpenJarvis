@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Dict
 
 from openjarvis.core.registry import ToolRegistry
@@ -34,9 +36,12 @@ _SPAWNED_AGENTS: Dict[str, Dict[str, Any]] = {}
 
 @ToolRegistry.register("agent_spawn")
 class AgentSpawnTool(BaseTool):
-    """Spawn a new agent instance and optionally send it an initial query."""
+    """Spawn a new agent instance and optionally persist it via AgentManager."""
 
     tool_id = "agent_spawn"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -52,8 +57,14 @@ class AgentSpawnTool(BaseTool):
                     "agent_type": {
                         "type": "string",
                         "description": (
-                            "Agent registry key (e.g. 'simple',"
-                            " 'orchestrator', 'native_react')."
+                            "Agent registry key when not spawning from a template."
+                        ),
+                    },
+                    "template": {
+                        "type": "string",
+                        "description": (
+                            "Optional managed-agent template id, e.g. "
+                            "'qwen_mm_reviewer' or 'anti_slop_reviewer'."
                         ),
                     },
                     "query": {
@@ -72,31 +83,137 @@ class AgentSpawnTool(BaseTool):
                             "Custom agent ID. Auto-generated if not provided."
                         ),
                     },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional display name for the spawned agent.",
+                    },
+                    "capability": {
+                        "type": "string",
+                        "description": (
+                            "Optional routing capability: general, coding, "
+                            "or multimodal."
+                        ),
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Optional explicit model or 'smart' for local-first "
+                            "routing."
+                        ),
+                    },
                 },
-                "required": ["agent_type"],
+                "anyOf": [
+                    {"required": ["agent_type"]},
+                    {"required": ["template"]},
+                ],
             },
             category="agents",
             required_capabilities=["system:admin"],
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_type = params.get("agent_type", "")
-        if not agent_type:
+        agent_type = str(params.get("agent_type", "") or "").strip()
+        template = str(params.get("template", "") or "").strip()
+        if not agent_type and not template:
             return ToolResult(
                 tool_name="agent_spawn",
-                content="No agent_type provided.",
+                content="Provide agent_type or template.",
+                success=False,
+            )
+        if template and self._manager is None:
+            return ToolResult(
+                tool_name="agent_spawn",
+                content="Template spawn requires an AgentManager.",
                 success=False,
             )
 
         agent_id = params.get("agent_id") or uuid.uuid4().hex[:12]
-        query = params.get("query", "")
-        tools = params.get("tools", "")
+        query = str(params.get("query", "") or "")
+        tools = str(params.get("tools", "") or "")
+        capability_param = str(params.get("capability", "") or "").strip().casefold()
+        model = str(params.get("model", "") or "").strip()
+        name = str(params.get("name", "") or "").strip()
+
+        status = "running"
+        managed = False
+        capability = capability_param
+        record: Dict[str, Any] | None = None
+        if self._manager is not None:
+            overrides: Dict[str, Any] = {}
+            if capability_param:
+                overrides["capability"] = capability_param
+            if query:
+                overrides["instruction"] = query
+            if tools:
+                overrides["tools"] = [
+                    item.strip() for item in tools.split(",") if item.strip()
+                ]
+            if model:
+                overrides["model"] = model
+
+            try:
+                if template:
+                    record = self._manager.create_from_template(
+                        template,
+                        name or template.replace("_", " ").title(),
+                        overrides=overrides,
+                        agent_id=agent_id,
+                    )
+                else:
+                    if not capability and query:
+                        try:
+                            from openjarvis.governance.execution_router import (
+                                classify_task_capability,
+                            )
+
+                            capability = classify_task_capability(query)
+                        except Exception:
+                            capability = "general"
+                    capability = capability or "general"
+                    config = dict(overrides)
+                    config["capability"] = capability
+                    record = self._manager.create_agent(
+                        name=name or f"{agent_type}-{str(agent_id)[:6]}",
+                        agent_type=agent_type,
+                        config=config,
+                        agent_id=agent_id,
+                    )
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_spawn",
+                    content=f"Failed to create managed agent: {exc}",
+                    success=False,
+                )
+
+            config = record.get("config", {}) or {}
+            capability = (
+                str(config.get("capability", capability or "general"))
+                .strip()
+                .casefold()
+                or "general"
+            )
+            agent_type = str(record.get("agent_type", agent_type))
+            status = str(record.get("status", "idle"))
+            managed = True
+        else:
+            if not capability and query:
+                try:
+                    from openjarvis.governance.execution_router import (
+                        classify_task_capability,
+                    )
+
+                    capability = classify_task_capability(query)
+                except Exception:
+                    capability = "general"
+            capability = capability or "general"
 
         entry: Dict[str, Any] = {
             "agent_id": agent_id,
             "agent_type": agent_type,
-            "status": "running",
+            "status": status,
             "created_at": time.time(),
+            "capability": capability,
+            "managed": managed,
         }
         if tools:
             entry["tools"] = tools
@@ -108,7 +225,9 @@ class AgentSpawnTool(BaseTool):
         result_data: Dict[str, Any] = {
             "agent_id": agent_id,
             "agent_type": agent_type,
-            "status": "running",
+            "status": status,
+            "capability": capability,
+            "managed": managed,
         }
         if query:
             result_data["initial_query"] = query
@@ -121,15 +240,3473 @@ class AgentSpawnTool(BaseTool):
 
 
 # ---------------------------------------------------------------------------
+# DomainTaskDispatchTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_dispatch")
+class DomainTaskDispatchTool(BaseTool):
+    """Dispatch and optionally execute a bounded non-project domain task."""
+
+    tool_id = "task_dispatch"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Dispatch a bounded task to a managed local-first specialist. "
+                "The task is classified by domain and capability and is reused "
+                "idempotently when the same task is dispatched again."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "instruction": {
+                        "type": "string",
+                        "description": "Task or question for the specialist.",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": (
+                            "Optional memory/task domain: personal, professional, "
+                            "project, knowledge, finance, learning, communication, "
+                            "temporal, or general."
+                        ),
+                    },
+                    "capability": {
+                        "type": "string",
+                        "description": (
+                            "Optional worker capability: general, coding, multimodal."
+                        ),
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": (
+                            "Optional explicit model. Defaults to 'smart' local-first "
+                            "routing."
+                        ),
+                    },
+                    "task_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional stable idempotency key. Derived from the task "
+                            "when omitted."
+                        ),
+                    },
+                    "quality_mode": {
+                        "type": "string",
+                        "enum": ["auto", "none", "required"],
+                        "description": (
+                            "Optional quality policy. auto applies proportional "
+                            "quality by capability."
+                        ),
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Optional display name for the managed worker.",
+                    },
+                },
+                "required": ["instruction"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    @staticmethod
+    def _stable_key(domain: str, instruction: str) -> str:
+        raw = f"{domain}|{instruction.strip().casefold()}"
+        return uuid.uuid5(uuid.NAMESPACE_URL, raw).hex[:16]
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task dispatch requires an AgentManager.",
+                success=False,
+            )
+
+        instruction = str(params.get("instruction", "") or "").strip()
+        if not instruction:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="instruction is required.",
+                success=False,
+            )
+
+        from openjarvis.governance.domain_quality import DomainQualityPlanner
+        from openjarvis.governance.execution_router import classify_task_capability
+        from openjarvis.memory.context_router import ContextRouter, MemoryDomain
+
+        explicit_domain = str(params.get("domain", "") or "").strip().casefold()
+        try:
+            route = ContextRouter().route(
+                instruction,
+                explicit_domain=explicit_domain or None,
+            )
+        except ValueError:
+            allowed = ", ".join(domain.value for domain in MemoryDomain)
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported domain. Supported: {allowed}",
+                success=False,
+            )
+
+        domain = route.primary.value
+        explicit_capability = str(params.get("capability", "") or "").strip().casefold()
+        if explicit_capability and explicit_capability not in {
+            "general",
+            "coding",
+            "multimodal",
+        }:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Unsupported capability. Supported: general, coding, multimodal"
+                ),
+                success=False,
+            )
+        capability = explicit_capability or classify_task_capability(instruction)
+        quality_mode = (
+            str(params.get("quality_mode", "auto") or "auto").strip().casefold()
+        )
+        if quality_mode not in {"auto", "none", "required"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=("Unsupported quality_mode. Supported: auto, none, required"),
+                success=False,
+            )
+        quality_plan = DomainQualityPlanner().plan(
+            capability=capability,
+            domain=domain,
+            quality_mode=quality_mode,
+        )
+        quality_stages = [stage.value for stage in quality_plan.stages]
+        model = str(params.get("model", "") or "").strip() or "smart"
+        task_key = str(params.get("task_key", "") or "").strip() or self._stable_key(
+            domain, instruction
+        )
+
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            same_key = str(config.get("domain_task_key", "") or "") == task_key
+            if same_key and str(agent.get("status", "")) != "archived":
+                current = agent
+                current_config = dict(config)
+                started = False
+                start_error = ""
+                quality_payload: dict[str, Any] | None = None
+                quality_error = ""
+                handoff_ready = bool(current_config.get("domain_handoff_ready", False))
+                existing_error = str(current_config.get("domain_last_error", "") or "")
+
+                if (
+                    self._executor is not None
+                    and not handoff_ready
+                    and not existing_error
+                ):
+                    started = True
+                    try:
+                        self._executor.execute_tick(agent["id"])
+                    except Exception as exc:
+                        start_error = str(exc)
+
+                    current = self._manager.get_agent(agent["id"]) or agent
+                    current_config = dict(current.get("config", {}) or {})
+                    result_text = str(current.get("summary_memory", "") or "")
+                    status = str(current.get("status", "") or "")
+                    execution_failed = (
+                        bool(start_error)
+                        or status.casefold() == "error"
+                        or result_text.lstrip().startswith("ERROR:")
+                    )
+                    handoff_ready = bool(not execution_failed and result_text.strip())
+                    error_text = start_error
+                    if not error_text and execution_failed:
+                        error_text = result_text or f"worker status: {status}"
+                    current_config.update(
+                        {
+                            "domain_handoff_ready": handoff_ready,
+                            "domain_last_completed_at": (
+                                time.time() if handoff_ready else 0.0
+                            ),
+                            "domain_last_error": error_text,
+                        }
+                    )
+                    self._manager.update_agent(
+                        agent["id"],
+                        config=current_config,
+                    )
+
+                    quality_required = bool(
+                        current_config.get(
+                            "domain_quality_required",
+                            quality_plan.required,
+                        )
+                    )
+                    quality_pipeline_id = str(
+                        current_config.get("domain_quality_pipeline_id", "") or ""
+                    )
+                    if handoff_ready and quality_required and not quality_pipeline_id:
+                        current_quality_stages = list(
+                            current_config.get(
+                                "domain_quality_stages",
+                                quality_stages,
+                            )
+                            or []
+                        )
+                        quality_result = QualityPipelineTool(
+                            manager=self._manager
+                        ).execute(
+                            objective=(
+                                "Quality review for domain task: " + instruction
+                            ),
+                            domain_task_key=task_key,
+                            stages=current_quality_stages,
+                        )
+                        if quality_result.success:
+                            quality_payload = json.loads(quality_result.content)
+                        else:
+                            quality_error = quality_result.content
+                else:
+                    result_text = str(current.get("summary_memory", "") or "")
+
+                status_result = DomainTaskStatusTool(manager=self._manager).execute(
+                    task_key=task_key
+                )
+                status_payload = (
+                    json.loads(status_result.content) if status_result.success else {}
+                )
+
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=json.dumps(
+                        {
+                            "agent_id": agent["id"],
+                            "domain": domain,
+                            "capability": str(
+                                current_config.get("capability", capability)
+                                or capability
+                            ),
+                            "model": str(current_config.get("model", model) or model),
+                            "task_key": task_key,
+                            "quality_mode": str(
+                                current_config.get("domain_quality_mode", quality_mode)
+                                or quality_mode
+                            ),
+                            "quality_required": bool(
+                                current_config.get(
+                                    "domain_quality_required",
+                                    quality_plan.required,
+                                )
+                            ),
+                            "quality_stages": list(
+                                current_config.get(
+                                    "domain_quality_stages",
+                                    quality_stages,
+                                )
+                                or []
+                            ),
+                            "quality_pipeline_id": str(
+                                status_payload.get("quality_pipeline_id", "") or ""
+                            ),
+                            "quality_status": str(
+                                status_payload.get("quality_status", "") or ""
+                            ),
+                            "quality_next_action": str(
+                                status_payload.get("quality_next_action", "") or ""
+                            ),
+                            "quality": quality_payload,
+                            "quality_error": quality_error,
+                            "state": str(status_payload.get("state", "") or ""),
+                            "reused": True,
+                            "started": started,
+                            "handoff_ready": bool(
+                                status_payload.get("handoff_ready", handoff_ready)
+                            ),
+                            "result": result_text,
+                            "error": str(
+                                status_payload.get("error", "") or start_error
+                            ),
+                        }
+                    ),
+                    success=not bool(start_error or quality_error),
+                )
+
+        name = str(params.get("name", "") or "").strip()
+        worker = self._manager.create_from_template(
+            "domain_specialist",
+            name or f"{domain.title()} Specialist",
+            overrides={
+                "instruction": instruction,
+                "model": model,
+                "capability": capability,
+                "domain": domain,
+                "domain_task_key": task_key,
+                "domain_role": "specialist",
+                "domain_handoff_ready": False,
+                "domain_quality_mode": quality_mode,
+                "domain_quality_required": quality_plan.required,
+                "domain_quality_stages": quality_stages,
+                "domain_quality_reason": quality_plan.reason,
+            },
+            agent_id=f"task-{domain}-{uuid.uuid4().hex[:8]}",
+        )
+
+        started = False
+        start_error = ""
+        if self._executor is not None:
+            started = True
+            try:
+                self._executor.execute_tick(worker["id"])
+            except Exception as exc:
+                start_error = str(exc)
+
+        current = self._manager.get_agent(worker["id"]) or worker
+        current_config = dict(current.get("config", {}) or {})
+        result_text = str(current.get("summary_memory", "") or "")
+        handoff_ready = bool(started and not start_error and result_text.strip())
+        current_config.update(
+            {
+                "domain_handoff_ready": handoff_ready,
+                "domain_last_completed_at": time.time() if handoff_ready else 0.0,
+            }
+        )
+        if start_error:
+            current_config["domain_last_error"] = start_error
+        self._manager.update_agent(worker["id"], config=current_config)
+
+        quality_payload: dict[str, Any] | None = None
+        quality_error = ""
+        if handoff_ready and quality_plan.required:
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
+                objective=f"Quality review for domain task: {instruction}",
+                domain_task_key=task_key,
+                stages=quality_stages,
+            )
+            if quality_result.success:
+                quality_payload = json.loads(quality_result.content)
+            else:
+                quality_error = quality_result.content
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "agent_id": worker["id"],
+                    "domain": domain,
+                    "secondary_domains": [
+                        secondary.value for secondary in route.secondary
+                    ],
+                    "capability": capability,
+                    "model": model,
+                    "task_key": task_key,
+                    "quality_mode": quality_mode,
+                    "quality_required": quality_plan.required,
+                    "quality_stages": quality_stages,
+                    "quality_reason": quality_plan.reason,
+                    "quality_pipeline_id": (
+                        str((quality_payload or {}).get("pipeline_id", "") or "")
+                    ),
+                    "quality": quality_payload,
+                    "quality_error": quality_error,
+                    "reused": False,
+                    "started": started,
+                    "handoff_ready": handoff_ready,
+                    "result": result_text,
+                    "error": start_error,
+                }
+            ),
+            success=not bool(start_error or quality_error),
+        )
+
+
+# ---------------------------------------------------------------------------
+# DomainTaskStatusTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_status")
+class DomainTaskStatusTool(BaseTool):
+    """Return the persisted state of one non-project domain task."""
+
+    tool_id = "task_status"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Inspect one persisted non-project task by task_key. Returns "
+                "domain, capability, model, worker status, handoff state, result, "
+                "and any persisted execution error."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task status requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("domain_task_key", "") or "") != task_key:
+                continue
+            if str(agent.get("status", "") or "") == "archived":
+                continue
+
+            handoff_ready = bool(config.get("domain_handoff_ready", False))
+            error = str(config.get("domain_last_error", "") or "")
+            quality_required = bool(config.get("domain_quality_required", False))
+            quality_pipeline_id = str(
+                config.get("domain_quality_pipeline_id", "") or ""
+            )
+            if quality_required:
+                quality_status, quality_next_action = _project_quality_state(
+                    self._manager,
+                    quality_pipeline_id,
+                )
+            else:
+                quality_status, quality_next_action = (
+                    "not_required",
+                    "complete",
+                )
+
+            quality_stages: list[dict[str, Any]] = []
+            if quality_pipeline_id:
+                coordinator = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == quality_pipeline_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if coordinator is not None:
+                    for task in sorted(
+                        self._manager.list_tasks(coordinator["id"]),
+                        key=lambda row: int(
+                            ((row.get("progress", {}) or {}).get("order", 999))
+                        ),
+                    ):
+                        progress = task.get("progress", {}) or {}
+                        quality_stages.append(
+                            {
+                                "stage": str(progress.get("stage", "") or ""),
+                                "status": str(
+                                    task.get("status", "pending") or "pending"
+                                ),
+                            }
+                        )
+
+            if error:
+                state = "error"
+            elif handoff_ready and quality_required:
+                if quality_status == "completed":
+                    state = "complete"
+                elif quality_status in {"failed", "needs_attention", "missing"}:
+                    state = "quality_failed"
+                else:
+                    state = "quality_pending"
+            elif handoff_ready:
+                state = "complete"
+            elif str(agent.get("status", "") or "").casefold() in {
+                "running",
+                "active",
+            }:
+                state = "running"
+            else:
+                state = "created"
+
+            if state == "error":
+                next_action = f"retry:{task_key}"
+            elif state in {"created", "quality_pending"}:
+                next_action = f"advance:{task_key}"
+            elif state == "quality_failed":
+                next_action = f"resolve-quality:{quality_pipeline_id}"
+            elif state == "running":
+                next_action = "wait"
+            else:
+                next_action = "complete"
+
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "task_key": task_key,
+                        "agent_id": str(agent.get("id", "") or ""),
+                        "state": state,
+                        "next_action": next_action,
+                        "status": str(agent.get("status", "") or ""),
+                        "domain": str(config.get("domain", "") or ""),
+                        "capability": str(config.get("capability", "") or ""),
+                        "model": str(config.get("model", "") or ""),
+                        "handoff_ready": handoff_ready,
+                        "quality_required": quality_required,
+                        "quality_pipeline_id": quality_pipeline_id,
+                        "quality_status": quality_status,
+                        "quality_next_action": quality_next_action,
+                        "quality_stages": quality_stages,
+                        "last_completed_at": float(
+                            config.get("domain_last_completed_at", 0.0) or 0.0
+                        ),
+                        "result": str(agent.get("summary_memory", "") or ""),
+                        "error": error,
+                    }
+                ),
+                success=True,
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=f"Domain task not found: {task_key}",
+            success=False,
+        )
+
+
+# ---------------------------------------------------------------------------
+# DomainTaskRetryTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_retry")
+class DomainTaskRetryTool(BaseTool):
+    """Retry one persisted non-project domain task on the same worker."""
+
+    tool_id = "task_retry"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Retry an existing non-project task by task_key using the same "
+                "managed worker. Does not create a duplicate worker."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None or self._executor is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task retry requires AgentManager and AgentExecutor.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        target: dict[str, Any] | None = None
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("domain_task_key", "") or "") == task_key:
+                if str(agent.get("status", "") or "") != "archived":
+                    target = agent
+                    break
+
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Domain task not found: {task_key}",
+                success=False,
+            )
+
+        config = dict(target.get("config", {}) or {})
+        config.update(
+            {
+                "domain_handoff_ready": False,
+                "domain_last_error": "",
+            }
+        )
+        self._manager.update_agent(target["id"], config=config)
+
+        start_error = ""
+        try:
+            self._executor.execute_tick(target["id"])
+        except Exception as exc:
+            start_error = str(exc)
+
+        current = self._manager.get_agent(target["id"]) or target
+        current_config = dict(current.get("config", {}) or {})
+        result_text = str(current.get("summary_memory", "") or "")
+        status = str(current.get("status", "") or "")
+        execution_failed = (
+            bool(start_error)
+            or status.casefold() == "error"
+            or result_text.lstrip().startswith("ERROR:")
+        )
+        handoff_ready = bool(not execution_failed and result_text.strip())
+
+        error_text = start_error
+        if not error_text and execution_failed:
+            error_text = result_text or f"worker status: {status}"
+
+        current_config.update(
+            {
+                "domain_handoff_ready": handoff_ready,
+                "domain_last_completed_at": time.time() if handoff_ready else 0.0,
+                "domain_last_error": error_text,
+            }
+        )
+        self._manager.update_agent(target["id"], config=current_config)
+
+        quality_pipeline_id = str(
+            current_config.get("domain_quality_pipeline_id", "") or ""
+        )
+        quality_payload: dict[str, Any] | None = None
+        quality_error = ""
+        if (
+            handoff_ready
+            and bool(current_config.get("domain_quality_required", False))
+            and not quality_pipeline_id
+        ):
+            quality_stages = list(current_config.get("domain_quality_stages", []) or [])
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
+                objective=(
+                    "Quality review for recovered domain task: "
+                    + str(current_config.get("instruction", "") or task_key)
+                ),
+                domain_task_key=task_key,
+                stages=quality_stages,
+            )
+            if quality_result.success:
+                quality_payload = json.loads(quality_result.content)
+                quality_pipeline_id = str(quality_payload.get("pipeline_id", "") or "")
+            else:
+                quality_error = quality_result.content
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "agent_id": target["id"],
+                    "retried": True,
+                    "handoff_ready": handoff_ready,
+                    "status": status,
+                    "result": result_text,
+                    "error": error_text,
+                    "quality_pipeline_id": quality_pipeline_id,
+                    "quality": quality_payload,
+                    "quality_error": quality_error,
+                }
+            ),
+            success=not bool(execution_failed or quality_error),
+        )
+
+
+# ---------------------------------------------------------------------------
+# DomainTaskAdvanceTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_advance")
+class DomainTaskAdvanceTool(BaseTool):
+    """Advance one persisted non-project task through its quality lifecycle."""
+
+    tool_id = "task_advance"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance a persisted non-project task safely. Returns complete "
+                "only when the task handoff is ready and any required quality "
+                "pipeline has completed."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "task_key": {"type": "string"},
+                },
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task advance requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        status_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        before = json.loads(status_result.content)
+        quality_payload: dict[str, Any] | None = None
+
+        if before.get("state") == "error":
+            action = "retry-required"
+        elif before.get("state") == "created":
+            if self._executor is None:
+                action = "wait-executor"
+            else:
+                execution = DomainTaskRetryTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(task_key=task_key)
+                if not execution.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=execution.content,
+                        success=False,
+                    )
+                execution_payload = json.loads(execution.content)
+                quality_payload = execution_payload.get("quality")
+                action = "task-executed"
+        elif not bool(before.get("handoff_ready", False)):
+            action = "wait-handoff"
+        elif not bool(before.get("quality_required", False)):
+            action = "complete"
+        else:
+            quality_status = str(
+                before.get("quality_status", "not_started") or "not_started"
+            )
+            quality_pipeline_id = str(before.get("quality_pipeline_id", "") or "")
+
+            if quality_status == "completed":
+                action = "complete"
+            elif quality_status in {"failed", "needs_attention", "missing"}:
+                action = "resolve-quality"
+            elif quality_status == "not_started":
+                agent = self._manager.get_agent(str(before["agent_id"]))
+                config = dict((agent or {}).get("config", {}) or {})
+                quality_stages = list(config.get("domain_quality_stages", []) or [])
+                result = QualityPipelineTool(manager=self._manager).execute(
+                    objective=(
+                        "Quality review for domain task: "
+                        + str(config.get("instruction", "") or task_key)
+                    ),
+                    domain_task_key=task_key,
+                    stages=quality_stages,
+                )
+                if not result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(result.content)
+                action = "quality-started"
+            elif self._executor is None:
+                action = "quality-await-executor"
+            else:
+                result = QualityAdvanceTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(pipeline_id=quality_pipeline_id)
+                if not result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(result.content)
+                action = "quality-advanced"
+
+        after_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        after = json.loads(after_result.content) if after_result.success else before
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "action": action,
+                    "quality": quality_payload,
+                    "status": after,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# DomainTaskNextActionTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("task_next_action")
+class DomainTaskNextActionTool(BaseTool):
+    """Execute the current safe next action for a persisted domain task."""
+
+    tool_id = "task_next_action"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Execute the current safe next action for a persisted non-project "
+                "task. Retry/advance actions are executed; wait/complete are no-ops; "
+                "quality resolution remains blocked until explicit evidence is "
+                "supplied."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {"task_key": {"type": "string"}},
+                "required": ["task_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Task next action requires an AgentManager.",
+                success=False,
+            )
+
+        task_key = str(params.get("task_key", "") or "").strip()
+        if not task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="task_key is required.",
+                success=False,
+            )
+
+        status_result = DomainTaskStatusTool(manager=self._manager).execute(
+            task_key=task_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        status = json.loads(status_result.content)
+        recommended = str(status.get("next_action", "") or "")
+
+        if recommended.startswith("retry:"):
+            result = DomainTaskRetryTool(
+                manager=self._manager,
+                executor=self._executor,
+            ).execute(task_key=task_key)
+            action = "retry"
+            executed = result.success
+            payload = json.loads(result.content) if result.success else result.content
+        elif recommended.startswith("advance:"):
+            result = DomainTaskAdvanceTool(
+                manager=self._manager,
+                executor=self._executor,
+            ).execute(task_key=task_key)
+            action = "advance"
+            payload = json.loads(result.content) if result.success else result.content
+            executed = bool(
+                result.success
+                and isinstance(payload, dict)
+                and payload.get("action")
+                not in {"wait-executor", "wait-handoff", "quality-await-executor"}
+            )
+        elif recommended.startswith("resolve-quality:"):
+            action = "quality-evidence-required"
+            executed = False
+            payload = status
+        elif recommended in {"wait", "complete"}:
+            action = recommended or "noop"
+            executed = False
+            payload = status
+        else:
+            action = "unknown"
+            executed = False
+            payload = status
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "task_key": task_key,
+                    "recommended_action": recommended,
+                    "action": action,
+                    "executed": executed,
+                    "result": payload,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# ProjectBootstrapTool
+# ---------------------------------------------------------------------------
+
+
+_PROJECT_STREAMS = (
+    "architecture",
+    "backend",
+    "frontend",
+    "data",
+    "devops",
+    "security",
+    "documentation",
+    "integration",
+    "qa",
+)
+
+
+def _project_key(project_name: str, repository: str) -> str:
+    raw = f"{project_name}|{repository}".casefold()
+    return "".join(ch for ch in raw if ch.isalnum() or ch in {"-", "_", "/", ":"})
+
+
+def _infer_project_streams(objective: str) -> list[str]:
+    text = objective.casefold()
+    streams = ["architecture"]
+    hints = {
+        "backend": ("api", "backend", ".net", "python", "service", "microservice"),
+        "frontend": ("frontend", "angular", "react", "ui", "web", "flutter"),
+        "data": ("data", "database", "sql", "power bi", "etl", "analytics"),
+        "devops": ("docker", "pipeline", "ci/cd", "devops", "deploy", "kubernetes"),
+        "security": ("security", "oauth", "rbac", "jwt", "zero trust"),
+        "documentation": ("documentation", "docs", "hld", "lld", "c4", "adr"),
+    }
+    for stream, keywords in hints.items():
+        if any(keyword in text for keyword in keywords):
+            streams.append(stream)
+    streams.extend(["integration", "qa"])
+    return list(dict.fromkeys(streams))
+
+
+@ToolRegistry.register("project_bootstrap")
+class ProjectBootstrapTool(BaseTool):
+    """Create a persistent project orchestrator and parallel execution board."""
+
+    tool_id = "project_bootstrap"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Bootstrap a project into one persistent orchestrator plus an "
+                "ordered execution board. Reuses an existing bootstrap when found."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string"},
+                    "objective": {"type": "string"},
+                    "repository": {"type": "string"},
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Optional local project workspace or worktree path."
+                        ),
+                    },
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated streams. Supported: "
+                            + ", ".join(_PROJECT_STREAMS)
+                        ),
+                    },
+                    "runtime_machines": {
+                        "type": "string",
+                        "description": ("Optional comma-separated runtime machines."),
+                    },
+                },
+                "required": ["project_name", "objective"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project bootstrap requires an AgentManager.",
+                success=False,
+            )
+
+        project_name = str(params.get("project_name", "") or "").strip()
+        objective = str(params.get("objective", "") or "").strip()
+        repository = str(params.get("repository", "") or "").strip()
+        workspace = str(params.get("workspace", "") or "").strip()
+        if not project_name or not objective:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_name and objective are required.",
+                success=False,
+            )
+
+        key = _project_key(project_name, repository)
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            same_project = str(config.get("project_bootstrap_key", "") or "") == key
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
+            if same_project and coordinator:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=json.dumps(
+                        {
+                            "project_name": project_name,
+                            "project_key": key,
+                            "orchestrator_agent_id": record["id"],
+                            "reused": True,
+                            "tasks": self._manager.list_tasks(record["id"]),
+                        }
+                    ),
+                    success=True,
+                )
+
+        requested_streams = [
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        ]
+        streams = requested_streams or _infer_project_streams(objective)
+        invalid = [stream for stream in streams if stream not in _PROJECT_STREAMS]
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+        streams = list(dict.fromkeys(streams))
+        if "architecture" not in streams:
+            streams.insert(0, "architecture")
+        if "integration" not in streams:
+            streams.append("integration")
+        if "qa" not in streams:
+            streams.append("qa")
+        stream_order = {name: index for index, name in enumerate(_PROJECT_STREAMS)}
+        streams.sort(key=lambda name: stream_order[name])
+
+        runtime_machines = [
+            item.strip()
+            for item in str(params.get("runtime_machines", "") or "").split(",")
+            if item.strip()
+        ]
+
+        coordinator = self._manager.create_from_template(
+            "project_orchestrator",
+            f"{project_name} Orchestrator",
+            overrides={
+                "instruction": objective,
+                "model": "smart",
+                "project_name": project_name,
+                "repository": repository,
+                "workspace": workspace,
+                "project_bootstrap_key": key,
+                "project_role": "coordinator",
+                "runtime_machines": runtime_machines,
+            },
+            agent_id=f"project-{uuid.uuid4().hex[:10]}",
+        )
+
+        tasks: list[dict[str, Any]] = []
+        architecture_task_id = ""
+        implementation_task_ids: list[str] = []
+        integration_task_id = ""
+        for index, stream in enumerate(streams):
+            if stream == "architecture":
+                wave = "A"
+                state = "READY"
+                dependencies: list[str] = []
+            elif stream == "integration":
+                wave = "C"
+                state = "SERIAL"
+                dependencies = list(implementation_task_ids)
+            elif stream == "qa":
+                wave = "D"
+                state = "SERIAL"
+                dependencies = (
+                    [integration_task_id]
+                    if integration_task_id
+                    else list(implementation_task_ids)
+                )
+            else:
+                wave = "B"
+                state = "PARALLEL"
+                dependencies = [architecture_task_id] if architecture_task_id else []
+
+            task = self._manager.create_task(
+                coordinator["id"],
+                f"{stream}: {objective}",
+                status="pending",
+            )
+            progress = {
+                "project_key": key,
+                "stream": stream,
+                "wave": wave,
+                "execution_state": state,
+                "depends_on_task_ids": dependencies,
+                "order": index,
+            }
+            task = self._manager.update_task(task["id"], progress=progress)
+            if stream == "architecture":
+                architecture_task_id = task["id"]
+            elif stream == "integration":
+                integration_task_id = task["id"]
+            elif stream != "qa":
+                implementation_task_ids.append(task["id"])
+            tasks.append(task)
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_name": project_name,
+                    "project_key": key,
+                    "repository": repository,
+                    "workspace": workspace,
+                    "runtime_machines": runtime_machines,
+                    "orchestrator_agent_id": coordinator["id"],
+                    "reused": False,
+                    "streams": streams,
+                    "tasks": tasks,
+                }
+            ),
+            success=True,
+        )
+
+
+def _branch_component(value: str) -> str:
+    normalized = "".join(
+        ch.lower() if ch.isalnum() else "-" for ch in str(value or "").strip()
+    )
+    while "--" in normalized:
+        normalized = normalized.replace("--", "-")
+    return normalized.strip("-") or "project"
+
+
+def _project_coordinator(manager: Any, project_key: str) -> dict[str, Any] | None:
+    for record in manager.list_agents():
+        config = record.get("config", {}) or {}
+        same_project = str(config.get("project_bootstrap_key", "") or "") == project_key
+        coordinator = str(
+            config.get("project_role", "") or ""
+        ) == "coordinator" or not str(config.get("project_stream", "") or "")
+        if same_project and coordinator:
+            return record
+    return None
+
+
+def _project_quality_state(
+    manager: Any,
+    pipeline_id: str,
+) -> tuple[str, str]:
+    """Return quality status and the deterministic next project action."""
+    if not pipeline_id:
+        return "not_started", "start-quality-pipeline"
+
+    coordinator = next(
+        (
+            record
+            for record in manager.list_agents()
+            if str((record.get("config", {}) or {}).get("quality_pipeline_id", ""))
+            == pipeline_id
+            and str(
+                (record.get("config", {}) or {}).get("quality_pipeline_role", "")
+            ).casefold()
+            == "coordinator"
+        ),
+        None,
+    )
+    if coordinator is None:
+        return "missing", f"resolve-quality:{pipeline_id}"
+
+    tasks = list(manager.list_tasks(coordinator["id"]))
+    statuses = {
+        str(task.get("status", "pending") or "pending").casefold() for task in tasks
+    }
+    if "failed" in statuses:
+        return "failed", f"resolve-quality:{pipeline_id}"
+    if "needs_attention" in statuses:
+        return "needs_attention", f"resolve-quality:{pipeline_id}"
+    if tasks and statuses == {"completed"}:
+        return "completed", "complete"
+    if "active" in statuses or "running" in statuses:
+        return "active", f"advance-quality:{pipeline_id}"
+    return "pending", f"advance-quality:{pipeline_id}"
+
+
+@ToolRegistry.register("project_worktree_prepare")
+class ProjectWorktreePrepareTool(BaseTool):
+    """Create or reuse isolated Git worktrees for parallel project streams."""
+
+    tool_id = "project_worktree_prepare"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Prepare isolated Git worktrees for Wave B project streams and "
+                "persist each branch/workspace on the execution board."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "workspace": {
+                        "type": "string",
+                        "description": (
+                            "Optional base Git checkout path. Defaults to the "
+                            "workspace stored by project_bootstrap."
+                        ),
+                    },
+                    "worktree_root": {
+                        "type": "string",
+                        "description": (
+                            "Optional parent directory for generated worktrees."
+                        ),
+                    },
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated Wave B streams. Omit to "
+                            "prepare all parallel implementation streams."
+                        ),
+                    },
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            requires_confirmation=True,
+            required_capabilities=["system:admin", "file:write"],
+        )
+
+    @staticmethod
+    def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project worktree preparation requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        config = dict(project.get("config", {}) or {})
+        workspace_raw = str(
+            params.get("workspace", "") or config.get("workspace", "") or ""
+        ).strip()
+        if not workspace_raw:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "A local project workspace is required before preparing worktrees."
+                ),
+                success=False,
+            )
+
+        workspace = Path(workspace_raw).expanduser().resolve()
+        if not workspace.is_dir():
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project workspace does not exist: {workspace}",
+                success=False,
+            )
+
+        root_probe = self._git(["rev-parse", "--show-toplevel"], workspace)
+        if root_probe.returncode != 0:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project workspace is not a Git checkout: {workspace}",
+                success=False,
+            )
+        repo_root = Path(root_probe.stdout.strip()).resolve()
+
+        requested = {
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        }
+        invalid = sorted(requested - set(_PROJECT_STREAMS))
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+
+        project_slug = _branch_component(
+            str(config.get("project_name", "") or project_key)
+        )
+        root_raw = str(params.get("worktree_root", "") or "").strip()
+        worktree_root = (
+            Path(root_raw).expanduser().resolve()
+            if root_raw
+            else repo_root.parent / ".openjarvis-worktrees" / project_slug
+        )
+        worktree_root.mkdir(parents=True, exist_ok=True)
+
+        prepared: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        tasks = list(self._manager.list_tasks(project["id"]))
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream or (requested and stream not in requested):
+                continue
+            if str(progress.get("wave", "")) != "B":
+                if requested:
+                    skipped.append(
+                        {
+                            "stream": stream,
+                            "reason": "only Wave B streams use isolated worktrees",
+                        }
+                    )
+                continue
+
+            branch = f"openjarvis/{project_slug}/{_branch_component(stream)}"
+            destination = (worktree_root / _branch_component(stream)).resolve()
+
+            reused = False
+            if destination.is_dir():
+                probe = self._git(["rev-parse", "--show-toplevel"], destination)
+                if probe.returncode != 0:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=(
+                            f"Existing worktree destination is not a Git checkout: "
+                            f"{destination}"
+                        ),
+                        success=False,
+                    )
+                reused = True
+            else:
+                branch_probe = self._git(
+                    ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+                    repo_root,
+                )
+                if branch_probe.returncode == 0:
+                    add = self._git(
+                        ["worktree", "add", str(destination), branch],
+                        repo_root,
+                    )
+                else:
+                    add = self._git(
+                        [
+                            "worktree",
+                            "add",
+                            "-b",
+                            branch,
+                            str(destination),
+                            "HEAD",
+                        ],
+                        repo_root,
+                    )
+                if add.returncode != 0:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=(
+                            f"Failed to prepare worktree for {stream}: "
+                            f"{add.stderr.strip() or add.stdout.strip()}"
+                        ),
+                        success=False,
+                    )
+
+            progress["workspace"] = str(destination)
+            progress["branch"] = branch
+            self._manager.update_task(
+                task["id"],
+                progress=progress,
+            )
+
+            for agent in self._manager.list_agents():
+                agent_config = dict(agent.get("config", {}) or {})
+                if str(agent_config.get("project_task_id", "") or "") != str(
+                    task["id"]
+                ):
+                    continue
+                agent_config["workspace"] = str(destination)
+                agent_config["branch"] = branch
+                self._manager.update_agent(agent["id"], config=agent_config)
+
+            prepared.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "branch": branch,
+                    "workspace": str(destination),
+                    "reused": reused,
+                }
+            )
+
+        config["workspace"] = str(repo_root)
+        config["worktree_root"] = str(worktree_root)
+        self._manager.update_agent(project["id"], config=config)
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "repository_workspace": str(repo_root),
+                    "worktree_root": str(worktree_root),
+                    "prepared": prepared,
+                    "skipped": skipped,
+                }
+            ),
+            success=True,
+        )
+
+
+_PROJECT_CAPABILITIES = {
+    "architecture": "general",
+    "backend": "coding",
+    "frontend": "coding",
+    "data": "general",
+    "devops": "coding",
+    "security": "coding",
+    "documentation": "general",
+    "integration": "coding",
+    "qa": "coding",
+}
+
+
+def _project_stream_capability(stream: str, objective: str) -> str:
+    """Resolve a specialist capability from stream semantics and objective."""
+    baseline = _PROJECT_CAPABILITIES.get(stream, "general")
+
+    try:
+        from openjarvis.governance.execution_router import (
+            classify_task_capability,
+        )
+
+        inferred = classify_task_capability(objective)
+    except Exception:
+        return baseline
+
+    # UI/UX, architecture and documentation can legitimately need visual
+    # reasoning, but a generic project mention of a dashboard should not turn
+    # backend/devops/security workers into multimodal agents.
+    if stream in {"frontend", "architecture", "documentation", "data"}:
+        if inferred == "multimodal":
+            return "multimodal"
+
+    # Data streams become coding workers when their objective is explicitly
+    # implementation-oriented (SQL/Python/ETL/etc.).
+    if stream == "data" and inferred == "coding":
+        return "coding"
+
+    return baseline
+
+
+@ToolRegistry.register("project_status")
+class ProjectStatusTool(BaseTool):
+    """Return a compact execution-board snapshot for one project."""
+
+    tool_id = "project_status"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Inspect a project execution board before dispatching work. "
+                "Returns READY/BLOCKED/ACTIVE/DONE streams, dependencies, "
+                "assigned workers, and a deterministic next action."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project status requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        workers: dict[str, dict[str, Any]] = {}
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") != project_key:
+                continue
+            stream = str(config.get("project_stream", "") or "").casefold()
+            if stream and str(agent.get("status", "")) != "archived":
+                workers[stream] = agent
+
+        rows: list[dict[str, Any]] = []
+        ready: list[str] = []
+        active: list[str] = []
+        handoff_ready_streams: list[str] = []
+        failed: list[str] = []
+        exhausted: list[str] = []
+        blocked: list[str] = []
+        done: list[str] = []
+
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream:
+                continue
+            dependencies = [
+                str(value) for value in (progress.get("depends_on_task_ids", []) or [])
+            ]
+            unmet = [
+                dep_id
+                for dep_id in dependencies
+                if str((task_by_id.get(dep_id) or {}).get("status", "missing"))
+                != "completed"
+            ]
+            task_status = str(task.get("status", "pending") or "pending").casefold()
+            worker = workers.get(stream)
+            worker_status = str((worker or {}).get("status", "") or "").casefold()
+
+            if task_status == "completed":
+                state = "DONE"
+                done.append(stream)
+            elif worker and worker_status == "error":
+                retry_count = int(progress.get("retry_count", 0) or 0)
+                manual_retry = bool(progress.get("manual_retry_authorized", False))
+                if retry_count >= 3 and not manual_retry:
+                    state = "EXHAUSTED"
+                    exhausted.append(stream)
+                else:
+                    state = "ERROR"
+                    failed.append(stream)
+            elif task_status in {"active", "running", "in_progress"} or worker:
+                state = "ACTIVE"
+                active.append(stream)
+                if bool(progress.get("handoff_ready", False)):
+                    handoff_ready_streams.append(stream)
+            elif not unmet:
+                state = "READY"
+                ready.append(stream)
+            else:
+                state = "BLOCKED"
+                blocked.append(stream)
+
+            rows.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "state": state,
+                    "task_status": task_status,
+                    "dependencies": dependencies,
+                    "unmet_dependencies": unmet,
+                    "worker_agent_id": str((worker or {}).get("id", "") or ""),
+                    "worker_status": str(
+                        progress.get("worker_status", "")
+                        or (worker or {}).get("status", "")
+                        or ""
+                    ),
+                    "handoff_ready": bool(progress.get("handoff_ready", False)),
+                    "findings_count": len(task.get("findings", []) or []),
+                    "workspace": str(progress.get("workspace", "") or ""),
+                    "branch": str(progress.get("branch", "") or ""),
+                }
+            )
+
+        project_config = project.get("config", {}) or {}
+        quality_pipeline_id = str(project_config.get("quality_pipeline_id", "") or "")
+        quality_status, quality_action = _project_quality_state(
+            self._manager,
+            quality_pipeline_id,
+        )
+
+        if ready:
+            next_action = f"dispatch:{','.join(ready)}"
+        elif handoff_ready_streams:
+            next_action = f"review-handoff:{','.join(handoff_ready_streams)}"
+        elif failed:
+            next_action = f"retry-workers:{','.join(failed)}"
+        elif exhausted:
+            next_action = f"resolve-worker:{','.join(exhausted)}"
+        elif active:
+            next_action = f"wait-active:{','.join(active)}"
+        elif blocked:
+            next_action = f"resolve-dependencies:{','.join(blocked)}"
+        else:
+            next_action = quality_action
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "project_name": str(project_config.get("project_name", "") or ""),
+                    "runtime_machines": [
+                        str(value)
+                        for value in (project_config.get("runtime_machines", []) or [])
+                        if str(value)
+                    ],
+                    "summary": {
+                        "ready": len(ready),
+                        "active": len(active),
+                        "failed": len(failed),
+                        "exhausted": len(exhausted),
+                        "blocked": len(blocked),
+                        "done": len(done),
+                    },
+                    "ready_streams": ready,
+                    "active_streams": active,
+                    "handoff_ready_streams": handoff_ready_streams,
+                    "failed_streams": failed,
+                    "exhausted_streams": exhausted,
+                    "blocked_streams": blocked,
+                    "done_streams": done,
+                    "quality_pipeline_id": quality_pipeline_id,
+                    "quality_status": quality_status,
+                    "next_action": next_action,
+                    "streams": rows,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("project_advance")
+class ProjectAdvanceTool(BaseTool):
+    """Advance one project by dispatching and starting dependency-ready streams."""
+
+    tool_id = "project_advance"
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance a persisted project safely. Reads project_status first, "
+                "dispatches only READY streams, and otherwise reports whether to "
+                "wait, resolve dependencies, or complete. Never marks work done."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project advance requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        status_result = ProjectStatusTool(manager=self._manager).execute(
+            project_key=project_key
+        )
+        if not status_result.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=status_result.content,
+                success=False,
+            )
+
+        before = json.loads(status_result.content)
+        ready = list(before.get("ready_streams", []) or [])
+
+        dispatch_payload: dict[str, Any] | None = None
+        quality_payload: dict[str, Any] | None = None
+        retried_agents: list[str] = []
+        retry_errors: list[dict[str, str]] = []
+        action = "complete"
+        if ready:
+            dispatch_result = ProjectDispatchTool(manager=self._manager).execute(
+                project_key=project_key,
+                streams=",".join(ready),
+            )
+            if not dispatch_result.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=dispatch_result.content,
+                    success=False,
+                )
+            dispatch_payload = json.loads(dispatch_result.content)
+            action = "dispatched"
+        elif before.get("handoff_ready_streams"):
+            action = "review-handoff"
+        elif before.get("failed_streams"):
+            if self._executor is None:
+                action = "retry-await-executor"
+            else:
+                failed_streams = set(before.get("failed_streams", []) or [])
+                for row in before.get("streams", []) or []:
+                    if str(row.get("stream", "") or "") not in failed_streams:
+                        continue
+                    agent_id = str(row.get("worker_agent_id", "") or "")
+                    task_id = str(row.get("task_id", "") or "")
+                    if not agent_id:
+                        continue
+                    self._manager.update_agent(agent_id, status="idle")
+                    if task_id:
+                        task = self._manager.get_task(task_id)
+                        if task is not None:
+                            progress = dict(task.get("progress", {}) or {})
+                            progress["handoff_ready"] = False
+                            progress["worker_status"] = "retrying"
+                            progress["manual_retry_authorized"] = False
+                            progress["retry_count"] = (
+                                int(progress.get("retry_count", 0) or 0) + 1
+                            )
+                            progress["last_retry_at"] = time.time()
+                            self._manager.update_task(
+                                task_id,
+                                status=task.get("status", "active"),
+                                progress=progress,
+                            )
+                    try:
+                        self._executor.execute_tick(agent_id)
+                        retried_agents.append(agent_id)
+                        if task_id:
+                            task = self._manager.get_task(task_id)
+                            if task is not None:
+                                progress = dict(task.get("progress", {}) or {})
+                                if progress.get("worker_status") == "retrying":
+                                    current = self._manager.get_agent(agent_id) or {}
+                                    progress["worker_status"] = str(
+                                        current.get("status", "idle") or "idle"
+                                    )
+                                    self._manager.update_task(
+                                        task_id,
+                                        status=task.get("status", "active"),
+                                        progress=progress,
+                                    )
+                    except Exception as exc:
+                        retry_errors.append({"agent_id": agent_id, "error": str(exc)})
+                        self._manager.update_agent(agent_id, status="error")
+                        if task_id:
+                            task = self._manager.get_task(task_id)
+                            if task is not None:
+                                progress = dict(task.get("progress", {}) or {})
+                                progress["worker_status"] = "error"
+                                self._manager.update_task(
+                                    task_id,
+                                    status=task.get("status", "active"),
+                                    progress=progress,
+                                )
+                action = "workers-retried"
+        elif str(before.get("next_action", "")).startswith("resolve-worker:"):
+            action = "resolve-worker"
+        elif before.get("active_streams"):
+            action = "wait-active"
+        elif before.get("blocked_streams"):
+            action = "resolve-dependencies"
+        elif before.get("next_action") == "start-quality-pipeline":
+            project = _project_coordinator(self._manager, project_key)
+            project_config = dict((project or {}).get("config", {}) or {})
+            stream_names = {
+                str(row.get("stream", "") or "").casefold()
+                for row in (before.get("streams", []) or [])
+            }
+            quality_result = QualityPipelineTool(manager=self._manager).execute(
+                project_key=project_key,
+                objective=(
+                    "Release quality for project "
+                    + str(
+                        project_config.get("project_name", project_key) or project_key
+                    )
+                ),
+                has_code_changes=True,
+                has_visual_changes="frontend" in stream_names,
+                material_change=True,
+                release_candidate=True,
+            )
+            if not quality_result.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=quality_result.content,
+                    success=False,
+                )
+            quality_payload = json.loads(quality_result.content)
+            action = "quality-started"
+        elif str(before.get("next_action", "")).startswith("advance-quality:"):
+            pipeline_id = str(before.get("quality_pipeline_id", "") or "")
+            if self._executor is None:
+                action = "quality-await-executor"
+            else:
+                quality_result = QualityAdvanceTool(
+                    manager=self._manager,
+                    executor=self._executor,
+                ).execute(pipeline_id=pipeline_id)
+                if not quality_result.success:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=quality_result.content,
+                        success=False,
+                    )
+                quality_payload = json.loads(quality_result.content)
+                action = "quality-advanced"
+        elif str(before.get("next_action", "")).startswith("resolve-quality:"):
+            action = "resolve-quality"
+
+        started_agents: list[str] = list(retried_agents)
+        start_errors: list[dict[str, str]] = list(retry_errors)
+        if dispatch_payload is not None and self._executor is not None:
+            for item in dispatch_payload.get("dispatched", []) or []:
+                if item.get("reused") is True:
+                    continue
+                agent_id = str(item.get("agent_id", "") or "")
+                if not agent_id:
+                    continue
+                try:
+                    self._executor.execute_tick(agent_id)
+                    started_agents.append(agent_id)
+                except Exception as exc:
+                    start_errors.append({"agent_id": agent_id, "error": str(exc)})
+
+        after_result = ProjectStatusTool(manager=self._manager).execute(
+            project_key=project_key
+        )
+        after = json.loads(after_result.content) if after_result.success else before
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "action": action,
+                    "dispatched_streams": ready if action == "dispatched" else [],
+                    "started_agents": started_agents,
+                    "start_errors": start_errors,
+                    "dispatch": dispatch_payload,
+                    "quality": quality_payload,
+                    "status": after,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("project_worker_authorize_retry")
+class ProjectWorkerAuthorizeRetryTool(BaseTool):
+    """Authorize one explicit retry after a project worker exhausts auto retries."""
+
+    tool_id = "project_worker_authorize_retry"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Authorize one additional retry for an exhausted project worker. "
+                "Requires explicit evidence and preserves the retry counter/history."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "evidence": {"type": "string"},
+                },
+                "required": ["project_key", "stream", "evidence"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Worker retry authorization requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+        if not project_key or not stream or not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key, stream, and evidence are required.",
+                success=False,
+            )
+
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        worker = None
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+                and str(config.get("project_stream", "") or "").casefold() == stream
+                and str(agent.get("status", "") or "") != "archived"
+            ):
+                worker = agent
+                break
+        if worker is None or str(worker.get("status", "") or "").casefold() != "error":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Exhausted worker not found for stream: {stream}",
+                success=False,
+            )
+
+        target = None
+        for task in self._manager.list_tasks(project["id"]):
+            progress = task.get("progress", {}) or {}
+            if str(progress.get("stream", "") or "").casefold() == stream:
+                target = task
+                break
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project task not found for stream: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        retry_count = int(progress.get("retry_count", 0) or 0)
+        if retry_count < 3:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Worker retry limit is not exhausted for stream: {stream}",
+                success=False,
+            )
+
+        progress["manual_retry_authorized"] = True
+        progress["manual_retry_authorized_at"] = time.time()
+        progress["manual_retry_evidence"] = evidence
+        findings = list(target.get("findings", []) or [])
+        findings.append(f"MANUAL RETRY AUTHORIZED: {evidence}")
+        self._manager.update_task(
+            target["id"],
+            status=target.get("status", "active"),
+            progress=progress,
+            findings=findings[-10:],
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "worker_agent_id": worker["id"],
+                    "retry_count": retry_count,
+                    "authorized": True,
+                    "next_action": f"retry-workers:{stream}",
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("project_dispatch")
+class ProjectDispatchTool(BaseTool):
+    """Dispatch dependency-ready project streams to persistent workers."""
+
+    tool_id = "project_dispatch"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Create one managed specialist per dependency-ready project stream. "
+                "Dispatch is idempotent and never bypasses persisted dependencies."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "streams": {
+                        "type": "string",
+                        "description": (
+                            "Optional comma-separated stream filter. "
+                            "Omit to dispatch every currently ready stream."
+                        ),
+                    },
+                },
+                "required": ["project_key"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def _find_project(self, project_key: str) -> dict[str, Any] | None:
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            same_project = (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+            )
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
+            if same_project and coordinator:
+                return record
+        return None
+
+    @staticmethod
+    def _dependencies_ready(
+        task: dict[str, Any],
+        task_by_id: dict[str, dict[str, Any]],
+    ) -> bool:
+        progress = task.get("progress", {}) or {}
+        dependency_ids = [
+            str(value) for value in (progress.get("depends_on_task_ids", []) or [])
+        ]
+        return all(
+            str((task_by_id.get(dep_id) or {}).get("status", "missing")) == "completed"
+            for dep_id in dependency_ids
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project dispatch requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        if not project_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key is required.",
+                success=False,
+            )
+
+        requested = {
+            item.strip().casefold()
+            for item in str(params.get("streams", "") or "").split(",")
+            if item.strip()
+        }
+        invalid = sorted(requested - set(_PROJECT_STREAMS))
+        if invalid:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project streams: {', '.join(invalid)}",
+                success=False,
+            )
+
+        project = self._find_project(project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        project_config = project.get("config", {}) or {}
+        runtime_machines = [
+            str(value).strip()
+            for value in (project_config.get("runtime_machines", []) or [])
+            if str(value).strip()
+        ]
+        if "runtime_online_machines" in project_config:
+            assignment_machines = [
+                str(value).strip()
+                for value in (project_config.get("runtime_online_machines", []) or [])
+                if str(value).strip()
+            ]
+        else:
+            assignment_machines = runtime_machines
+        runtime_device_ids = {
+            str(name): str(device_id)
+            for name, device_id in (
+                project_config.get("runtime_device_ids", {}) or {}
+            ).items()
+            if str(name) and str(device_id)
+        }
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        existing_workers: dict[str, dict[str, Any]] = {}
+        for agent in self._manager.list_agents():
+            config = agent.get("config", {}) or {}
+            if str(config.get("project_bootstrap_key", "") or "") != project_key:
+                continue
+            stream = str(config.get("project_stream", "") or "").casefold()
+            if stream and str(agent.get("status", "")) != "archived":
+                existing_workers[stream] = agent
+
+        dispatched: list[dict[str, Any]] = []
+        blocked: list[dict[str, Any]] = []
+        for task in sorted(
+            tasks,
+            key=lambda row: int((row.get("progress", {}) or {}).get("order", 999)),
+        ):
+            progress = dict(task.get("progress", {}) or {})
+            stream = str(progress.get("stream", "") or "").casefold()
+            if not stream or (requested and stream not in requested):
+                continue
+
+            order = int(progress.get("order", 0) or 0)
+            if (
+                runtime_machines
+                and "runtime_online_machines" in project_config
+                and not assignment_machines
+            ):
+                blocked.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "reason": "runtime_machine_unavailable",
+                    }
+                )
+                continue
+            assigned_machine = (
+                assignment_machines[order % len(assignment_machines)]
+                if assignment_machines
+                else ""
+            )
+
+            existing = existing_workers.get(stream)
+            if existing is not None:
+                existing_config = existing.get("config", {}) or {}
+                dispatched.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "agent_id": existing["id"],
+                        "status": str(existing.get("status", "idle")),
+                        "runtime_machine": str(
+                            existing_config.get("runtime_machine", "") or ""
+                        ),
+                        "reused": True,
+                    }
+                )
+                continue
+
+            if str(task.get("status", "")) != "pending":
+                continue
+            if not self._dependencies_ready(task, task_by_id):
+                blocked.append(
+                    {
+                        "stream": stream,
+                        "task_id": task["id"],
+                        "reason": "dependencies",
+                    }
+                )
+                continue
+
+            capability = _project_stream_capability(
+                stream,
+                str(task.get("description", "") or ""),
+            )
+            stream_workspace = str(
+                progress.get("workspace", "")
+                or project_config.get("workspace", "")
+                or ""
+            )
+            stream_branch = str(progress.get("branch", "") or "")
+            instruction = (
+                f"Project: {project_config.get('project_name', '')}\n"
+                f"Repository: {project_config.get('repository', '')}\n"
+                f"Workspace: {stream_workspace}\n"
+                f"Branch: {stream_branch}\n"
+                f"Runtime machine: {assigned_machine or 'local'}\n"
+                f"Stream: {stream}\n"
+                f"Objective: {task.get('description', '')}"
+            )
+            worker = self._manager.create_from_template(
+                "project_specialist",
+                f"{project_config.get('project_name', 'Project')} - {stream}",
+                overrides={
+                    "instruction": instruction,
+                    "model": "smart",
+                    "capability": capability,
+                    "project_bootstrap_key": project_key,
+                    "project_role": "specialist",
+                    "project_stream": stream,
+                    "project_task_id": task["id"],
+                    "repository": str(project_config.get("repository", "") or ""),
+                    "workspace": stream_workspace,
+                    "branch": stream_branch,
+                    "runtime_machine": assigned_machine,
+                    "runtime_device_id": runtime_device_ids.get(assigned_machine, ""),
+                    "runtime_machine_status": ("online" if assigned_machine else ""),
+                    "runtime_machine_candidates": runtime_machines,
+                },
+                agent_id=f"project-{stream}-{uuid.uuid4().hex[:8]}",
+            )
+            if stream == "integration":
+                execution_state = "INTEGRATE"
+            elif str(progress.get("wave", "")) == "B":
+                execution_state = "PARALLEL"
+            else:
+                execution_state = "READY"
+            progress.update(
+                {
+                    "execution_state": execution_state,
+                    "worker_agent_id": worker["id"],
+                    "runtime_machine": assigned_machine,
+                    "runtime_machine_status": ("online" if assigned_machine else ""),
+                }
+            )
+            self._manager.update_task(
+                task["id"],
+                status="active",
+                progress=progress,
+            )
+            existing_workers[stream] = worker
+            dispatched.append(
+                {
+                    "stream": stream,
+                    "task_id": task["id"],
+                    "agent_id": worker["id"],
+                    "status": "active",
+                    "capability": capability,
+                    "runtime_machine": assigned_machine,
+                    "reused": False,
+                }
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "dispatched": dispatched,
+                    "blocked": blocked,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Project handoff review
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("project_handoff_review")
+class ProjectHandoffReviewTool(BaseTool):
+    """Approve or reject a worker handoff with explicit review evidence."""
+
+    tool_id = "project_handoff_review"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Review a project specialist handoff. Approval requires an existing "
+                "handoff_ready marker plus explicit reviewer evidence; rejection "
+                "returns the stream to needs_attention. Worker prose alone never "
+                "auto-completes the stream."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "decision": {
+                        "type": "string",
+                        "enum": ["approve", "reject"],
+                    },
+                    "review_evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete reviewer evidence or rejection reason."
+                        ),
+                    },
+                },
+                "required": [
+                    "project_key",
+                    "stream",
+                    "decision",
+                    "review_evidence",
+                ],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project handoff review requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        decision = str(params.get("decision", "") or "").strip().casefold()
+        review_evidence = str(params.get("review_evidence", "") or "").strip()
+
+        if not project_key or not stream:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key and stream are required.",
+                success=False,
+            )
+        if decision not in {"approve", "reject"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported handoff decision: {decision}",
+                success=False,
+            )
+        if not review_evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Handoff review requires explicit reviewer evidence.",
+                success=False,
+            )
+
+        project = _project_coordinator(self._manager, project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        target = next(
+            (
+                task
+                for task in tasks
+                if str((task.get("progress", {}) or {}).get("stream", "")).casefold()
+                == stream
+            ),
+            None,
+        )
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project stream not found: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        if not bool(progress.get("handoff_ready", False)):
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(f"Stream {stream} has no worker handoff ready for review."),
+                success=False,
+            )
+
+        findings = list(target.get("findings", []) or [])
+        findings.append(f"REVIEW {decision.upper()}: {review_evidence}")
+        progress.update(
+            {
+                "handoff_ready": False,
+                "handoff_decision": decision,
+                "handoff_review_evidence": review_evidence,
+                "handoff_reviewed_at": time.time(),
+            }
+        )
+
+        if decision == "reject":
+            progress["execution_state"] = "BLOCKED"
+            updated = self._manager.update_task(
+                target["id"],
+                status="needs_attention",
+                progress=progress,
+                findings=findings,
+            )
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "project_key": project_key,
+                        "stream": stream,
+                        "decision": decision,
+                        "status": updated["status"],
+                        "execution_state": progress["execution_state"],
+                        "review_evidence": review_evidence,
+                    }
+                ),
+                success=True,
+            )
+
+        self._manager.update_task(
+            target["id"],
+            status=str(target.get("status", "active") or "active"),
+            progress=progress,
+            findings=findings[-10:],
+        )
+        completion = ProjectStreamUpdateTool(manager=self._manager).execute(
+            project_key=project_key,
+            stream=stream,
+            status="completed",
+            evidence=f"Reviewer acceptance: {review_evidence}",
+        )
+        if not completion.success:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=completion.content,
+                success=False,
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "decision": decision,
+                    "status": "completed",
+                    "execution_state": "DONE",
+                    "review_evidence": review_evidence,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# ProjectStreamUpdateTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("project_stream_update")
+class ProjectStreamUpdateTool(BaseTool):
+    """Advance one project stream while enforcing persisted dependencies."""
+
+    tool_id = "project_stream_update"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Update a bootstrapped project stream. Dependency gates are "
+                "enforced and completed streams require concrete evidence."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "project_key": {"type": "string"},
+                    "stream": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "active",
+                            "completed",
+                            "failed",
+                            "needs_attention",
+                        ],
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete validation evidence. Required for completed."
+                        ),
+                    },
+                },
+                "required": ["project_key", "stream", "status"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def _find_project(self, project_key: str) -> dict[str, Any] | None:
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            same_project = (
+                str(config.get("project_bootstrap_key", "") or "") == project_key
+            )
+            coordinator = str(
+                config.get("project_role", "") or ""
+            ) == "coordinator" or not str(config.get("project_stream", "") or "")
+            if same_project and coordinator:
+                return record
+        return None
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Project stream update requires an AgentManager.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        stream = str(params.get("stream", "") or "").strip().casefold()
+        status = str(params.get("status", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+
+        if not project_key or not stream:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="project_key and stream are required.",
+                success=False,
+            )
+        if status not in {"active", "completed", "failed", "needs_attention"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported project stream status: {status}",
+                success=False,
+            )
+        if status == "completed" and not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Completing a project stream requires evidence.",
+                success=False,
+            )
+
+        project = self._find_project(project_key)
+        if project is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project bootstrap not found: {project_key}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(project["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+        target = next(
+            (
+                task
+                for task in tasks
+                if str((task.get("progress", {}) or {}).get("stream", "")).casefold()
+                == stream
+            ),
+            None,
+        )
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Project stream not found: {stream}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        dependency_ids = [
+            str(value) for value in (progress.get("depends_on_task_ids", []) or [])
+        ]
+        blocked = [
+            {
+                "task_id": dep_id,
+                "stream": str(
+                    ((task_by_id.get(dep_id) or {}).get("progress", {}) or {}).get(
+                        "stream", ""
+                    )
+                ),
+                "status": str((task_by_id.get(dep_id) or {}).get("status", "missing")),
+            }
+            for dep_id in dependency_ids
+            if str((task_by_id.get(dep_id) or {}).get("status", "missing"))
+            != "completed"
+        ]
+        if status in {"active", "completed"} and blocked:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "project_key": project_key,
+                        "stream": stream,
+                        "action": "blocked",
+                        "dependencies": blocked,
+                    }
+                ),
+                success=False,
+            )
+
+        if (
+            status == "completed"
+            and str(progress.get("worker_agent_id", "") or "")
+            and str(progress.get("handoff_decision", "") or "").casefold() != "approve"
+        ):
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Worker-assigned streams require an approved handoff via "
+                    "project_handoff_review before completion."
+                ),
+                success=False,
+            )
+
+        if status == "completed":
+            execution_state = "DONE"
+        elif status in {"failed", "needs_attention"}:
+            execution_state = "BLOCKED"
+        elif stream == "integration":
+            execution_state = "INTEGRATE"
+        elif str(progress.get("wave", "")) == "B":
+            execution_state = "PARALLEL"
+        else:
+            execution_state = "READY"
+
+        progress["execution_state"] = execution_state
+        findings = list(target.get("findings", []) or [])
+        if evidence:
+            findings.append(evidence)
+
+        updated = self._manager.update_task(
+            target["id"],
+            status=status,
+            progress=progress,
+            findings=findings,
+        )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "project_key": project_key,
+                    "stream": stream,
+                    "task_id": target["id"],
+                    "status": updated["status"],
+                    "execution_state": progress["execution_state"],
+                    "evidence": findings,
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# QualityPipelineTool
+# ---------------------------------------------------------------------------
+
+
+@ToolRegistry.register("quality_pipeline")
+class QualityPipelineTool(BaseTool):
+    """Plan quality gates and create the required managed review agents."""
+
+    tool_id = "quality_pipeline"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="quality_pipeline",
+            description=(
+                "Plan build/review/release quality gates and create managed "
+                "Qwen-MM, Anti-Slop, and Thermos reviewers when required."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "objective": {
+                        "type": "string",
+                        "description": "Implementation or review objective.",
+                    },
+                    "project_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional project to bind this quality pipeline to."
+                        ),
+                    },
+                    "domain_task_key": {
+                        "type": "string",
+                        "description": (
+                            "Optional non-project task to bind this quality "
+                            "pipeline to."
+                        ),
+                    },
+                    "stages": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "build-tests",
+                                "multimodal-review",
+                                "anti-slop",
+                                "thermos",
+                                "release",
+                            ],
+                        },
+                        "description": (
+                            "Optional explicit ordered quality stages. When omitted, "
+                            "the standard planner is used."
+                        ),
+                    },
+                    "has_code_changes": {"type": "boolean", "default": True},
+                    "has_visual_changes": {"type": "boolean", "default": False},
+                    "material_change": {"type": "boolean", "default": True},
+                    "release_candidate": {"type": "boolean", "default": False},
+                },
+                "required": ["objective"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality pipeline requires an AgentManager.",
+                success=False,
+            )
+
+        objective = str(params.get("objective", "") or "").strip()
+        if not objective:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="No quality objective provided.",
+                success=False,
+            )
+
+        project_key = str(params.get("project_key", "") or "").strip()
+        domain_task_key = str(params.get("domain_task_key", "") or "").strip()
+        if project_key and domain_task_key:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    "Quality pipeline can bind to either project_key or "
+                    "domain_task_key, not both."
+                ),
+                success=False,
+            )
+
+        project: dict[str, Any] | None = None
+        domain_agent: dict[str, Any] | None = None
+        if project_key:
+            project = _project_coordinator(self._manager, project_key)
+            if project is None:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=f"Project bootstrap not found: {project_key}",
+                    success=False,
+                )
+            project_config = dict(project.get("config", {}) or {})
+            existing_id = str(project_config.get("quality_pipeline_id", "") or "")
+            if existing_id:
+                existing = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == existing_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=json.dumps(
+                            {
+                                "pipeline_id": existing_id,
+                                "coordinator_agent_id": existing["id"],
+                                "objective": objective,
+                                "project_key": project_key,
+                                "reused": True,
+                                "stages": self._manager.list_tasks(existing["id"]),
+                            }
+                        ),
+                        success=True,
+                    )
+
+        if domain_task_key:
+            domain_agent = next(
+                (
+                    record
+                    for record in self._manager.list_agents()
+                    if str((record.get("config", {}) or {}).get("domain_task_key", ""))
+                    == domain_task_key
+                    and str(record.get("status", "") or "") != "archived"
+                ),
+                None,
+            )
+            if domain_agent is None:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=f"Domain task not found: {domain_task_key}",
+                    success=False,
+                )
+
+            domain_config = dict(domain_agent.get("config", {}) or {})
+            existing_id = str(domain_config.get("domain_quality_pipeline_id", "") or "")
+            if existing_id:
+                existing = next(
+                    (
+                        record
+                        for record in self._manager.list_agents()
+                        if str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_id", ""
+                            )
+                        )
+                        == existing_id
+                        and str(
+                            (record.get("config", {}) or {}).get(
+                                "quality_pipeline_role", ""
+                            )
+                        ).casefold()
+                        == "coordinator"
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=json.dumps(
+                            {
+                                "pipeline_id": existing_id,
+                                "coordinator_agent_id": existing["id"],
+                                "objective": objective,
+                                "project_key": "",
+                                "domain_task_key": domain_task_key,
+                                "reused": True,
+                                "stages": self._manager.list_tasks(existing["id"]),
+                            }
+                        ),
+                        success=True,
+                    )
+
+        from openjarvis.governance.quality_pipeline import (
+            QualityPipelinePlanner,
+            QualityStage,
+        )
+
+        explicit_stage_values = params.get("stages")
+        if explicit_stage_values is not None:
+            allowed_stages = {stage.value: stage for stage in QualityStage}
+            selected_stages: list[QualityStage] = []
+            for value in explicit_stage_values:
+                stage_name = str(value or "").strip()
+                stage = allowed_stages.get(stage_name)
+                if stage is None:
+                    return ToolResult(
+                        tool_name=self.tool_id,
+                        content=f"Unsupported quality stage: {stage_name}",
+                        success=False,
+                    )
+                selected_stages.append(stage)
+            if not selected_stages:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content="Explicit quality stages cannot be empty.",
+                    success=False,
+                )
+        else:
+            plan = QualityPipelinePlanner().plan(
+                has_code_changes=bool(params.get("has_code_changes", True)),
+                has_visual_changes=bool(params.get("has_visual_changes", False)),
+                material_change=bool(params.get("material_change", True)),
+                release_candidate=bool(params.get("release_candidate", False)),
+            )
+            selected_stages = list(plan.stages)
+
+        templates = {
+            QualityStage.MULTIMODAL_REVIEW: "qwen_mm_reviewer",
+            QualityStage.ANTI_SLOP: "anti_slop_reviewer",
+            QualityStage.THERMOS: "thermos_reviewer",
+        }
+        pipeline_id = uuid.uuid4().hex[:12]
+        coordinator_template = (
+            "domain_orchestrator" if domain_task_key else "project_orchestrator"
+        )
+        coordinator = self._manager.create_from_template(
+            coordinator_template,
+            f"Quality Pipeline {pipeline_id[:6]}",
+            overrides={
+                "instruction": objective,
+                "model": "smart",
+                "quality_pipeline_id": pipeline_id,
+                "quality_pipeline_role": "coordinator",
+                "quality_project_key": project_key,
+                "quality_domain_task_key": domain_task_key,
+            },
+            agent_id=f"quality-{pipeline_id}",
+        )
+
+        if project is not None:
+            project_config = dict(project.get("config", {}) or {})
+            project_config.update(
+                {
+                    "quality_pipeline_id": pipeline_id,
+                    "quality_status": "pending",
+                }
+            )
+            self._manager.update_agent(
+                project["id"],
+                config=project_config,
+            )
+
+        if domain_agent is not None:
+            domain_config = dict(domain_agent.get("config", {}) or {})
+            domain_config.update(
+                {
+                    "domain_quality_pipeline_id": pipeline_id,
+                    "domain_quality_status": "pending",
+                }
+            )
+            self._manager.update_agent(
+                domain_agent["id"],
+                config=domain_config,
+            )
+
+        spawn = AgentSpawnTool(manager=self._manager)
+        stages: list[dict[str, Any]] = []
+        previous_task_id = ""
+
+        for order, stage in enumerate(selected_stages):
+            template = templates.get(stage)
+            kind = "agent" if template is not None else "gate"
+            task = self._manager.create_task(
+                coordinator["id"],
+                f"{stage.value}: {objective}",
+                status="pending",
+            )
+            progress = {
+                "pipeline_id": pipeline_id,
+                "stage": stage.value,
+                "kind": kind,
+                "order": order,
+                "depends_on_task_id": previous_task_id,
+            }
+            previous_task_id = task["id"]
+
+            if template is None:
+                self._manager.update_task(task["id"], progress=progress)
+                stages.append(
+                    {
+                        "stage": stage.value,
+                        "kind": "gate",
+                        "task_id": task["id"],
+                        "status": "pending",
+                    }
+                )
+                continue
+
+            spawned = spawn.execute(
+                template=template,
+                name=f"Quality {stage.value}",
+                query=objective,
+                model="smart",
+            )
+            if not spawned.success:
+                return ToolResult(
+                    tool_name=self.tool_id,
+                    content=(
+                        f"Failed to create reviewer for {stage.value}: "
+                        f"{spawned.content}"
+                    ),
+                    success=False,
+                )
+
+            payload = json.loads(spawned.content)
+            reviewer = self._manager.get_agent(payload["agent_id"])
+            if reviewer is not None:
+                reviewer_config = dict(reviewer.get("config", {}) or {})
+                reviewer_config.update(
+                    {
+                        "quality_pipeline_id": pipeline_id,
+                        "quality_pipeline_role": "reviewer",
+                        "quality_project_key": project_key,
+                        "quality_domain_task_key": domain_task_key,
+                        "quality_task_id": task["id"],
+                        "quality_stage": stage.value,
+                    }
+                )
+                self._manager.update_agent(
+                    payload["agent_id"],
+                    config=reviewer_config,
+                )
+
+            progress["reviewer_agent_id"] = payload["agent_id"]
+            progress["template"] = template
+            self._manager.update_task(task["id"], progress=progress)
+            stages.append(
+                {
+                    "stage": stage.value,
+                    "kind": "agent",
+                    "template": template,
+                    "task_id": task["id"],
+                    "agent_id": payload["agent_id"],
+                    "status": payload["status"],
+                    "capability": payload["capability"],
+                }
+            )
+
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "coordinator_agent_id": coordinator["id"],
+                    "objective": objective,
+                    "project_key": project_key,
+                    "domain_task_key": domain_task_key,
+                    "reused": False,
+                    "stages": stages,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("quality_gate_update")
+class QualityGateUpdateTool(BaseTool):
+    """Update a deterministic quality gate with concrete evidence."""
+
+    tool_id = "quality_gate_update"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Update a deterministic quality gate such as build-tests or release. "
+                "Reviewer stages cannot be overridden with this tool."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string"},
+                    "stage": {
+                        "type": "string",
+                        "description": "Gate stage, e.g. build-tests or release.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["completed", "failed", "needs_attention"],
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": (
+                            "Concrete validation evidence or failure detail."
+                        ),
+                    },
+                },
+                "required": ["pipeline_id", "stage", "status"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality gate update requires an AgentManager.",
+                success=False,
+            )
+
+        pipeline_id = str(params.get("pipeline_id", "") or "").strip()
+        stage = str(params.get("stage", "") or "").strip()
+        status = str(params.get("status", "") or "").strip().casefold()
+        evidence = str(params.get("evidence", "") or "").strip()
+
+        if not pipeline_id or not stage:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="pipeline_id and stage are required.",
+                success=False,
+            )
+        if status not in {"completed", "failed", "needs_attention"}:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Unsupported gate status: {status}",
+                success=False,
+            )
+        if status == "completed" and not evidence:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Completing a quality gate requires evidence.",
+                success=False,
+            )
+
+        coordinator = None
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if (
+                str(config.get("quality_pipeline_id", "") or "") == pipeline_id
+                and str(config.get("quality_pipeline_role", "") or "").casefold()
+                == "coordinator"
+            ):
+                coordinator = record
+                break
+        if coordinator is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality pipeline not found: {pipeline_id}",
+                success=False,
+            )
+
+        target = None
+        for task in self._manager.list_tasks(coordinator["id"]):
+            progress = task.get("progress", {}) or {}
+            if str(progress.get("stage", "") or "") == stage:
+                target = task
+                break
+        if target is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality stage not found: {stage}",
+                success=False,
+            )
+
+        progress = dict(target.get("progress", {}) or {})
+        if str(progress.get("kind", "") or "") != "gate":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=(
+                    f"Stage '{stage}' is reviewer-managed and cannot be overridden."
+                ),
+                success=False,
+            )
+
+        findings = [evidence] if evidence else list(target.get("findings", []) or [])
+        updated = self._manager.update_task(
+            target["id"],
+            status=status,
+            progress=progress,
+            findings=findings,
+        )
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "stage": stage,
+                    "task_id": target["id"],
+                    "status": updated["status"],
+                    "evidence": findings,
+                }
+            ),
+            success=True,
+        )
+
+
+@ToolRegistry.register("quality_advance")
+class QualityAdvanceTool(BaseTool):
+    """Advance exactly one ready stage in a persistent quality pipeline."""
+
+    tool_id = "quality_advance"
+
+    _STAGE_ORDER = {
+        "build-tests": 0,
+        "multimodal-review": 1,
+        "anti-slop": 2,
+        "thermos": 3,
+        "release": 4,
+    }
+
+    def __init__(self, manager: Any = None, executor: Any = None) -> None:
+        self._manager = manager
+        self._executor = executor
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name=self.tool_id,
+            description=(
+                "Advance one ready quality stage. Deterministic gates request "
+                "evidence; reviewer stages execute their managed reviewer."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "pipeline_id": {"type": "string"},
+                },
+                "required": ["pipeline_id"],
+            },
+            category="agents",
+            required_capabilities=["system:admin"],
+        )
+
+    def execute(self, **params: Any) -> ToolResult:
+        if self._manager is None or self._executor is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content="Quality advance requires AgentManager and AgentExecutor.",
+                success=False,
+            )
+
+        pipeline_id = str(params.get("pipeline_id", "") or "").strip()
+        coordinator = None
+        for record in self._manager.list_agents():
+            config = record.get("config", {}) or {}
+            if (
+                str(config.get("quality_pipeline_id", "") or "") == pipeline_id
+                and str(config.get("quality_pipeline_role", "") or "").casefold()
+                == "coordinator"
+            ):
+                coordinator = record
+                break
+        if coordinator is None:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Quality pipeline not found: {pipeline_id}",
+                success=False,
+            )
+
+        tasks = list(self._manager.list_tasks(coordinator["id"]))
+        task_by_id = {str(task["id"]): task for task in tasks}
+
+        blocking = next(
+            (
+                task
+                for task in tasks
+                if str(task.get("status", "")) in {"failed", "needs_attention"}
+            ),
+            None,
+        )
+        if blocking is not None:
+            progress = blocking.get("progress", {}) or {}
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "pipeline_id": pipeline_id,
+                        "action": "blocked",
+                        "stage": progress.get("stage", ""),
+                        "status": blocking.get("status", ""),
+                    }
+                ),
+                success=True,
+            )
+
+        pending = [task for task in tasks if str(task.get("status", "")) == "pending"]
+        if not pending:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps({"pipeline_id": pipeline_id, "action": "complete"}),
+                success=True,
+            )
+
+        ready: list[dict[str, Any]] = []
+        for task in pending:
+            progress = task.get("progress", {}) or {}
+            dependency_id = str(progress.get("depends_on_task_id", "") or "")
+            dependency = task_by_id.get(dependency_id) if dependency_id else None
+            if not dependency_id or (
+                dependency is not None
+                and str(dependency.get("status", "")) == "completed"
+            ):
+                ready.append(task)
+
+        if not ready:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps({"pipeline_id": pipeline_id, "action": "waiting"}),
+                success=True,
+            )
+
+        ready.sort(
+            key=lambda task: self._STAGE_ORDER.get(
+                str((task.get("progress", {}) or {}).get("stage", "")),
+                99,
+            )
+        )
+        task = ready[0]
+        progress = task.get("progress", {}) or {}
+        stage = str(progress.get("stage", "") or "")
+        kind = str(progress.get("kind", "") or "")
+
+        if kind == "gate":
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=json.dumps(
+                    {
+                        "pipeline_id": pipeline_id,
+                        "action": "gate_requires_evidence",
+                        "stage": stage,
+                        "task_id": task["id"],
+                    }
+                ),
+                success=True,
+            )
+
+        reviewer_id = str(progress.get("reviewer_agent_id", "") or "")
+        if not reviewer_id:
+            return ToolResult(
+                tool_name=self.tool_id,
+                content=f"Reviewer missing for quality stage: {stage}",
+                success=False,
+            )
+
+        self._executor.execute_tick(reviewer_id)
+        updated = self._manager.get_task(task["id"]) or task
+        return ToolResult(
+            tool_name=self.tool_id,
+            content=json.dumps(
+                {
+                    "pipeline_id": pipeline_id,
+                    "action": "reviewer_executed",
+                    "stage": stage,
+                    "task_id": task["id"],
+                    "agent_id": reviewer_id,
+                    "status": updated.get("status", "unknown"),
+                }
+            ),
+            success=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # AgentSendTool
 # ---------------------------------------------------------------------------
 
 
 @ToolRegistry.register("agent_send")
 class AgentSendTool(BaseTool):
-    """Send a message to a previously spawned agent."""
+    """Send a message to a spawned or managed agent."""
 
     tool_id = "agent_send"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -155,8 +3732,8 @@ class AgentSendTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_id = params.get("agent_id", "")
-        message = params.get("message", "")
+        agent_id = str(params.get("agent_id", "") or "")
+        message = str(params.get("message", "") or "")
 
         if not agent_id:
             return ToolResult(
@@ -165,7 +3742,14 @@ class AgentSendTool(BaseTool):
                 success=False,
             )
 
-        if agent_id not in _SPAWNED_AGENTS:
+        managed_record = None
+        if self._manager is not None:
+            try:
+                managed_record = self._manager.get_agent(agent_id)
+            except Exception:
+                managed_record = None
+
+        if managed_record is None and agent_id not in _SPAWNED_AGENTS:
             return ToolResult(
                 tool_name="agent_send",
                 content=f"Agent '{agent_id}' not found.",
@@ -178,6 +3762,18 @@ class AgentSendTool(BaseTool):
                 content="No message provided.",
                 success=False,
             )
+
+        queued = False
+        if managed_record is not None:
+            try:
+                self._manager.send_message(agent_id, message, mode="queued")
+                queued = True
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_send",
+                    content=f"Failed to queue managed-agent message: {exc}",
+                    success=False,
+                )
 
         # Publish event if event bus is available
         try:
@@ -199,7 +3795,8 @@ class AgentSendTool(BaseTool):
             content=json.dumps(
                 {
                     "agent_id": agent_id,
-                    "delivered": True,
+                    "delivered": not queued,
+                    "queued": queued,
                     "message": message,
                 }
             ),
@@ -214,9 +3811,12 @@ class AgentSendTool(BaseTool):
 
 @ToolRegistry.register("agent_list")
 class AgentListTool(BaseTool):
-    """List all spawned agents and their current status."""
+    """List spawned and managed agents with their current status."""
 
     tool_id = "agent_list"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -234,22 +3834,46 @@ class AgentListTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        if not _SPAWNED_AGENTS:
-            return ToolResult(
-                tool_name="agent_list",
-                content="No agents spawned.",
-                success=True,
-            )
+        agents: list[dict[str, Any]] = []
+        seen: set[str] = set()
 
-        agents = []
+        if self._manager is not None:
+            try:
+                for record in self._manager.list_agents():
+                    agent_id = str(record.get("id", ""))
+                    if not agent_id:
+                        continue
+                    agents.append(
+                        {
+                            "agent_id": agent_id,
+                            "agent_type": str(record.get("agent_type", "")),
+                            "status": str(record.get("status", "unknown")),
+                            "created_at": float(record.get("created_at", 0.0) or 0.0),
+                            "managed": True,
+                        }
+                    )
+                    seen.add(agent_id)
+            except Exception as exc:
+                logger.warning("Managed agent listing failed: %s", exc)
+
         for agent_id, info in _SPAWNED_AGENTS.items():
+            if agent_id in seen:
+                continue
             agents.append(
                 {
                     "agent_id": agent_id,
                     "agent_type": info["agent_type"],
                     "status": info["status"],
                     "created_at": info["created_at"],
+                    "managed": bool(info.get("managed", False)),
                 }
+            )
+
+        if not agents:
+            return ToolResult(
+                tool_name="agent_list",
+                content="No agents spawned.",
+                success=True,
             )
 
         return ToolResult(
@@ -266,9 +3890,12 @@ class AgentListTool(BaseTool):
 
 @ToolRegistry.register("agent_kill")
 class AgentKillTool(BaseTool):
-    """Kill (stop) a spawned agent by its ID."""
+    """Stop a spawned or managed agent by its ID."""
 
     tool_id = "agent_kill"
+
+    def __init__(self, manager: Any = None) -> None:
+        self._manager = manager
 
     @property
     def spec(self) -> ToolSpec:
@@ -291,7 +3918,7 @@ class AgentKillTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        agent_id = params.get("agent_id", "")
+        agent_id = str(params.get("agent_id", "") or "")
 
         if not agent_id:
             return ToolResult(
@@ -300,25 +3927,64 @@ class AgentKillTool(BaseTool):
                 success=False,
             )
 
-        if agent_id not in _SPAWNED_AGENTS:
+        managed_record = None
+        if self._manager is not None:
+            try:
+                managed_record = self._manager.get_agent(agent_id)
+            except Exception:
+                managed_record = None
+
+        if managed_record is None and agent_id not in _SPAWNED_AGENTS:
             return ToolResult(
                 tool_name="agent_kill",
                 content=f"Agent '{agent_id}' not found.",
                 success=False,
             )
 
-        _SPAWNED_AGENTS[agent_id]["status"] = "stopped"
+        result_status = "stopped"
+        if managed_record is not None:
+            try:
+                self._manager.pause_agent(agent_id)
+                result_status = "paused"
+            except Exception as exc:
+                return ToolResult(
+                    tool_name="agent_kill",
+                    content=f"Failed to pause managed agent: {exc}",
+                    success=False,
+                )
+
+        if agent_id in _SPAWNED_AGENTS:
+            _SPAWNED_AGENTS[agent_id]["status"] = result_status
 
         return ToolResult(
             tool_name="agent_kill",
             content=json.dumps(
                 {
                     "agent_id": agent_id,
-                    "status": "stopped",
+                    "status": result_status,
                 }
             ),
             success=True,
         )
 
 
-__all__ = ["AgentKillTool", "AgentListTool", "AgentSendTool", "AgentSpawnTool"]
+__all__ = [
+    "AgentKillTool",
+    "AgentListTool",
+    "AgentSendTool",
+    "AgentSpawnTool",
+    "DomainTaskAdvanceTool",
+    "DomainTaskDispatchTool",
+    "DomainTaskRetryTool",
+    "DomainTaskStatusTool",
+    "ProjectAdvanceTool",
+    "ProjectBootstrapTool",
+    "ProjectDispatchTool",
+    "ProjectHandoffReviewTool",
+    "ProjectStatusTool",
+    "ProjectWorktreePrepareTool",
+    "ProjectStreamUpdateTool",
+    "QualityAdvanceTool",
+    "QualityGateUpdateTool",
+    "QualityPipelineTool",
+]

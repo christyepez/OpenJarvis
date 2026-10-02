@@ -644,6 +644,13 @@ class InstrumentedEngine(InferenceEngine):
     def list_models(self) -> List[str]:
         return self._inner.list_models()
 
+    def models_by_engine(self) -> Dict[str, List[str]] | None:
+        """Expose grouped model discovery when the wrapped engine supports it."""
+        grouped = getattr(self._inner, "models_by_engine", None)
+        if not callable(grouped):
+            return None
+        return grouped()
+
     def health(self) -> bool:
         return self._inner.health()
 

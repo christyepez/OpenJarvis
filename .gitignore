@@ -128,6 +128,7 @@ learning.db
 *.session.json
 
 # Local dev artifacts (hybrid worker logs + cli debug dumps)
+.models/
 minion_logs/
 *.oj-debug.json
 oj-debug.*.json

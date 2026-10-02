@@ -34,6 +34,12 @@ def ensure_registered() -> None:
 
     _reg_heuristic()
 
+    from openjarvis.learning.routing.local_first_policy import (
+        ensure_registered as _reg_local_first,
+    )
+
+    _reg_local_first()
+
     from openjarvis.learning.routing.learned_router import (
         ensure_registered as _reg_learned,
     )

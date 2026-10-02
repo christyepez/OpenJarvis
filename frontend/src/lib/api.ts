@@ -275,6 +275,263 @@ export async function fetchServerInfo(): Promise<ServerInfo> {
   return res.json();
 }
 
+export interface OperationsStatus {
+  primary_implementer: string;
+  runtime: {
+    engine: string;
+    model: string;
+    available: boolean | null;
+    local_models: string[];
+    role_models: {
+      general: string | null;
+      coding: string | null;
+      multimodal: string | null;
+    };
+  };
+  governance: {
+    prefer_local: boolean;
+    prefer_free: boolean;
+    require_approval_for_unapproved_paid: boolean;
+    approved_paid: string[];
+    preferred_models: string[];
+  };
+  execution: {
+    preferred_plane: string;
+    commander_connected: boolean;
+  };
+  machines: {
+    selected: string | null;
+    signal: string;
+    primary: {
+      name: string;
+      status: string;
+      docker_available?: boolean;
+      gpu_available?: boolean;
+    };
+    fallbacks: Array<{
+      name: string;
+      status: string;
+      docker_available?: boolean;
+      gpu_available?: boolean;
+    }>;
+  };
+  memory: {
+    enabled: boolean;
+    backend: string;
+    documents: number | null;
+  };
+  projects: {
+    total: number;
+    by_status: Record<string, number>;
+    projects: Array<{
+      project_key: string;
+      name: string;
+      repository: string;
+      orchestrator_agent_id: string;
+      runtime_machines: string[];
+      status: string;
+      next_action: string;
+      ready_streams: string[];
+      active_streams: string[];
+      handoff_ready_streams: string[];
+      failed_streams: string[];
+      exhausted_streams: string[];
+      blocked_streams: string[];
+      done_streams: string[];
+      quality_pipeline_id: string;
+      quality_status: string;
+      quality_stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
+      streams: Array<{
+        task_id: string;
+        stream: string;
+        wave: string;
+        execution_state: string;
+        order: number;
+        status: string;
+        worker_agent_id: string;
+        worker_status: string;
+        handoff_ready: boolean;
+        findings_count: number;
+        branch: string;
+        workspace: string;
+        runtime_machine: string;
+        runtime_machine_status: string;
+        retry_count: number;
+        last_retry_at: number;
+        manual_retry_authorized: boolean;
+        manual_retry_evidence: string;
+        depends_on_task_ids: string[];
+      }>;
+    }>;
+  };
+  quality: {
+    total: number;
+    by_status: Record<string, number>;
+    pipelines: Array<{
+      pipeline_id: string;
+      coordinator_agent_id: string;
+      objective: string;
+      status: string;
+      stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
+    }>;
+  };
+  agents: {
+    total: number;
+    by_status: Record<string, number>;
+    by_domain: Record<string, number>;
+    agents: Array<{
+      id: string;
+      name: string;
+      type: string;
+      status: string;
+      activity: string;
+      capability: string;
+      model_policy: string;
+      routed_model: string | null;
+      project_stream: string;
+      domain: string;
+      domain_task_key: string;
+      domain_task_state: string;
+      domain_next_action: string;
+      domain_handoff_ready: boolean;
+      domain_last_completed_at: number;
+      domain_quality_required: boolean;
+      domain_quality_pipeline_id: string;
+      domain_quality_status: string;
+      domain_quality_stages: Array<{
+        task_id: string;
+        stage: string;
+        kind: string;
+        status: string;
+        reviewer_agent_id: string;
+        template: string;
+        findings_count: number;
+      }>;
+      domain_result: string;
+    }>;
+    tasks: {
+      total: number;
+      by_status: Record<string, number>;
+      items: Array<{
+        id: string;
+        agent_id: string;
+        description: string;
+        status: string;
+      }>;
+    };
+  };
+  tools: {
+    native_count: number;
+    mcp_count: number;
+    native: string[];
+    mcp: string[];
+  };
+  skills: {
+    count: number;
+    items: string[];
+  };
+  quality_pipeline: string[];
+}
+
+export async function fetchOperationsStatus(): Promise<OperationsStatus> {
+  const res = await apiFetch(`/v1/operations/status`);
+  if (!res.ok) throw new Error(`Failed to fetch operations status: ${res.status}`);
+  return res.json();
+}
+
+export interface OperationsTaskActionResult {
+  task_key: string;
+  recommended_action: string;
+  action: string;
+  executed: boolean;
+  result: unknown;
+}
+
+export async function executeOperationsTaskNextAction(
+  taskKey: string,
+): Promise<OperationsTaskActionResult> {
+  const res = await apiFetch(
+    `/v1/operations/tasks/${encodeURIComponent(taskKey)}/next-action`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to execute task action: ${res.status}`);
+  }
+  return res.json();
+}
+
+export interface OperationsProjectActionResult {
+  project_key: string;
+  action: string;
+  dispatched_streams: string[];
+  started_agents: string[];
+  start_errors: Array<{ agent_id: string; error: string }>;
+  dispatch: unknown;
+  quality: unknown;
+  status: unknown;
+}
+
+export async function executeOperationsProjectNextAction(
+  projectKey: string,
+): Promise<OperationsProjectActionResult> {
+  const res = await apiFetch(
+    `/v1/operations/projects/${encodeURIComponent(projectKey)}/next-action`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`Failed to execute project action: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function authorizeOperationsWorkerRetry(
+  projectKey: string,
+  stream: string,
+  evidence: string,
+): Promise<Record<string, unknown>> {
+  const res = await apiFetch('/v1/operations/workers/authorize-retry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      project_key: projectKey,
+      stream,
+      evidence,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to authorize worker retry: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function probeOperationsMachines(): Promise<
+  OperationsStatus['machines']
+> {
+  const res = await apiFetch('/v1/operations/machines/probe', {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to probe execution machines: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function checkHealth(): Promise<boolean> {
   if (isTauri()) {
     try {

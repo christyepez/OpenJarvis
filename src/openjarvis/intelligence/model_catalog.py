@@ -210,6 +210,23 @@ BUILTIN_MODELS: List[ModelSpec] = [
         },
     ),
     ModelSpec(
+        model_id="llama3.2:1b",
+        name="Llama 3.2 1B",
+        parameter_count_b=1.0,
+        context_length=131072,
+        min_vram_gb=1.0,
+        supported_engines=("ollama", "vllm", "llamacpp"),
+        provider="meta",
+        metadata={
+            "architecture": "dense",
+            "hf_repo": "meta-llama/Llama-3.2-1B-Instruct",
+            "runtime_aliases": (
+                "bartowski/Llama-3.2-1B-Instruct-GGUF",
+                "tensorblock/Llama3.2-1B-Instruct-GGUF",
+            ),
+        },
+    ),
+    ModelSpec(
         model_id="llama3.2:3b",
         name="Llama 3.2 3B",
         parameter_count_b=3.0,
@@ -219,6 +236,10 @@ BUILTIN_MODELS: List[ModelSpec] = [
         metadata={
             "architecture": "dense",
             "hf_repo": "meta-llama/Llama-3.2-3B-Instruct",
+            "runtime_aliases": (
+                "tensorblock/Llama-3.2-3B-Instruct-GGUF",
+                "bartowski/Llama-3.2-3B-Instruct-GGUF",
+            ),
         },
     ),
     ModelSpec(
@@ -231,6 +252,21 @@ BUILTIN_MODELS: List[ModelSpec] = [
         metadata={
             "architecture": "dense",
             "hf_repo": "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+        },
+    ),
+    ModelSpec(
+        model_id="ministral-3:3b",
+        name="Ministral 3 3B",
+        parameter_count_b=3.0,
+        context_length=262144,
+        min_vram_gb=3.0,
+        supported_engines=("ollama", "vllm", "llamacpp"),
+        provider="mistral",
+        metadata={
+            "architecture": "dense",
+            "modalities": ("text", "image"),
+            "ollama_size_gb": 3.0,
+            "preferred_local": True,
         },
     ),
     ModelSpec(
@@ -254,12 +290,15 @@ BUILTIN_MODELS: List[ModelSpec] = [
         parameter_count_b=117.0,
         active_parameter_count_b=5.1,
         context_length=131072,
-        min_vram_gb=12.0,
-        supported_engines=("vllm", "ollama"),
-        provider="open-source",
+        min_vram_gb=80.0,
+        supported_engines=("vllm", "ollama", "llamacpp"),
+        provider="openai",
         metadata={
             "architecture": "moe",
-            "hf_repo": "OpenBuddy/GPT-OSS-120B",
+            "hf_repo": "openai/gpt-oss-120b",
+            "ollama_size_gb": 65.0,
+            "license": "apache-2.0",
+            "preferred_local": True,
         },
     ),
     ModelSpec(
@@ -306,6 +345,10 @@ BUILTIN_MODELS: List[ModelSpec] = [
             "hf_repo": "Qwen/Qwen3.5-4B",
             "gguf_file": "qwen3.5-4b-q4_k_m.gguf",
             "mlx_repo": "mlx-community/Qwen3.5-4B-OptiQ-4bit",
+            "modalities": ("text", "image"),
+            "license": "apache-2.0",
+            "ollama_size_gb": 3.4,
+            "preferred_local": True,
         },
     ),
     ModelSpec(
@@ -602,6 +645,23 @@ BUILTIN_MODELS: List[ModelSpec] = [
     # -----------------------------------------------------------------------
     # Local models — IBM Granite
     # -----------------------------------------------------------------------
+    ModelSpec(
+        model_id="granite-code:3b",
+        name="Granite Code 3B",
+        parameter_count_b=3.48,
+        context_length=128000,
+        min_vram_gb=2.0,
+        supported_engines=("ollama", "llamacpp"),
+        provider="ibm",
+        metadata={
+            "architecture": "dense",
+            "hf_repo": "ibm-granite/granite-3b-code-instruct-128k",
+            "license": "apache-2.0",
+            "ollama_size_gb": 2.0,
+            "preferred_local": True,
+            "specialization": "coding",
+        },
+    ),
     ModelSpec(
         model_id="granite3.3:8b",
         name="Granite 3.3 8B",

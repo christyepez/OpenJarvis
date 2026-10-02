@@ -9,6 +9,7 @@ schedule_value = "1800"
 tools = ["channel_send", "channel_list", "memory_store", "memory_retrieve", "think", "web_search", "file_write"]
 max_turns = 20
 temperature = 0.3
+capability = "general"
 memory_extraction = "structured_json"
 observation_compression = "summarize"
 retrieval_strategy = "sqlite"

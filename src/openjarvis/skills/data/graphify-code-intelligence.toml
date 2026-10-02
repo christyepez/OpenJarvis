@@ -1,0 +1,20 @@
+[skill]
+name = "graphify-code-intelligence"
+description = "Map a codebase locally with Graphify before broad architecture or impact analysis"
+version = "0.1.0"
+author = "openjarvis"
+
+[[skill.steps]]
+tool_name = "shell_exec"
+arguments_template = '{"command": "python -m openjarvis.tools.graphify_runner \"{project_path}\""}'
+output_key = "graphify_run"
+
+[[skill.steps]]
+tool_name = "file_read"
+arguments_template = '{"path": "{project_path}/graphify-out/GRAPH_REPORT.md"}'
+output_key = "graph_report"
+
+[[skill.steps]]
+tool_name = "think"
+arguments_template = '{"thought": "Use this Graphify report as the first-pass code map: {graph_report}. Identify architecture, dependencies, high-impact nodes, likely change paths, and the smallest source files that must be inspected next. Treat source code, tests, configuration, and runtime evidence as authoritative over inferred graph edges."}'
+output_key = "analysis"

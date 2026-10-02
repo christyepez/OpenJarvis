@@ -29,7 +29,11 @@ class _InMemoryBackend(MemoryBackend):
     def store(self, content, *, source="", metadata=None):
         self._counter += 1
         doc_id = f"doc-{self._counter}"
-        self._data[doc_id] = {"content": content, "source": source}
+        self._data[doc_id] = {
+            "content": content,
+            "source": source,
+            "metadata": metadata or {},
+        }
         return doc_id
 
     def retrieve(self, query, *, top_k=5, **kwargs):
@@ -41,6 +45,7 @@ class _InMemoryBackend(MemoryBackend):
                         content=doc["content"],
                         score=0.9,
                         source=doc["source"],
+                        metadata=doc["metadata"],
                     )
                 )
         return results[:top_k]
@@ -84,6 +89,20 @@ class TestMemoryStoreTool:
         assert result.success is False
         assert "No content" in result.content
 
+    def test_store_multidomain_metadata(self, backend):
+        tool = MemoryStoreTool(backend)
+        result = tool.execute(
+            content="Portal deployment decision",
+            domain="project",
+            memory_type="decision",
+            project="PortalCorporativo",
+        )
+        assert result.success is True
+        stored = backend._data["doc-1"]["metadata"]
+        assert stored["domain"] == "project"
+        assert stored["memory_type"] == "decision"
+        assert stored["project"] == "PortalCorporativo"
+
     def test_tool_id(self):
         assert MemoryStoreTool.tool_id == "memory_store"
 
@@ -126,6 +145,16 @@ class TestMemoryRetrieveTool:
         assert result.success is True
         # Should only have 3 entries separated by ---
         assert result.content.count("---") == 2
+
+    def test_retrieve_filters_by_domain(self, backend):
+        backend.store("Shared status update", metadata={"domain": "project"})
+        backend.store("Shared status update", metadata={"domain": "personal"})
+        tool = MemoryRetrieveTool(backend)
+
+        result = tool.execute(query="status", domain="personal")
+
+        assert result.success is True
+        assert result.content.count("Shared status update") == 1
 
 
 class TestMemorySearchTool:

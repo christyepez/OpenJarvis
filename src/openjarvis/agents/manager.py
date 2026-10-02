@@ -202,8 +202,9 @@ class AgentManager:
         name: str,
         agent_type: str = "monitor_operative",
         config: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        agent_id = uuid.uuid4().hex[:12]
+        agent_id = str(agent_id or uuid.uuid4().hex[:12])
         now = time.time()
         config = dict(config or {})
         config_json = json.dumps(config)
@@ -488,6 +489,14 @@ class AgentManager:
         return [self._row_to_task(r) for r in rows]
 
     @_db_locked
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Return one persisted agent task by id."""
+        row = self._conn.execute(
+            "SELECT * FROM agent_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        return self._row_to_task(row) if row else None
+
+    @_db_locked
     def update_task(self, task_id: str, **kwargs: Any) -> Dict[str, Any]:
         sets: List[str] = []
         vals: List[Any] = []
@@ -620,7 +629,11 @@ class AgentManager:
         return templates
 
     def create_from_template(
-        self, template_id: str, name: str, overrides: Optional[Dict[str, Any]] = None
+        self,
+        template_id: str,
+        name: str,
+        overrides: Optional[Dict[str, Any]] = None,
+        agent_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create an agent from a template with optional overrides."""
         templates = self.list_templates()
@@ -641,7 +654,12 @@ class AgentManager:
                 instruction=instruction or "(No specific instruction provided)",
             )
 
-        return self.create_agent(name=name, agent_type=agent_type, config=config)
+        return self.create_agent(
+            name=name,
+            agent_type=agent_type,
+            config=config,
+            agent_id=agent_id,
+        )
 
     # ── Message queue ─────────────────────────────────────────────
 

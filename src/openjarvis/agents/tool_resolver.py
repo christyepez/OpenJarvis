@@ -30,6 +30,56 @@ _MEMORY_TOOLS = frozenset(
     {"retrieval", "memory_store", "memory_search", "memory_index", "memory_retrieve"}
 )
 _CHANNEL_TOOLS = frozenset({"channel_send", "channel_list", "channel_status"})
+_AGENT_LIFECYCLE_TOOLS = frozenset(
+    {
+        "agent_spawn",
+        "agent_send",
+        "agent_list",
+        "agent_kill",
+        "task_status",
+        "quality_pipeline",
+        "project_bootstrap",
+        "project_dispatch",
+        "project_handoff_review",
+        "project_status",
+        "project_worker_authorize_retry",
+        "project_worktree_prepare",
+        "project_stream_update",
+        "quality_gate_update",
+    }
+)
+_AGENT_EXECUTION_TOOLS = frozenset(
+    {
+        "project_advance",
+        "quality_advance",
+        "task_advance",
+        "task_next_action",
+        "task_dispatch",
+        "task_retry",
+    }
+)
+
+
+class _DefaultParamsTool:
+    """Delegate a tool while injecting agent-scoped default parameters."""
+
+    def __init__(self, wrapped: Any, defaults: Mapping[str, Any]) -> None:
+        self._wrapped = wrapped
+        self._defaults = dict(defaults)
+
+    @property
+    def spec(self) -> Any:
+        return self._wrapped.spec
+
+    def execute(self, **params: Any) -> Any:
+        merged = {**self._defaults, **params}
+        return self._wrapped.execute(**merged)
+
+    def to_openai_function(self) -> dict[str, Any]:
+        return _openai_spec(self._wrapped)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
 
 
 class _SpecOverrideTool:
@@ -235,6 +285,8 @@ def instantiate_registered_tool(
     model: str,
     memory_backend: Any = None,
     channel_backend: Any = None,
+    agent_manager: Any = None,
+    agent_executor: Any = None,
 ) -> Any:
     """Instantiate a registry tool with its runtime dependencies."""
 
@@ -254,6 +306,10 @@ def instantiate_registered_tool(
                 name,
             )
         return tool_cls(channel=channel_backend)
+    if name in _AGENT_LIFECYCLE_TOOLS:
+        return tool_cls(manager=agent_manager)
+    if name in _AGENT_EXECUTION_TOOLS:
+        return tool_cls(manager=agent_manager, executor=agent_executor)
     if name == "llm":
         return tool_cls(engine=engine, model=model)
     return tool_cls()
@@ -316,6 +372,8 @@ def resolve_agent_tools(
     model: str,
     memory_backend: Any = None,
     channel_backend: Any = None,
+    agent_manager: Any = None,
+    agent_executor: Any = None,
     mcp_tools: Iterable[Any] = (),
     mcp_clients: Iterable[Any] = (),
     knowledge_db_path: str | Path | None = None,
@@ -340,12 +398,55 @@ def resolve_agent_tools(
     advertised_specs: list[dict[str, Any]] = []
     owned_resources: list[Any] = []
     seen: set[str] = set()
+    workspace = str(config.get("workspace", "") or "").strip()
+    domain = str(config.get("domain", "") or "").strip().casefold()
+    runtime_device_id = str(config.get("runtime_device_id", "") or "").strip()
+
+    def bind_workspace_defaults(tool: Any) -> Any:
+        if not workspace:
+            return tool
+        original = getattr(tool, "_wrapped", tool)
+        module_name = str(original.__class__.__module__)
+        if not module_name.startswith("openjarvis.tools."):
+            return tool
+        name = _tool_name(tool)
+        if name == "shell_exec":
+            return _DefaultParamsTool(tool, {"working_dir": workspace})
+        if name in {"git_status", "git_diff", "git_commit", "git_log"}:
+            return _DefaultParamsTool(tool, {"repo_path": workspace})
+        return tool
+
+    def bind_domain_defaults(tool: Any) -> Any:
+        if not domain:
+            return tool
+        name = _tool_name(tool)
+        if name in {"memory_store", "memory_search", "memory_retrieve"}:
+            return _DefaultParamsTool(tool, {"domain": domain})
+        return tool
+
+    def bind_machine_defaults(tool: Any) -> Any:
+        if not runtime_device_id:
+            return tool
+        spec = getattr(tool, "spec", None)
+        parameters = getattr(spec, "parameters", {}) or {}
+        properties = (
+            parameters.get("properties", {}) if isinstance(parameters, Mapping) else {}
+        )
+        if "deviceId" in properties:
+            return _DefaultParamsTool(
+                tool,
+                {"deviceId": runtime_device_id},
+            )
+        return tool
 
     def add_instance(
         tool: Any,
         *,
         advertised_spec: dict[str, Any] | None = None,
     ) -> None:
+        tool = bind_workspace_defaults(tool)
+        tool = bind_domain_defaults(tool)
+        tool = bind_machine_defaults(tool)
         name = _tool_name(tool)
         if not name or name in seen:
             return
@@ -397,6 +498,8 @@ def resolve_agent_tools(
                             model=model,
                             memory_backend=memory_backend,
                             channel_backend=channel_backend,
+                            agent_manager=agent_manager,
+                            agent_executor=agent_executor,
                         )
                     except Exception as exc:
                         logger.warning(
@@ -444,6 +547,8 @@ def resolve_agent_tools(
                         model=model,
                         memory_backend=memory_backend,
                         channel_backend=channel_backend,
+                        agent_manager=agent_manager,
+                        agent_executor=agent_executor,
                     )
                 )
             except Exception as exc:

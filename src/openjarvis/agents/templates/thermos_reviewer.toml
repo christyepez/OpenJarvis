@@ -1,0 +1,18 @@
+[template]
+id = "thermos_reviewer"
+name = "Thermos Reviewer"
+description = "Deep pre-integration review for correctness, security, data and release risk."
+icon = "🌡️"
+agent_type = "orchestrator"
+schedule_type = "manual"
+schedule_value = ""
+capability = "coding"
+tools = ["git_status", "git_diff", "git_log", "file_read", "shell_exec", "think"]
+max_turns = 18
+temperature = 0.1
+system_prompt_template = """You are the Thermos deep quality gate.
+
+Review objective:
+{instruction}
+
+Review material changes for correctness, failure modes, security boundaries, data integrity, observability, resilience, backward compatibility, tests, deployment and recovery concerns. Findings must be evidence-based with file or symbol, concrete failure mode, severity and remediation. Re-run affected validation after fixes."""

@@ -52,6 +52,131 @@ def _resolve_tick_model(config: dict[str, Any], system: Any) -> str:
     )
 
 
+def _preferred_worker_models(system: Any) -> tuple[str, ...]:
+    """Read governed local-worker preferences without assuming config presence."""
+    cfg = getattr(system, "config", None) if system is not None else None
+    governance = getattr(cfg, "governance", None) if cfg is not None else None
+    raw = getattr(governance, "preferred_models", "") if governance is not None else ""
+    if not isinstance(raw, str):
+        return ()
+    return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _prefer_local_workers(system: Any) -> bool:
+    """Return True only for an explicitly enabled local-first governance flag."""
+    cfg = getattr(system, "config", None) if system is not None else None
+    governance = getattr(cfg, "governance", None) if cfg is not None else None
+    return getattr(governance, "prefer_local", False) is True
+
+
+def _retrieve_scoped_memory(
+    backend: Any,
+    query: str,
+    *,
+    top_k: int,
+    min_score: float,
+    domain: str = "",
+) -> list[Any]:
+    """Retrieve memory while respecting an optional agent domain."""
+    from openjarvis.memory.context_router import filter_results_by_domain
+
+    normalized_domain = str(domain or "").strip().casefold()
+    fetch_k = top_k * 4 if normalized_domain else top_k
+    results = backend.retrieve(query, top_k=fetch_k)
+    results = filter_results_by_domain(results, normalized_domain)
+    return [
+        result
+        for result in results
+        if float(getattr(result, "score", 0.0) or 0.0) >= min_score
+    ][:top_k]
+
+
+def _resolve_managed_worker_model(
+    config: dict[str, Any],
+    system: Any,
+    engine: Any,
+    task_text: str,
+) -> str:
+    """Resolve a managed-agent model while preserving explicit user choices."""
+    explicit = str(config.get("model") or "").strip()
+    if explicit and explicit.casefold() != "smart":
+        return explicit
+
+    use_smart = explicit.casefold() == "smart"
+    if use_smart or _prefer_local_workers(system):
+        try:
+            from openjarvis.governance.execution_router import (
+                local_runtime_models,
+                recommend_installed_model,
+                recommend_model_for_task,
+            )
+            from openjarvis.intelligence.model_catalog import BUILTIN_MODELS
+
+            capability_hint = str(config.get("capability") or "").strip()
+            if capability_hint:
+                selected = recommend_installed_model(
+                    local_runtime_models(engine),
+                    BUILTIN_MODELS,
+                    capability=capability_hint,
+                    preferred_models=_preferred_worker_models(system),
+                )
+            else:
+                selected, _capability = recommend_model_for_task(
+                    engine,
+                    task_text,
+                    BUILTIN_MODELS,
+                    preferred_models=_preferred_worker_models(system),
+                )
+            if selected:
+                return selected
+        except Exception as exc:
+            logger.warning("Managed-agent local worker routing failed: %s", exc)
+
+    if use_smart:
+        return ""
+
+    return _resolve_tick_model(config, system)
+
+
+def _construct_ephemeral_agent(
+    agent_cls: Any,
+    *,
+    engine: Any,
+    model: str,
+    system_prompt: str,
+    bus: Any,
+) -> Any:
+    """Construct an ephemeral agent using only parameters it actually accepts."""
+    import inspect
+
+    signature = inspect.signature(agent_cls.__init__)
+    accepts_var_kw = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+    def accepts(name: str) -> bool:
+        return accepts_var_kw or name in signature.parameters
+
+    kwargs: dict[str, Any] = {}
+    if accepts("engine"):
+        kwargs["engine"] = engine
+    if accepts("model"):
+        kwargs["model"] = model
+    if accepts("bus"):
+        kwargs["bus"] = bus
+    if system_prompt and accepts("system_prompt"):
+        kwargs["system_prompt"] = system_prompt
+    elif system_prompt and accepts("prompt_builder"):
+        from openjarvis.prompt.builder import SystemPromptBuilder
+
+        kwargs["prompt_builder"] = SystemPromptBuilder(
+            agent_template=system_prompt,
+        )
+
+    return agent_cls(**kwargs)
+
+
 def _available_tick_models(engine: Any, resolved_model: str) -> list[str]:
     """Return every model the active engine can actually route to.
 
@@ -139,6 +264,147 @@ class AgentExecutor:
         except Exception:
             pass  # Non-critical
 
+    def _quality_dependency_ready(self, agent_id: str) -> tuple[bool, str]:
+        """Return whether a quality reviewer may execute its current stage."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return True, ""
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("quality_task_id", "") or "")
+            if not task_id:
+                return True, ""
+
+            task = self._manager.get_task(task_id)
+            if not task:
+                return True, ""
+            progress = task.get("progress", {}) or {}
+            dependency_id = str(progress.get("depends_on_task_id", "") or "")
+            if not dependency_id:
+                return True, ""
+
+            dependency = self._manager.get_task(dependency_id)
+            if dependency and str(dependency.get("status", "")) == "completed":
+                return True, dependency_id
+            dependency_status = (
+                str(dependency.get("status", "missing"))
+                if dependency is not None
+                else "missing"
+            )
+            return False, f"{dependency_id}:{dependency_status}"
+        except Exception:
+            logger.debug(
+                "Failed to resolve quality dependency for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+            return False, "dependency-check-error"
+
+    def _update_quality_task(
+        self,
+        agent_id: str,
+        status: str,
+        *,
+        result: AgentResult | None = None,
+        error: AgentTickError | None = None,
+    ) -> None:
+        """Persist quality-stage progress for reviewer agents."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("quality_task_id", "") or "")
+            if not task_id:
+                return
+
+            task = self._manager.get_task(task_id)
+            progress = dict((task or {}).get("progress", {}) or {})
+            progress.update(
+                {
+                    "pipeline_id": str(config.get("quality_pipeline_id", "") or ""),
+                    "stage": str(config.get("quality_stage", "") or ""),
+                    "reviewer_agent_id": agent_id,
+                }
+            )
+            kwargs: dict[str, Any] = {
+                "status": status,
+                "progress": progress,
+            }
+            if result is not None and (result.content or "").strip():
+                kwargs["findings"] = [result.content]
+            elif error is not None:
+                kwargs["findings"] = [str(error)]
+
+            self._manager.update_task(task_id, **kwargs)
+        except Exception:
+            logger.debug(
+                "Failed to persist quality task for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+
+    def _update_project_task(
+        self,
+        agent_id: str,
+        *,
+        result: AgentResult | None = None,
+        error: AgentTickError | None = None,
+    ) -> None:
+        """Persist a project specialist handoff without auto-completing the stream."""
+        try:
+            record = self._manager.get_agent(agent_id)
+            if not record:
+                return
+            config = record.get("config", {}) or {}
+            task_id = str(config.get("project_task_id", "") or "")
+            if not task_id:
+                return
+
+            task = self._manager.get_task(task_id)
+            if not task:
+                return
+
+            progress = dict(task.get("progress", {}) or {})
+            findings = list(task.get("findings", []) or [])
+            handoff_ready = bool(
+                error is None
+                and result is not None
+                and ((result.content or "").strip() or result.tool_results)
+            )
+            progress.update(
+                {
+                    "worker_agent_id": agent_id,
+                    "handoff_ready": handoff_ready,
+                    "worker_status": (
+                        "completed_tick" if error is None else "needs_attention"
+                    ),
+                    "last_handoff_at": time.time(),
+                }
+            )
+
+            if result is not None and (result.content or "").strip():
+                findings.append(result.content)
+            elif error is not None:
+                findings.append(str(error))
+
+            self._manager.update_task(
+                task_id,
+                status=(
+                    str(task.get("status", "active") or "active")
+                    if error is None
+                    else "needs_attention"
+                ),
+                progress=progress,
+                findings=findings[-10:],
+            )
+        except Exception:
+            logger.debug(
+                "Failed to persist project handoff for agent %s",
+                agent_id,
+                exc_info=True,
+            )
+
     def run_ephemeral(
         self,
         agent_type: str,
@@ -155,9 +421,20 @@ class AgentExecutor:
             if self._system is not None
             else getattr(self._manager, "_engine", None)
         )
+        routed_model = _resolve_managed_worker_model(
+            {},
+            self._system,
+            engine,
+            input_text,
+        )
+        if not routed_model:
+            routed_model = _resolve_tick_model({}, self._system)
+
         if not tools:
-            agent = agent_cls(
+            agent = _construct_ephemeral_agent(
+                agent_cls,
                 engine=engine,
+                model=routed_model,
                 system_prompt=system_prompt,
                 bus=self._bus,
             )
@@ -190,7 +467,7 @@ class AgentExecutor:
         system = self._system
         agent = execution_cls(
             engine=engine,
-            model=getattr(system, "model", "") or _AGENT_TICK_DEFAULT_MODEL,
+            model=routed_model,
             system_prompt=system_prompt,
             tools=instances,
             bus=self._bus,
@@ -215,6 +492,23 @@ class AgentExecutor:
         guard — bailing out with no end_tick(), leaving the agent stuck in
         ``status='running'`` forever.
         """
+        dependency_ready, dependency_detail = self._quality_dependency_ready(agent_id)
+        if not dependency_ready:
+            self._set_activity(
+                agent_id,
+                f"Waiting for quality dependency {dependency_detail}",
+            )
+            if lock_already_held:
+                try:
+                    self._manager.end_tick(agent_id)
+                except Exception:
+                    logger.debug(
+                        "Failed to release blocked quality-agent tick %s",
+                        agent_id,
+                        exc_info=True,
+                    )
+            return
+
         if lock_already_held:
             self._set_activity(agent_id, "Preparing tick...")
         else:
@@ -229,6 +523,8 @@ class AgentExecutor:
         if agent is None:
             logger.error("Agent %s not found", agent_id)
             return
+
+        self._update_quality_task(agent_id, "active")
 
         self._bus.publish(
             EventType.AGENT_TICK_START,
@@ -377,9 +673,18 @@ class AgentExecutor:
         engine = self._system.engine if self._system else None
         if engine is None:
             raise FatalError("No engine available in JarvisSystem")
-        model = _resolve_tick_model(config, self._system)
+        model = _resolve_managed_worker_model(
+            config,
+            self._system,
+            engine,
+            str(config.get("instruction", "") or ""),
+        )
         if not model:
-            raise FatalError("No model configured for agent")
+            raise FatalError(
+                "No local model available for smart managed-agent routing"
+                if str(config.get("model", "") or "").casefold() == "smart"
+                else "No model configured for agent"
+            )
 
         logger.info(
             "Agent %s [%s]: using model=%s, engine=%s",
@@ -458,6 +763,8 @@ class AgentExecutor:
             model=model,
             memory_backend=getattr(self._system, "memory_backend", None),
             channel_backend=getattr(self._system, "channel_backend", None),
+            agent_manager=self._manager,
+            agent_executor=self,
             mcp_tools=mcp_tools,
             mcp_clients=mcp_clients,
             knowledge_db_path=getattr(self._system, "knowledge_db_path", None),
@@ -542,6 +849,10 @@ class AgentExecutor:
         # before construction instead.
         if sys_prompt is not None and _accepts("system_prompt"):
             agent_kwargs["system_prompt"] = sys_prompt
+        if _accepts("max_advertised_tools"):
+            compact_limit = int(config.get("max_advertised_tools", 0) or 0)
+            if compact_limit > 0:
+                agent_kwargs["max_advertised_tools"] = compact_limit
         agent_kwargs = {
             name: value for name, value in agent_kwargs.items() if _accepts(name)
         }
@@ -713,13 +1024,13 @@ class AgentExecutor:
                     query = instruction
 
                 if query:
-                    results = self._system.memory_backend.retrieve(
+                    memory_results = _retrieve_scoped_memory(
+                        self._system.memory_backend,
                         query,
                         top_k=ctx_cfg.top_k,
+                        min_score=ctx_cfg.min_score,
+                        domain=str(config.get("domain", "") or ""),
                     )
-                    memory_results = [
-                        r for r in results if r.score >= ctx_cfg.min_score
-                    ]
                     if memory_results:
                         # Prepend retrieved context to input for agents
                         # that don't inspect AgentContext.memory_results
@@ -927,6 +1238,25 @@ class AgentExecutor:
                     "duration": duration,
                 },
             )
+
+        quality_status = (
+            "completed"
+            if error is None
+            else "needs_attention"
+            if isinstance(error, EscalateError)
+            else "failed"
+        )
+        self._update_project_task(
+            agent_id,
+            result=result,
+            error=error,
+        )
+        self._update_quality_task(
+            agent_id,
+            quality_status,
+            result=result,
+            error=error,
+        )
 
     def _save_trace(
         self,

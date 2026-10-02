@@ -116,3 +116,47 @@ def test_run_ephemeral_resolves_tools_and_preserves_security():
     assert "memory:write" in result.tool_results[0].content
     assert _FlushProbe.calls == 0
     assert limiter.keys == ["ephemeral:simple:flush_probe"]
+
+
+def test_run_ephemeral_simple_agent_uses_local_worker_and_prompt_builder():
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.simple import SimpleAgent
+    from openjarvis.core.events import EventBus
+    from openjarvis.core.registry import AgentRegistry
+
+    engine = MagicMock()
+    engine.engine_id = "ollama"
+    engine.list_models.return_value = ["qwen3.5:4b", "granite-code:3b"]
+    engine.generate.return_value = {
+        "content": "done",
+        "usage": {},
+        "finish_reason": "stop",
+    }
+    system = SimpleNamespace(
+        engine=engine,
+        model="cloud-default",
+        config=SimpleNamespace(
+            governance=SimpleNamespace(
+                prefer_local=True,
+                preferred_models="qwen3.5:4b,granite-code:3b",
+            )
+        ),
+    )
+    AgentRegistry.register_value("simple", SimpleAgent)
+    executor = AgentExecutor(
+        manager=MagicMock(),
+        event_bus=EventBus(record_history=True),
+        system=system,
+    )
+
+    result = executor.run_ephemeral(
+        agent_type="simple",
+        system_prompt="You are a concise coding helper.",
+        input_text="Refactor this Python function",
+    )
+
+    assert result.content == "done"
+    assert engine.generate.call_args.kwargs["model"] == "granite-code:3b"
+    messages = engine.generate.call_args.args[0]
+    assert messages[0].role.value == "system"
+    assert "concise coding helper" in messages[0].content

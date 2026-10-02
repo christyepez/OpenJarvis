@@ -11,8 +11,19 @@ from typing import Any
 
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.core.types import ToolResult
+from openjarvis.memory.context_router import filter_results_by_domain
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 from openjarvis.tools.storage._stubs import MemoryBackend
+
+
+def _memory_metadata(params: dict[str, Any]) -> dict[str, Any]:
+    """Build normalized metadata for multi-domain memory entries."""
+    metadata = dict(params.get("metadata") or {})
+    for key in ("domain", "memory_type", "project", "expires_at"):
+        value = params.get(key)
+        if value not in (None, ""):
+            metadata[key] = value
+    return metadata
 
 
 @ToolRegistry.register("memory_store")
@@ -40,6 +51,30 @@ class MemoryStoreTool(BaseTool):
                         "type": "string",
                         "description": "Optional source identifier for the content.",
                     },
+                    "domain": {
+                        "type": "string",
+                        "description": (
+                            "Memory domain, e.g. project, personal, finance."
+                        ),
+                    },
+                    "memory_type": {
+                        "type": "string",
+                        "description": (
+                            "Fact, preference, decision, event, task, or context."
+                        ),
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": (
+                            "Optional project identifier when domain is project."
+                        ),
+                    },
+                    "expires_at": {
+                        "type": "string",
+                        "description": (
+                            "Optional expiration timestamp for temporary memory."
+                        ),
+                    },
                 },
                 "required": ["content"],
             },
@@ -64,6 +99,7 @@ class MemoryStoreTool(BaseTool):
             doc_id = self._backend.store(
                 content,
                 source=params.get("source", ""),
+                metadata=_memory_metadata(params),
             )
             return ToolResult(
                 tool_name="memory_store",
@@ -103,6 +139,10 @@ class MemoryRetrieveTool(BaseTool):
                         "type": "integer",
                         "description": "Number of results to return (default 5).",
                     },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional memory domain filter.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -125,7 +165,10 @@ class MemoryRetrieveTool(BaseTool):
             )
         try:
             top_k = int(params.get("top_k", 5))
-            results = self._backend.retrieve(query, top_k=top_k)
+            domain = str(params.get("domain", "") or "")
+            fetch_k = top_k * 4 if domain else top_k
+            results = self._backend.retrieve(query, top_k=fetch_k)
+            results = filter_results_by_domain(results, domain)[:top_k]
             if not results:
                 return ToolResult(
                     tool_name="memory_retrieve",
@@ -174,6 +217,10 @@ class MemorySearchTool(BaseTool):
                         "type": "integer",
                         "description": "Number of results (default 5).",
                     },
+                    "domain": {
+                        "type": "string",
+                        "description": "Optional memory domain filter.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -196,7 +243,10 @@ class MemorySearchTool(BaseTool):
             )
         try:
             top_k = int(params.get("top_k", 5))
-            results = self._backend.retrieve(query, top_k=top_k)
+            domain = str(params.get("domain", "") or "")
+            fetch_k = top_k * 4 if domain else top_k
+            results = self._backend.retrieve(query, top_k=fetch_k)
+            results = filter_results_by_domain(results, domain)[:top_k]
             if not results:
                 return ToolResult(
                     tool_name="memory_search",
