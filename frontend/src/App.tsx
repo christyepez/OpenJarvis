@@ -15,7 +15,6 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
 import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
-import { track, hashId } from './lib/analytics';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -25,7 +24,9 @@ export default function App() {
     // on reinstalls or dev reloads.
     if (!localStorage.getItem('oj-setup-completed')) {
       localStorage.setItem('oj-setup-completed', '1');
-      track('setup_completed', { preset: 'default' });
+      void import('./lib/analytics').then(({ track }) => {
+        track('setup_completed', { preset: 'default' });
+      });
     }
   }, []);
   const prevModelRef = useRef<string>('');
@@ -133,7 +134,7 @@ export default function App() {
     const curr = selectedModel || '';
     prevModelRef.current = curr;
     if (!prev || !curr || prev === curr) return;
-    void (async () => {
+    void import('./lib/analytics').then(async ({ hashId, track }) => {
       const [fromHash, toHash] = await Promise.all([
         hashId(prev),
         hashId(curr),
@@ -142,7 +143,7 @@ export default function App() {
         from_model_hash: fromHash,
         to_model_hash: toHash,
       });
-    })();
+    });
   }, [selectedModel]);
 
   // app_opened — one-shot per app launch, fires after analytics has had
@@ -150,7 +151,9 @@ export default function App() {
   // registered in analytics.ts initAnalytics, so no per-call props needed.
   useEffect(() => {
     const t = setTimeout(() => {
-      track('app_opened', {});
+      void import('./lib/analytics').then(({ track }) => {
+        track('app_opened', {});
+      });
     }, 500);
     return () => clearTimeout(t);
   }, []);
