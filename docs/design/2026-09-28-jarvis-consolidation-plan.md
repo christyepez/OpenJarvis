@@ -165,14 +165,17 @@ used for concepts and contracts rather than parallel execution.
 
 ### Current validation baseline
 
-Validation executed on `trabajo` on 2026-10-01:
+Validation executed on `trabajo` through 2026-10-02:
 
 - Governance + JarvisBench + compact tool selection: **50 passed**.
 - Task/project orchestration + templates + orchestrator regression: **134 passed**.
-- Operations backend: **15 passed**.
+- Operations backend regression after lifespan migration: **14 passed**.
 - Operations frontend: **10 passed**.
+- Graphify portable runner: **4 passed**, Ruff **PASS**, runtime reports `graphify 0.9.63`.
 - Production frontend build: **PASS**.
-- Ruff on changed EasyTool/consolidation Python modules: **PASS**.
+- Main frontend chunk reduced from **1,113.14 kB** to **453.54 kB**.
+- Analytics now builds as a separate lazy chunk (**298.81 kB**); the ineffective dynamic-import warning is gone.
+- Ruff on changed consolidation/server Python modules: **PASS**.
 
 Recent consolidation checkpoints include:
 
@@ -184,8 +187,9 @@ Recent consolidation checkpoints include:
 
 ### Non-blocking technical debt
 
-- FastAPI shutdown still uses deprecated `on_event`; migrate to lifespan
-  separately from consolidation behavior.
-- The frontend production build reports a large main chunk and an ineffective
-  dynamic import for analytics; address with a dedicated bundle-optimization
-  segment rather than mixing it into orchestration changes.
+- The managed FastAPI shutdown now uses lifespan instead of deprecated `on_event`.
+- Frontend analytics and secondary routes are lazy-loaded; the main production
+  chunk is below 500 kB and the ineffective dynamic-import warning is resolved.
+- Starlette's legacy `TestClient` path still emits one upstream deprecation
+  warning about `httpx`; treat this as dependency/test-harness maintenance, not
+  a consolidation blocker.
