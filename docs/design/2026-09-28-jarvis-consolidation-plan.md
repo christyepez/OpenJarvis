@@ -175,10 +175,11 @@ Validation executed on `trabajo` through 2026-10-02:
 - Production frontend build: **PASS**.
 - Main frontend chunk reduced from **1,113.14 kB** to **453.54 kB**.
 - Analytics now builds as a separate lazy chunk (**298.81 kB**); the ineffective dynamic-import warning is gone.
-- Ruff on changed consolidation/server Python modules: **PASS**.
+- Ruff check across `src/` + `tests/`: **PASS**.
+- Ruff format across `src/` + `tests/`: **PASS** (`1432 files already formatted`).
 - `git diff --check main...HEAD`: **PASS**; `uv lock --check`: **PASS**.
-- Distribution build: **PASS** for sdist and wheel.
-- Clean Python 3.12 wheel install: **PASS** (`import openjarvis` and CLI entrypoint import).
+- Distribution build from current HEAD: **PASS** for sdist and wheel.
+- Clean Python 3.12 wheel install from current HEAD: **PASS** (`import openjarvis` and CLI entrypoint import).
 
 Recent consolidation checkpoints include:
 
@@ -195,5 +196,11 @@ Recent consolidation checkpoints include:
   chunk is below 500 kB and the ineffective dynamic-import warning is resolved.
 - Starlette `TestClient` now uses the dev-only `httpx2` dependency, removing
   the previous fallback-to-`httpx` deprecation warning from server test runs.
-- GitHub Actions workflows exist in `main`, but this public fork has not enabled
-  fork workflows yet; enable Actions on the fork before relying on remote CI.
+- GitHub Actions workflows exist in `main`, but this public fork has not registered
+  them yet. Repository Actions permissions are enabled, while the workflow API
+  still returns no workflows and `ci.yml/enable` returns 404; enable workflows
+  once from the fork's Actions UI before relying on remote CI.
+- The official CI Rust step cannot be reproduced exactly on `trabajo`: `maturin.exe`
+  is blocked by Windows Application Control and Cargo is not on PATH by default
+  (it exists under `%USERPROFILE%\\.cargo\\bin`). This is an environment constraint,
+  not a failing consolidation test.
