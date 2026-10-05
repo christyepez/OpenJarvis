@@ -2,15 +2,18 @@ import { EnergyDashboard } from '../components/Dashboard/EnergyDashboard';
 import { CostComparison } from '../components/Dashboard/CostComparison';
 import { TraceDebugger } from '../components/Dashboard/TraceDebugger';
 import { OperationsOverview } from '../components/Dashboard/OperationsOverview';
+import { JarvisCoreHud } from '../components/Dashboard/JarvisCoreHud';
 
 export function DashboardPage() {
   const now = new Date();
   const stamp = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-5xl mx-auto">
-        <header className="mb-6">
+    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8">
+      <div className="max-w-7xl mx-auto">
+        <JarvisCoreHud />
+
+        <header className="mt-8 mb-6">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
               System Overview

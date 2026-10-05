@@ -754,3 +754,378 @@
   background: var(--color-accent);
   text-decoration: none;
 }
+
+/* Jarvis cinematic command HUD */
+.jarvis-hud-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 42%, transparent);
+  border-radius: 22px;
+  padding: 22px;
+  min-height: 500px;
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--color-accent) 13%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--color-bg-elevated) 92%, transparent), color-mix(in srgb, var(--color-bg) 88%, transparent));
+  box-shadow:
+    inset 0 0 60px color-mix(in srgb, var(--color-accent) 5%, transparent),
+    0 24px 80px color-mix(in srgb, #000 35%, transparent);
+}
+
+.jarvis-hud-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 49.8%, color-mix(in srgb, var(--color-accent) 12%, transparent) 50%, transparent 50.2%),
+    linear-gradient(0deg, transparent 49.8%, color-mix(in srgb, var(--color-accent) 8%, transparent) 50%, transparent 50.2%);
+  opacity: 0.7;
+}
+
+.jarvis-hud-scan {
+  position: absolute;
+  inset: -40% 0 auto;
+  height: 42%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent);
+  animation: jarvis-scan 7s linear infinite;
+}
+
+.jarvis-hud-corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-color: var(--color-accent);
+  opacity: 0.7;
+}
+.jarvis-hud-corner.tl { top: 10px; left: 10px; border-top: 1px solid; border-left: 1px solid; }
+.jarvis-hud-corner.tr { top: 10px; right: 10px; border-top: 1px solid; border-right: 1px solid; }
+.jarvis-hud-corner.bl { bottom: 10px; left: 10px; border-bottom: 1px solid; border-left: 1px solid; }
+.jarvis-hud-corner.br { bottom: 10px; right: 10px; border-bottom: 1px solid; border-right: 1px solid; }
+
+.jarvis-hud-topline,
+.jarvis-hud-footer {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.jarvis-kicker {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.jarvis-hud-title {
+  margin-top: 4px;
+  font-size: clamp(22px, 3vw, 38px);
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--color-text);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.jarvis-hud-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.jarvis-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: color-mix(in srgb, var(--color-bg-elevated) 74%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+}
+.jarvis-status-pill.is-ok { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); color: var(--color-text); }
+.jarvis-status-pill.is-warn { border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+.jarvis-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.jarvis-hud-grid {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(300px, 1.6fr) minmax(150px, 1fr);
+  gap: 22px;
+  align-items: center;
+  min-height: 370px;
+  margin: 14px 0 6px;
+}
+
+.jarvis-side-stack {
+  display: grid;
+  gap: 12px;
+}
+.jarvis-side-stack.left .jarvis-data-card { text-align: right; }
+.jarvis-side-stack.right .jarvis-data-card { text-align: left; }
+
+.jarvis-data-card {
+  position: relative;
+  padding: 13px 15px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-bg-elevated) 85%, transparent), color-mix(in srgb, var(--color-accent) 4%, transparent));
+  backdrop-filter: blur(12px);
+}
+.jarvis-data-card::after {
+  content: '';
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  opacity: 0.45;
+}
+.jarvis-data-card span {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--color-text-tertiary);
+}
+.jarvis-data-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+  color: var(--color-text);
+  font-weight: 700;
+}
+.jarvis-data-card small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--color-accent);
+}
+
+.jarvis-core-stage {
+  position: relative;
+  min-height: 340px;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+.jarvis-core-reactor {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--color-accent) 72%, white 14%) 0 6%, transparent 7%),
+    radial-gradient(circle, color-mix(in srgb, var(--color-accent) 28%, transparent) 0 34%, transparent 35%),
+    conic-gradient(from 45deg, transparent 0 7%, color-mix(in srgb, var(--color-accent) 85%, white 5%) 8% 13%, transparent 14% 24%, color-mix(in srgb, var(--color-accent) 58%, transparent) 25% 31%, transparent 32% 100%);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 75%, white 10%);
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--color-accent) 38%, transparent),
+    0 0 80px color-mix(in srgb, var(--color-accent) 20%, transparent),
+    inset 0 0 34px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  animation: jarvis-core-breathe 2.8s ease-in-out infinite;
+}
+.jarvis-core-reactor.is-online {
+  box-shadow:
+    0 0 28px color-mix(in srgb, var(--color-accent) 55%, transparent),
+    0 0 105px color-mix(in srgb, var(--color-accent) 26%, transparent),
+    inset 0 0 40px color-mix(in srgb, var(--color-accent) 34%, transparent);
+}
+.jarvis-core-reactor-inner {
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 68%, transparent);
+  background: color-mix(in srgb, var(--color-bg) 52%, transparent);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+.jarvis-core-symbol {
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--color-text);
+  text-shadow: 0 0 14px var(--color-accent);
+}
+.jarvis-core-state {
+  margin-top: 4px;
+  font-size: 8px;
+  letter-spacing: 0.28em;
+  color: var(--color-accent);
+}
+
+.jarvis-core-orbit {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 38%, transparent);
+  pointer-events: none;
+}
+.orbit-a { width: 205px; height: 205px; border-style: dashed; animation: jarvis-spin 18s linear infinite; }
+.orbit-b { width: 268px; height: 268px; border-color: color-mix(in srgb, var(--color-accent-purple) 28%, transparent); animation: jarvis-spin-reverse 26s linear infinite; }
+.orbit-c { width: 326px; height: 326px; border-style: dotted; opacity: 0.45; animation: jarvis-spin 42s linear infinite; }
+
+.jarvis-core-crosshair {
+  position: absolute;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-accent) 28%, transparent), transparent);
+  opacity: 0.7;
+}
+.jarvis-core-crosshair.horizontal { width: 92%; height: 1px; }
+.jarvis-core-crosshair.vertical { width: 1px; height: 92%; background: linear-gradient(0deg, transparent, color-mix(in srgb, var(--color-accent) 28%, transparent), transparent); }
+
+.jarvis-orbit-label {
+  position: absolute;
+  display: grid;
+  gap: 2px;
+  min-width: 92px;
+  padding: 6px 8px;
+  border-left: 1px solid color-mix(in srgb, var(--color-accent) 48%, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent);
+}
+.jarvis-orbit-label span { font-size: 8px; letter-spacing: 0.16em; color: var(--color-text-tertiary); }
+.jarvis-orbit-label strong { font-size: 10px; color: var(--color-text); font-weight: 700; word-break: break-word; }
+.orbit-label-1 { top: 5%; left: 12%; }
+.orbit-label-2 { top: 14%; right: 8%; }
+.orbit-label-3 { bottom: 10%; left: 8%; }
+.orbit-label-4 { bottom: 5%; right: 12%; }
+
+.jarvis-hud-footer {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border));
+}
+.jarvis-signal-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+}
+.jarvis-actions { display: flex; gap: 8px; }
+.jarvis-hud-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg-elevated));
+  color: var(--color-text);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+.jarvis-hud-button:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--color-accent) 20%, var(--color-bg-elevated));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+.jarvis-hud-button.secondary { border-color: color-mix(in srgb, var(--color-border) 86%, transparent); background: color-mix(in srgb, var(--color-bg-elevated) 82%, transparent); }
+
+.jarvis-compact-shell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
+  border-radius: 14px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 36%),
+    color-mix(in srgb, var(--color-bg-elevated) 82%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--color-accent) 4%, transparent);
+}
+.jarvis-compact-core {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 0 20px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+.jarvis-compact-core::before,
+.jarvis-compact-core::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--color-accent) 52%, transparent);
+}
+.jarvis-compact-core::before { inset: 5px; animation: jarvis-spin 8s linear infinite; }
+.jarvis-compact-core::after { inset: 11px; border-style: solid; }
+.jarvis-core-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 12px var(--color-accent);
+  animation: jarvis-core-breathe 1.8s ease-in-out infinite;
+}
+.jarvis-compact-title { font-size: 13px; font-weight: 800; letter-spacing: 0.08em; color: var(--color-text); }
+.jarvis-compact-meta { margin-top: 2px; font-size: 10px; color: var(--color-text-tertiary); }
+
+@keyframes jarvis-spin { to { transform: rotate(360deg); } }
+@keyframes jarvis-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes jarvis-core-breathe {
+  0%, 100% { transform: scale(0.98); opacity: 0.86; }
+  50% { transform: scale(1.025); opacity: 1; }
+}
+@keyframes jarvis-scan {
+  0% { transform: translateY(-40%); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(360%); opacity: 0; }
+}
+
+@media (max-width: 980px) {
+  .jarvis-hud-grid { grid-template-columns: 1fr; }
+  .jarvis-side-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .jarvis-side-stack.left .jarvis-data-card,
+  .jarvis-side-stack.right .jarvis-data-card { text-align: left; }
+  .jarvis-core-stage { order: -1; min-height: 320px; }
+}
+
+@media (max-width: 640px) {
+  .jarvis-hud-shell { padding: 16px; min-height: 0; }
+  .jarvis-hud-topline,
+  .jarvis-hud-footer { align-items: flex-start; flex-direction: column; }
+  .jarvis-hud-badges { justify-content: flex-start; }
+  .jarvis-side-stack { grid-template-columns: 1fr; }
+  .jarvis-core-stage { min-height: 290px; transform: scale(0.9); }
+  .jarvis-orbit-label { display: none; }
+  .jarvis-compact-shell .jarvis-status-pill { display: none; }
+  .jarvis-compact-shell { min-height: 62px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jarvis-hud-scan,
+  .jarvis-core-reactor,
+  .jarvis-core-orbit,
+  .jarvis-compact-core::before,
+  .jarvis-core-pulse {
+    animation: none !important;
+  }
+}
