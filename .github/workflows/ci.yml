@@ -149,7 +149,7 @@ jobs:
       - name: Build reusable Windows wheel
         if: matrix.python-version == '3.12'
         shell: bash
-        run: uv run maturin build --release --manifest-path rust/crates/openjarvis-python/Cargo.toml --out dist-native
+        run: uv run maturin build --manifest-path rust/crates/openjarvis-python/Cargo.toml --out dist-native
 
       - name: Upload reusable Windows wheel
         if: matrix.python-version == '3.12'
