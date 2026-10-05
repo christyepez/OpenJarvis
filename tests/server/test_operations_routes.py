@@ -47,6 +47,11 @@ class _PingTool:
     spec = SimpleNamespace(name="ping")
 
 
+class _StartProcessTool:
+    tool_id = "mcp_adapter"
+    spec = SimpleNamespace(name="start_process")
+
+
 class _MemoryBackend:
     backend_id = "sqlite"
 
@@ -581,6 +586,43 @@ def test_operations_machine_probe_uses_commander_mcp_once() -> None:
     assert "list_devices" in data["tools"]["mcp"]
     assert "ping" in data["tools"]["mcp"]
     assert data["machines"]["selected"] == "MarketingIndo"
+
+
+def test_machine_probe_accepts_local_commander_without_inventory() -> None:
+    governance = SimpleNamespace(
+        primary_machine="trabajo",
+        fallback_machines="MarketingIndo",
+    )
+    config = SimpleNamespace(
+        governance=governance,
+        security=SimpleNamespace(enabled=False),
+        traces=SimpleNamespace(enabled=False),
+        analytics=SimpleNamespace(enabled=False),
+    )
+    app = create_app(
+        _Engine(),
+        "qwen3.5:4b",
+        engine_name="ollama",
+        config=config,
+        agent_manager=_Manager(),
+        mcp_tools=[_StartProcessTool()],
+    )
+    client = TestClient(app)
+
+    probe = client.post("/v1/operations/machines/probe")
+    assert probe.status_code == 200
+    machines = probe.json()
+    assert machines["signal"] == "runtime"
+    assert machines["selected"] == "trabajo"
+    assert machines["primary"]["status"] == "online"
+    assert machines["fallbacks"][0]["status"] == "unknown"
+
+    status = client.get("/v1/operations/status")
+    assert status.status_code == 200
+    data = status.json()
+    assert data["execution"]["commander_connected"] is True
+    assert "start_process" in data["tools"]["mcp"]
+    assert data["machines"]["selected"] == "trabajo"
 
 
 def test_operations_machine_probe_binds_worker_runtime_device_id() -> None:
