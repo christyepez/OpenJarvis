@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { fetchOperationsStatus, type OperationsStatus } from '../../lib/api';
+import {
+  fetchOperationsStatus,
+  fetchSpeechHealth,
+  transcribeAudio,
+  type OperationsStatus,
+} from '../../lib/api';
 import { useAppStore } from '../../lib/store';
 import { useTtsStore } from '../../lib/tts';
+import {
+  extractJarvisVoiceCommand,
+  resolveJarvisVoiceIntent,
+} from '../../lib/jarvis-voice';
 
 type JarvisCoreHudProps = {
   compact?: boolean;
@@ -45,6 +54,7 @@ export function JarvisCoreHud({ compact = false }: JarvisCoreHudProps) {
   const isStreaming = useAppStore((s) => s.streamState.isStreaming);
   const streamPhase = useAppStore((s) => s.streamState.phase);
   const activeToolCalls = useAppStore((s) => s.streamState.activeToolCalls);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const ttsState = useTtsStore((s) => s.state);
 
   useEffect(() => {
@@ -86,81 +96,174 @@ export function JarvisCoreHud({ compact = false }: JarvisCoreHudProps) {
   }, []);
 
   useEffect(() => {
-    const speechWindow = window as unknown as {
-      SpeechRecognition?: new () => {
-        continuous: boolean;
-        interimResults: boolean;
-        lang: string;
-        start: () => void;
-        stop: () => void;
-        onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
-        onend: (() => void) | null;
-        onerror: (() => void) | null;
-      };
-      webkitSpeechRecognition?: new () => {
-        continuous: boolean;
-        interimResults: boolean;
-        lang: string;
-        start: () => void;
-        stop: () => void;
-        onresult: ((event: { results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }> }) => void) | null;
-        onend: (() => void) | null;
-        onerror: (() => void) | null;
-      };
-    };
-    const Ctor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
-    setWakeSupported(Boolean(Ctor));
-    if (!wakeEnabled || !Ctor) return;
-
-    let active = true;
-    const recognition = new Ctor();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = navigator.language || 'es-EC';
-
-    recognition.onresult = (event) => {
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (!result?.isFinal) continue;
-        const transcript = result[0]?.transcript?.trim() ?? '';
-        const match = transcript.match(/\bjarvis\b[,:]?\s*(.*)$/i);
-        if (!match) continue;
-        const command = match[1]?.trim() ?? '';
-        window.dispatchEvent(new CustomEvent('jarvis:wake', { detail: { transcript } }));
-        window.dispatchEvent(new CustomEvent('jarvis:wake-command', { detail: { command } }));
-        navigate('/');
-      }
-    };
-    recognition.onerror = () => {
-      if (active) setWakeEnabled(false);
-    };
-    recognition.onend = () => {
-      if (!active) return;
-      window.setTimeout(() => {
-        try {
-          recognition.start();
-        } catch {
-          // Browser may still be finalizing the previous recognition cycle.
-        }
-      }, 250);
-    };
-
-    try {
-      recognition.start();
-    } catch {
-      setWakeEnabled(false);
+    const browserSupported =
+      typeof navigator.mediaDevices?.getUserMedia === 'function'
+      && typeof window.MediaRecorder !== 'undefined';
+    setWakeSupported(browserSupported);
+    if (!wakeEnabled || !browserSupported || ttsState !== 'idle' || voiceState !== 'idle') {
+      return;
     }
 
+    let active = true;
+    let stream: MediaStream | null = null;
+    let armedUntil = 0;
+
+    const stopStream = () => {
+      stream?.getTracks().forEach((track) => track.stop());
+      stream = null;
+    };
+
+    const recordSegment = async (): Promise<{ blob: Blob; filename: string }> => {
+      if (!stream) throw new Error('Microphone stream is not available');
+      const preferredMimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+      ];
+      const mimeType = preferredMimeTypes.find((value) => MediaRecorder.isTypeSupported(value));
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      const chunks: BlobPart[] = [];
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        let timer = 0;
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        };
+        recorder.onerror = () => {
+          window.clearTimeout(timer);
+          reject(new Error('Wake microphone recorder failed'));
+        };
+        recorder.onstop = () => {
+          window.clearTimeout(timer);
+          resolve(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
+        };
+        recorder.start();
+        timer = window.setTimeout(() => {
+          if (recorder.state === 'recording') recorder.stop();
+        }, 2800);
+      });
+      const filename = blob.type.includes('ogg') ? 'wake.ogg' : 'wake.webm';
+      return { blob, filename };
+    };
+
+    const dispatchCommand = (command: string, transcript: string) => {
+      const cleaned = command.trim();
+      if (!cleaned) return;
+
+      const fingerprint = cleaned.toLowerCase().replace(/\s+/g, ' ');
+      try {
+        const raw = sessionStorage.getItem('jarvis-last-voice-command');
+        const previous = raw
+          ? (JSON.parse(raw) as { fingerprint?: string; at?: number })
+          : null;
+        if (
+          previous?.fingerprint === fingerprint
+          && typeof previous.at === 'number'
+          && Date.now() - previous.at < 9000
+        ) {
+          return;
+        }
+        sessionStorage.setItem(
+          'jarvis-last-voice-command',
+          JSON.stringify({ fingerprint, at: Date.now() }),
+        );
+      } catch {
+        // Dedupe is best-effort only.
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('jarvis:wake', { detail: { transcript, command: cleaned } }),
+      );
+
+      const intent = resolveJarvisVoiceIntent(cleaned);
+      if (intent.type === 'navigate') {
+        navigate(intent.path);
+        return;
+      }
+
+      navigate('/');
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent('jarvis:wake-command', {
+            detail: { command: intent.command, autoSubmit: true },
+          }),
+        );
+      }, 180);
+    };
+
+    const run = async () => {
+      try {
+        const health = await fetchSpeechHealth();
+        if (!health.available) {
+          setWakeSupported(false);
+          return;
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+        });
+        setWakeSupported(true);
+
+        while (active) {
+          const { blob, filename } = await recordSegment();
+          if (!active) break;
+          if (blob.size < 1200) continue;
+
+          const result = await transcribeAudio(blob, filename);
+          const transcript = result.text.trim();
+          if (!transcript) continue;
+
+          window.dispatchEvent(
+            new CustomEvent('jarvis:wake-transcript', { detail: { transcript } }),
+          );
+
+          const wake = extractJarvisVoiceCommand(transcript);
+          if (wake) {
+            if (wake.command) {
+              armedUntil = 0;
+              dispatchCommand(wake.command, transcript);
+            } else {
+              armedUntil = Date.now() + 9000;
+            }
+          } else if (armedUntil > Date.now()) {
+            armedUntil = 0;
+            dispatchCommand(transcript, transcript);
+          }
+        }
+      } catch (err) {
+        if (active) {
+          console.warn('Jarvis local wake monitor stopped:', err);
+          setWakeEnabled(false);
+        }
+      } finally {
+        stopStream();
+      }
+    };
+
+    void run();
     return () => {
       active = false;
-      recognition.onend = null;
-      recognition.stop();
+      stopStream();
     };
-  }, [wakeEnabled, navigate]);
+  }, [wakeEnabled, navigate, ttsState, voiceState]);
 
   useEffect(() => {
     localStorage.setItem('jarvis-wake-enabled', wakeEnabled ? '1' : '0');
-  }, [wakeEnabled]);
+    if (wakeEnabled) {
+      updateSettings({
+        speechEnabled: true,
+        voiceOutputEnabled: true,
+        voiceAutoplay: true,
+      });
+      void useTtsStore.getState().ensureHealth();
+    }
+  }, [wakeEnabled, updateSettings]);
 
   const operational = Boolean(
     status?.runtime.available &&

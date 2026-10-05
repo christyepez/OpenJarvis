@@ -7,6 +7,7 @@ ID like ``bm_george`` can never reach OpenAI or Cartesia on fallback.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import pytest
@@ -139,7 +140,12 @@ def test_synthesis_failure_falls_back_without_retrying_or_leaking_voice(monkeypa
     speak("First reply", Console(), session)
     speak("Second reply", Console(), session)
 
-    assert checked == ["openai_tts", "kokoro"]
+    expected = (
+        ["openai_tts", "windows", "kokoro"]
+        if os.name == "nt"
+        else ["openai_tts", "kokoro"]
+    )
+    assert checked == expected
     assert spoken == [
         ("openai_tts", "nova"),
         ("kokoro", "bm_george"),

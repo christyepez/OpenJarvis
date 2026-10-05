@@ -1051,6 +1051,10 @@ async def transcribe_speech(request: Request):
 
     audio_bytes = await audio_file.read()
     language = form.get("language")
+    if not language:
+        config = getattr(request.app.state, "config", None)
+        speech_config = getattr(config, "speech", None) if config is not None else None
+        language = getattr(speech_config, "language", "") or None
 
     # Detect format from filename
     filename = getattr(audio_file, "filename", "audio.wav")

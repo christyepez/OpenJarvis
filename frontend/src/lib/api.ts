@@ -634,6 +634,7 @@ export async function transcribeAudio(audioBlob: Blob, filename = 'recording.web
   }
   const formData = new FormData();
   formData.append('file', audioBlob, filename);
+  formData.append('language', 'es');
   const res = await apiFetch(`/v1/speech/transcribe`, {
     method: 'POST',
     body: formData,

@@ -172,6 +172,8 @@ speech = [
     "numpy>=1.24",
     "sounddevice>=0.5",
     "soundfile>=0.12",
+    "pycaw>=2026.9; sys_platform == 'win32'",
+    "openwakeword>=0.6; sys_platform == 'win32'",
 ]
 speech-deepgram = ["deepgram-sdk>=3.0"]
 eval-wandb = ["wandb>=0.17"]

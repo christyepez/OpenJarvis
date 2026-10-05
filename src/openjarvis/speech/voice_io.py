@@ -25,6 +25,45 @@ def _rms(data: bytes) -> float:
     return (sum(s * s for s in shorts) / n) ** 0.5
 
 
+def resolve_input_sample_rate(
+    *,
+    requested_rate: int = _SAMPLE_RATE,
+    device: int | str | None = None,
+) -> int:
+    """Return a sample rate accepted by the selected input device."""
+    try:
+        import sounddevice as sd
+    except ImportError:
+        raise RuntimeError(
+            "sounddevice is required for voice input. "
+            "Install with: pip install sounddevice"
+        )
+
+    # Unit-test fakes and older sounddevice shims may expose only
+    # RawInputStream. In that case preserve the caller-provided rate.
+    if not hasattr(sd, "check_input_settings") or not hasattr(sd, "query_devices"):
+        return requested_rate
+
+    try:
+        sd.check_input_settings(
+            device=device,
+            channels=_CHANNELS,
+            dtype="int16",
+            samplerate=requested_rate,
+        )
+        return requested_rate
+    except Exception:
+        info = sd.query_devices(device, "input")
+        native_rate = int(round(float(info["default_samplerate"])))
+        sd.check_input_settings(
+            device=device,
+            channels=_CHANNELS,
+            dtype="int16",
+            samplerate=native_rate,
+        )
+        return native_rate
+
+
 def record_until_silence(
     *,
     sample_rate: int = _SAMPLE_RATE,
@@ -32,6 +71,7 @@ def record_until_silence(
     silence_seconds: float = _SILENCE_SECONDS,
     startup_silence_seconds: float = _STARTUP_SILENCE_SECONDS,
     max_seconds: float = _MAX_RECORD_SECONDS,
+    device: int | str | None = None,
 ) -> bytes:
     """Record from the default microphone until silence is detected.
 
@@ -46,7 +86,11 @@ def record_until_silence(
             "Install with: pip install sounddevice"
         )
 
-    chunks_per_second = sample_rate / _CHUNK
+    actual_sample_rate = resolve_input_sample_rate(
+        requested_rate=sample_rate,
+        device=device,
+    )
+    chunks_per_second = actual_sample_rate / _CHUNK
     silence_chunks = int(silence_seconds * chunks_per_second)
     startup_silence_chunks = max(1, int(startup_silence_seconds * chunks_per_second))
     max_chunks = int(max_seconds * chunks_per_second)
@@ -56,10 +100,11 @@ def record_until_silence(
     has_speech = False
 
     with sd.RawInputStream(
-        samplerate=sample_rate,
+        samplerate=actual_sample_rate,
         channels=_CHANNELS,
         dtype="int16",
         blocksize=_CHUNK,
+        device=device,
     ) as stream:
         for _ in range(max_chunks):
             raw, _ = stream.read(_CHUNK)
@@ -77,7 +122,7 @@ def record_until_silence(
                 if silence_count >= silence_chunks:
                     break
 
-    return _frames_to_wav(frames, sample_rate)
+    return _frames_to_wav(frames, actual_sample_rate)
 
 
 def _frames_to_wav(frames: list[bytes], sample_rate: int) -> bytes:
@@ -123,4 +168,4 @@ def play_wav(audio: bytes, sample_rate: int = 24000) -> None:
     sd.wait()
 
 
-__all__ = ["play_wav", "record_until_silence"]
+__all__ = ["play_wav", "record_until_silence", "resolve_input_sample_rate"]

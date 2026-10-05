@@ -162,18 +162,6 @@ export function InputArea() {
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }, [input]);
 
-  useEffect(() => {
-    const handleWakeCommand = (event: Event) => {
-      const command = (event as CustomEvent<{ command?: string }>).detail?.command?.trim();
-      if (command) {
-        setInput(command);
-      }
-      window.setTimeout(() => textareaRef.current?.focus(), 0);
-    };
-    window.addEventListener('jarvis:wake-command', handleWakeCommand);
-    return () => window.removeEventListener('jarvis:wake-command', handleWakeCommand);
-  }, []);
-
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
     if (timerRef.current) {
@@ -183,8 +171,8 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
+  const sendMessage = useCallback(async (overrideContent?: string) => {
+    const content = (overrideContent ?? input).trim();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
       toast.error('Pick a model first (⌘K)');
@@ -566,6 +554,24 @@ export function InputArea() {
     maxTokens,
   ]);
 
+  useEffect(() => {
+    const handleWakeCommand = (event: Event) => {
+      const detail = (event as CustomEvent<{ command?: string; autoSubmit?: boolean }>).detail;
+      const command = detail?.command?.trim();
+      if (!command) {
+        window.setTimeout(() => textareaRef.current?.focus(), 0);
+        return;
+      }
+      setInput(command);
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+      if (detail?.autoSubmit) {
+        void sendMessage(command);
+      }
+    };
+    window.addEventListener('jarvis:wake-command', handleWakeCommand);
+    return () => window.removeEventListener('jarvis:wake-command', handleWakeCommand);
+  }, [sendMessage]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -644,7 +650,7 @@ export function InputArea() {
               reason={micReason}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => void sendMessage()}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
               title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"

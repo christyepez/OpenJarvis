@@ -8,6 +8,7 @@ API server can reuse them instead of importing from the CLI package.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
@@ -16,12 +17,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Priority order: local first, then cloud.
-TTS_BACKEND_ORDER = ("kokoro", "openai_tts", "cartesia")
+TTS_BACKEND_ORDER = (
+    ("windows", "kokoro", "openai_tts", "cartesia")
+    if os.name == "nt"
+    else ("kokoro", "openai_tts", "cartesia")
+)
 
 # Voice IDs are backend-specific and NOT portable. ``speech.voice_id`` applies
 # only to ``speech.tts_backend``; if synthesis falls back to another backend we
 # use that backend's own default rather than passing an unrecognized ID through.
 BACKEND_DEFAULT_VOICE = {
+    "windows": "",
     "kokoro": "bm_george",  # British male
     "openai_tts": "onyx",  # deepest OpenAI preset
     "cartesia": "",  # no safe static default; let Cartesia choose

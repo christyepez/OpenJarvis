@@ -35,6 +35,36 @@ let controller: AbortController | null = null;
 let token = 0;
 let healthProbe: Promise<void> | null = null;
 
+function browserTtsAvailable(): boolean {
+  return typeof window !== 'undefined'
+    && 'speechSynthesis' in window
+    && typeof SpeechSynthesisUtterance !== 'undefined';
+}
+
+function speakWithBrowser(text: string, mine: number, set: (state: Partial<TtsStore>) => void): boolean {
+  if (!browserTtsAvailable()) return false;
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voices = window.speechSynthesis.getVoices();
+  utterance.voice =
+    voices.find((voice) => /^es[-_]/i.test(voice.lang))
+    ?? voices.find((voice) => /^en[-_]/i.test(voice.lang))
+    ?? null;
+  utterance.lang = utterance.voice?.lang || 'es-ES';
+  utterance.rate = 1;
+  utterance.onend = () => {
+    if (mine !== token) return;
+    set({ state: 'idle', speakingId: null });
+  };
+  utterance.onerror = () => {
+    if (mine !== token) return;
+    set({ state: 'idle', speakingId: null, error: 'Browser speech playback failed' });
+  };
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+  set({ state: 'speaking' });
+  return true;
+}
+
 /** Only a stream ending in the active conversation may trigger autoplay. */
 export function shouldAutoplayFinishedReply(
   previousStreamingConversationId: string | null,
@@ -71,6 +101,9 @@ function teardown(): void {
     controller.abort();
     controller = null;
   }
+  if (browserTtsAvailable()) {
+    window.speechSynthesis.cancel();
+  }
 }
 
 export const useTtsStore = create<TtsStore>((set, get) => ({
@@ -85,11 +118,12 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
     if (healthProbe) return healthProbe;
     healthProbe = fetchTtsHealth()
       .then((health) => {
-        set({ available: health.available });
+        const available = health.available || browserTtsAvailable();
+        set({ available });
         if (!health.available) healthProbe = null;
       })
       .catch(() => {
-        set({ available: false });
+        set({ available: browserTtsAvailable() });
         healthProbe = null;
       });
     return healthProbe;
@@ -137,6 +171,10 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
       if (mine !== token) return;
       if (err instanceof DOMException && err.name === 'AbortError') return;
       teardown();
+      if (speakWithBrowser(trimmed, mine, set)) {
+        set({ speakingId: id, error: null, errorId: null, available: true });
+        return;
+      }
       set({
         state: 'idle',
         speakingId: null,
