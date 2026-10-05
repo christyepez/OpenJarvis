@@ -11,11 +11,29 @@ export function useSpeech() {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Check if speech backend is available on mount
+  // Keep speech availability in sync with the local backend. The backend may
+  // become ready after the UI has already mounted (for example while a local
+  // Whisper model is downloading), so a one-shot probe would leave the mic
+  // permanently disabled until a manual page refresh.
   useEffect(() => {
-    fetchSpeechHealth()
-      .then((health) => setAvailable(health.available))
-      .catch(() => setAvailable(false));
+    let active = true;
+    const refresh = () =>
+      fetchSpeechHealth()
+        .then((health) => {
+          if (active) setAvailable(health.available);
+        })
+        .catch(() => {
+          if (active) setAvailable(false);
+        });
+
+    void refresh();
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
   }, []);
 
   // Broadcast microphone/transcription activity so the global Jarvis HUD can
