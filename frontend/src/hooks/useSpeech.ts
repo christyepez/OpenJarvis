@@ -18,6 +18,14 @@ export function useSpeech() {
       .catch(() => setAvailable(false));
   }, []);
 
+  // Broadcast microphone/transcription activity so the global Jarvis HUD can
+  // react without coupling the visual shell to the chat input component.
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('jarvis:voice-state', { detail: { state, available } }),
+    );
+  }, [state, available]);
+
   const startRecording = useCallback(async (): Promise<void> => {
     setError(null);
 

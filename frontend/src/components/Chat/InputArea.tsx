@@ -162,6 +162,18 @@ export function InputArea() {
     el.style.height = Math.min(el.scrollHeight, 200) + 'px';
   }, [input]);
 
+  useEffect(() => {
+    const handleWakeCommand = (event: Event) => {
+      const command = (event as CustomEvent<{ command?: string }>).detail?.command?.trim();
+      if (command) {
+        setInput(command);
+      }
+      window.setTimeout(() => textareaRef.current?.focus(), 0);
+    };
+    window.addEventListener('jarvis:wake-command', handleWakeCommand);
+    return () => window.removeEventListener('jarvis:wake-command', handleWakeCommand);
+  }, []);
+
   const stopStreaming = useCallback(() => {
     abortRef.current?.abort();
     if (timerRef.current) {
