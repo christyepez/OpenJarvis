@@ -272,6 +272,28 @@ def _commander_device_tool(state: Any) -> Any | None:
     return None
 
 
+def _local_commander_descriptors(state: Any, primary: str) -> list[dict[str, Any]]:
+    """Treat a local Commander process tool as the configured primary machine.
+
+    The local Desktop Commander MCP exposes ``start_process`` directly and has
+    no remote-device inventory.  In that mode there is intentionally no
+    ``device_id``: tool resolution therefore leaves ``deviceId`` unbound and
+    calls the local MCP transport exactly as advertised.
+    """
+    for tool in getattr(state, "mcp_tools", []) or []:
+        name = _mcp_tool_name(tool).casefold()
+        if name == "start_process" or name.endswith(".start_process"):
+            return [
+                {
+                    "name": primary,
+                    "online": True,
+                    "device_id": "",
+                    "tags": ["local-commander"],
+                }
+            ]
+    return []
+
+
 def _machine_summary(
     state: Any,
     *,
@@ -871,26 +893,37 @@ def operations_project_next_action(
         if not descriptors:
             tool = _commander_device_tool(state)
             if tool is None:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Commander list_devices tool unavailable.",
+                cfg = getattr(state, "config", None)
+                governance = getattr(cfg, "governance", None)
+                primary = str(
+                    getattr(governance, "primary_machine", "trabajo") or "trabajo"
                 )
-            probe = tool.execute()
-            if not getattr(probe, "success", False):
-                raise HTTPException(
-                    status_code=502,
-                    detail=str(
-                        getattr(probe, "content", "") or "Commander probe failed."
-                    ),
+                descriptors = _local_commander_descriptors(state, primary)
+                if not descriptors:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            "Commander list_devices or local start_process tool "
+                            "unavailable."
+                        ),
+                    )
+            else:
+                probe = tool.execute()
+                if not getattr(probe, "success", False):
+                    raise HTTPException(
+                        status_code=502,
+                        detail=str(
+                            getattr(probe, "content", "") or "Commander probe failed."
+                        ),
+                    )
+                descriptors = _parse_commander_devices(
+                    str(getattr(probe, "content", "") or "")
                 )
-            descriptors = _parse_commander_devices(
-                str(getattr(probe, "content", "") or "")
-            )
-            if not descriptors:
-                raise HTTPException(
-                    status_code=502,
-                    detail="Commander returned no parseable devices.",
-                )
+                if not descriptors:
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Commander returned no parseable devices.",
+                    )
             state.machine_descriptors = descriptors
             _bind_runtime_device_ids(state, descriptors)
             status_result = ProjectStatusTool(manager=manager).execute(
@@ -938,24 +971,28 @@ def operations_machine_probe(request: Request) -> dict[str, Any]:
 
     tool = _commander_device_tool(state)
     if tool is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Commander list_devices tool unavailable.",
-        )
+        devices = _local_commander_descriptors(state, primary)
+        if not devices:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Commander list_devices or local start_process tool unavailable."
+                ),
+            )
+    else:
+        result = tool.execute()
+        if not getattr(result, "success", False):
+            raise HTTPException(
+                status_code=502,
+                detail=str(getattr(result, "content", "") or "Commander probe failed."),
+            )
 
-    result = tool.execute()
-    if not getattr(result, "success", False):
-        raise HTTPException(
-            status_code=502,
-            detail=str(getattr(result, "content", "") or "Commander probe failed."),
-        )
-
-    devices = _parse_commander_devices(str(getattr(result, "content", "") or ""))
-    if not devices:
-        raise HTTPException(
-            status_code=502,
-            detail="Commander returned no parseable devices.",
-        )
+        devices = _parse_commander_devices(str(getattr(result, "content", "") or ""))
+        if not devices:
+            raise HTTPException(
+                status_code=502,
+                detail="Commander returned no parseable devices.",
+            )
 
     state.machine_descriptors = devices
     bound_workers = _bind_runtime_device_ids(state, devices)
@@ -983,14 +1020,10 @@ def operations_status(request: Request) -> dict[str, Any]:
     primary_machine = getattr(governance, "primary_machine", "trabajo")
     fallback_machines = _csv(getattr(governance, "fallback_machines", "MarketingIndo"))
     tooling = _tooling_summary(state)
-    mcp_names = tooling["tools"]["mcp"]
-    normalized_mcp = {name.casefold() for name in mcp_names}
-    commander_connected = any("commander" in name for name in normalized_mcp) or (
-        any(name.endswith("list_devices") for name in normalized_mcp)
-        and any(
-            name.endswith("start_process") or name.endswith("ping")
-            for name in normalized_mcp
-        )
+    normalized_mcp = {name.casefold() for name in tooling["tools"]["mcp"]}
+    commander_connected = any("commander" in name for name in normalized_mcp) or bool(
+        _commander_device_tool(state)
+        or _local_commander_descriptors(state, str(primary_machine or "trabajo"))
     )
     engine = getattr(state, "engine", None)
     local_models = _safe_models(engine)
