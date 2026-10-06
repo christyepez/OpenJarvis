@@ -63,3 +63,26 @@ def test_direct_can_open_windows_explorer(monkeypatch) -> None:
 
     assert answer == "Abriendo el Explorador de archivos."
     assert launched == [["explorer.exe"]]
+
+
+def test_direct_voice_help_lists_capabilities() -> None:
+    answer = direct("que puedes hacer")
+
+    assert answer is not None
+    assert "Docker Desktop" in answer
+    assert "estado del sistema" in answer
+
+
+def test_direct_docker_status_uses_real_command_result(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = "28.5.1\n"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = direct("estado docker")
+
+    assert answer == "Docker esta operativo. Version del servidor 28.5.1."

@@ -368,6 +368,69 @@ def direct(command: str) -> str | None:
         )
     if "prueba de voz" in n or "test de voz" in n:
         return "Te escucho correctamente. El control de voz de Jarvis esta operativo."
+    if any(
+        phrase in n
+        for phrase in (
+            "que puedes hacer",
+            "que sabes hacer",
+            "ayuda de voz",
+            "comandos de voz",
+        )
+    ):
+        return (
+            "Puedo abrir el panel, chat, agentes, Visual Studio Code, Explorador, "
+            "PowerShell, Docker Desktop y Chrome; consultar Git, archivos, Docker "
+            "y el estado del sistema; y enviar preguntas libres al operador Jarvis."
+        )
+    if "ultimo commit" in n or "ultimo cambio git" in n or "git log" in n:
+        repo = _repo_root()
+        proc = subprocess.run(
+            ["git", "log", "-1", "--oneline"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        line = proc.stdout.strip()
+        return (
+            f"Ultimo commit: {line}."
+            if proc.returncode == 0 and line
+            else "No pude consultar el ultimo commit."
+        )
+    if "estado docker" in n or "docker status" in n:
+        proc = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        version = proc.stdout.strip()
+        return (
+            f"Docker esta operativo. Version del servidor {version}."
+            if proc.returncode == 0 and version
+            else "Docker no esta respondiendo."
+        )
+    if "lista contenedores" in n or "listar contenedores" in n or "docker ps" in n:
+        proc = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        names = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        if proc.returncode != 0:
+            return "No pude consultar los contenedores de Docker."
+        if not names:
+            return "No hay contenedores Docker en ejecucion."
+        preview = ", ".join(names[:6])
+        suffix = "" if len(names) <= 6 else f", y {len(names) - 6} mas"
+        return f"Contenedores en ejecucion: {preview}{suffix}."
     return None
 
 
