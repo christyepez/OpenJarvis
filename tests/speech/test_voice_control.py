@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openjarvis.speech.voice_control import _requires_tool_evidence, direct, resolve_audio_device, wake_command
+from openjarvis.speech.voice_control import _is_autonomous_objective, _requires_tool_evidence, direct, resolve_audio_device, wake_command
 
 
 def test_wake_command_accepts_spanish_whisper_jarvis_variant() -> None:
@@ -20,6 +20,14 @@ def test_action_commands_require_real_tool_evidence() -> None:
     assert _requires_tool_evidence("abre docker desktop") is True
     assert _requires_tool_evidence("cuanto es dos mas dos") is False
 
+
+
+
+def test_autonomous_objective_requires_explicit_action() -> None:
+    assert _is_autonomous_objective("implementa el ajuste completo del panel") is True
+    assert _is_autonomous_objective("continua con la implementacion de Jarvis") is True
+    assert _is_autonomous_objective("que va a hacer una cosa") is False
+    assert _is_autonomous_objective("estado autonomo") is False
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
     class FakeSoundDevice:
