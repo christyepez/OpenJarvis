@@ -32,6 +32,10 @@ STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
+AUTONOMY_AGENT_NAME = os.environ.get(
+    "OPENJARVIS_AUTONOMY_AGENT",
+    "Jarvis Autonomous Operator",
+)
 THRESHOLD = int(os.environ.get("OPENJARVIS_VOICE_THRESHOLD", "180"))
 WAKE_THRESHOLD = float(os.environ.get("OPENJARVIS_WAKE_THRESHOLD", "0.18"))
 SHORT_WAKE_THRESHOLD = float(os.environ.get("OPENJARVIS_SHORT_WAKE_THRESHOLD", "0.008"))
@@ -76,6 +80,9 @@ def _requires_tool_evidence(command: str) -> bool:
         "haz ", "hacer ", "inicia ", "iniciar ", "deten ", "detener ",
         "reinicia ", "reiniciar ", "instala ", "instalar ", "actualiza ",
         "actualizar ", "descarga ", "descargar ", "sube ", "subir ",
+        "implementa ", "implementar ", "desarrolla ", "desarrollar ",
+        "corrige ", "corregir ", "revisa ", "revisar ", "continua ",
+        "continuar ", "optimiza ", "optimizar ", "migra ", "migrar ",
         "commit", "push", "pull", "docker ", "git ",
     )
     return any(term in n for term in action_terms)
@@ -474,21 +481,112 @@ def chat(command: str) -> str:
     return str((response.get("message") or {}).get("content") or "").strip()
 
 
-def _voice_agent_id() -> str | None:
+def _agent_id_by_name(name: str) -> str | None:
     try:
         payload = api("/v1/managed-agents", timeout=10)
     except Exception:
         return None
-    agents = payload.get("agents", [])
-    for agent in agents:
-        if str(agent.get("name", "")).strip() == VOICE_AGENT_NAME:
+    for agent in payload.get("agents", []):
+        if str(agent.get("name", "")).strip() == name:
             return str(agent.get("id") or "") or None
-    for agent in agents:
+    return None
+
+
+def _voice_agent_id() -> str | None:
+    agent_id = _agent_id_by_name(VOICE_AGENT_NAME)
+    if agent_id:
+        return agent_id
+    try:
+        payload = api("/v1/managed-agents", timeout=10)
+    except Exception:
+        return None
+    for agent in payload.get("agents", []):
         if str(agent.get("name", "")).strip().casefold().startswith(
             "jarvis voice operator"
         ):
             return str(agent.get("id") or "") or None
     return None
+
+
+def _autonomy_agent_id() -> str:
+    existing = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+    if existing:
+        return existing
+
+    instruction = (
+        "Trabaja de forma autonoma sobre la ultima instruccion del usuario. "
+        "Descompone trabajos largos en segmentos pequenos: cambio acotado, "
+        "pruebas dirigidas, commit y push cuando corresponda, checkpoint y "
+        "siguiente segmento. Continua sin pedir confirmacion salvo riesgo, "
+        "credenciales faltantes o una decision irreversible. Verifica resultados "
+        "con herramientas reales y nunca inventes ejecuciones. Cuando el objetivo "
+        "este completamente terminado y validado, incluye exactamente "
+        "AUTONOMY_DONE en la respuesta final; nunca uses ese marcador antes."
+    )
+    created = api(
+        "/v1/managed-agents",
+        {
+            "name": AUTONOMY_AGENT_NAME,
+            "agent_type": "operative",
+            "config": {
+                "model": MODEL,
+                "instruction": instruction,
+                "schedule_type": "interval",
+                "schedule_value": 45,
+                "timezone": "America/Guayaquil",
+                "auto_pause_on_done": True,
+                "completion_marker": "AUTONOMY_DONE",
+                "max_turns": 12,
+                "timeout_seconds": 300,
+                "max_stall_retries": 3,
+                "workspace": str(_repo_root()),
+                "mcp_tools": True,
+                "tools": [
+                    "file_read",
+                    "file_write",
+                    "shell_exec",
+                    "git_status",
+                    "git_diff",
+                    "git_log",
+                    "apply_patch",
+                    "web_search",
+                    "think",
+                ],
+            },
+        },
+        timeout=20,
+    )
+    agent_id = str(created.get("id") or "")
+    if not agent_id:
+        raise RuntimeError("No se pudo crear el operador autonomo.")
+    return agent_id
+
+
+def autonomous(command: str) -> str:
+    """Queue a durable objective and let the scheduled worker continue it."""
+    agent_id = _autonomy_agent_id()
+    agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
+    status = str(agent.get("status") or "idle")
+
+    if status == "paused":
+        api(f"/v1/managed-agents/{agent_id}/resume", {}, timeout=10)
+        status = "idle"
+    elif status in {"error", "needs_attention"}:
+        api(f"/v1/managed-agents/{agent_id}/recover", {}, timeout=10)
+        status = "idle"
+
+    api(
+        f"/v1/managed-agents/{agent_id}/messages",
+        {"content": command, "mode": "queued", "stream": False},
+        timeout=15,
+    )
+    if status != "running":
+        api(f"/v1/managed-agents/{agent_id}/run", {}, timeout=15)
+
+    return (
+        "Entendido. Inicie el trabajo autonomo. Continuare por etapas, "
+        "validare cada cambio y me detendre automaticamente cuando termine."
+    )
 
 
 def managed(command: str) -> str:
@@ -547,21 +645,13 @@ def execute(command: str) -> str:
         return chat(command)
 
     try:
-        return managed(command)
-    except UnverifiedVoiceActionError as exc:
-        log.warning("Managed voice action rejected: %s", exc)
-        return (
-            "No pude verificar una ejecucion real en el equipo. "
-            "No voy a afirmar que la accion se realizo."
-        )
+        return autonomous(command)
     except Exception as exc:
-        log.warning("Managed voice execution failed, falling back to chat: %s", exc)
-        if _requires_tool_evidence(command):
-            return (
-                "No pude ejecutar esa accion de forma verificable en el equipo. "
-                "La orden no fue aplicada."
-            )
-        return chat(command)
+        log.warning("Autonomous voice execution failed: %s", exc)
+        return (
+            "No pude iniciar el trabajo autonomo de forma verificable. "
+            "La orden no fue aplicada."
+        )
 
 
 def load_wake_detector():

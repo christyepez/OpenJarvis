@@ -153,6 +153,30 @@ def test_empty_turn_with_tool_result_is_not_retried() -> None:
     assert _should_retry_empty_result(AgentResult(content="")) is True
 
 
+def test_finalize_tick_auto_pauses_completed_autonomous_agent(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto.db"))
+    bus = EventBus()
+    executor = AgentExecutor(mgr, bus)
+
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(content="Trabajo completado. AUTONOMY_DONE")
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "paused"
+    mgr.close()
+
+
 def test_finalize_tick_reads_agent_result_metadata(tmp_path):
     """_finalize_tick() accumulates cost/tokens from AgentResult.metadata."""
     from openjarvis.agents.executor import AgentExecutor

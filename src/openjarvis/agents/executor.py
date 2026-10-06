@@ -1163,6 +1163,30 @@ class AgentExecutor:
                     tool_calls=_tool_calls_for_storage(result),
                 )
 
+                # Autonomous workers can stop themselves deterministically
+                # after reporting a completion marker. This prevents interval
+                # schedules from re-running a finished objective forever.
+                agent_after_run = self._manager.get_agent(agent_id)
+                auto_config = (
+                    agent_after_run.get("config", {})
+                    if agent_after_run is not None
+                    else {}
+                )
+                done_marker = str(
+                    auto_config.get("completion_marker", "AUTONOMY_DONE") or ""
+                ).strip()
+                if (
+                    auto_config.get("auto_pause_on_done") is True
+                    and done_marker
+                    and done_marker in (result.content or "")
+                ):
+                    self._manager.update_agent(agent_id, status="paused")
+                    logger.info(
+                        "Agent %s auto-paused after completion marker %s",
+                        agent_id,
+                        done_marker,
+                    )
+
             # Budget enforcement (post-tick check)
             agent_data = self._manager.get_agent(agent_id)
             if agent_data:

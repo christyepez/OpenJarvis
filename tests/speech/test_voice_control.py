@@ -108,12 +108,14 @@ def test_execute_routes_conversation_directly_to_local_chat(monkeypatch) -> None
     assert calls == ["chat"]
 
 
-def test_execute_keeps_actions_on_managed_agent(monkeypatch) -> None:
+def test_execute_routes_actions_to_autonomous_agent(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr("openjarvis.speech.voice_control.direct", lambda command: None)
-    monkeypatch.setattr("openjarvis.speech.voice_control.chat", lambda command: calls.append("chat") or "respuesta local")
-    monkeypatch.setattr("openjarvis.speech.voice_control.managed", lambda command: calls.append("managed") or "ejecutado")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.autonomous",
+        lambda command: calls.append("autonomous") or "trabajo autonomo iniciado",
+    )
 
     from openjarvis.speech.voice_control import execute
-    assert execute("verifica el directorio actual") == "ejecutado"
-    assert calls == ["managed"]
+    assert execute("verifica el directorio actual") == "trabajo autonomo iniciado"
+    assert calls == ["autonomous"]
