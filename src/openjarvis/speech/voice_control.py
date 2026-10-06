@@ -34,6 +34,8 @@ MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 THRESHOLD = int(os.environ.get("OPENJARVIS_VOICE_THRESHOLD", "180"))
 WAKE_THRESHOLD = float(os.environ.get("OPENJARVIS_WAKE_THRESHOLD", "0.18"))
+SHORT_WAKE_THRESHOLD = float(os.environ.get("OPENJARVIS_SHORT_WAKE_THRESHOLD", "0.008"))
+SHORT_WAKE_RMS = float(os.environ.get("OPENJARVIS_SHORT_WAKE_RMS", "100"))
 WAKE_MODE = os.environ.get("OPENJARVIS_WAKE_MODE", "auto").strip().lower()
 WAKE_MODEL_DIR = HOME / "models" / "openwakeword"
 AUDIO_DEVICE = os.environ.get("OPENJARVIS_AUDIO_DEVICE", "wasapi-default").strip()
@@ -631,6 +633,7 @@ def wait_for_wake(detector) -> float | None:
                 ).astype(np.int16)
             prediction = detector.predict(frame)
             score = max((float(np.max(v)) for v in prediction.values()), default=0.0)
+            frame_rms = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2))) if len(frame) else 0.0
             now = time.monotonic()
             # Keep long-running wake detection memory-bounded.
             if now - last_detector_reset >= 30.0:
@@ -645,8 +648,9 @@ def wait_for_wake(detector) -> float | None:
                     sample_rate=input_rate,
                 )
                 last_state = now
-            if score >= WAKE_THRESHOLD:
-                log.info("Wake detected score=%.4f", score)
+            short_wake = score >= SHORT_WAKE_THRESHOLD and frame_rms >= SHORT_WAKE_RMS
+            if score >= WAKE_THRESHOLD or short_wake:
+                log.info("Wake detected score=%.4f rms=%.1f", score, frame_rms)
                 return score
     return None
 
