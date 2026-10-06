@@ -540,7 +540,7 @@ def _autonomy_agent_id() -> str:
                 "timeout_seconds": 300,
                 "max_stall_retries": 3,
                 "workspace": str(_repo_root()),
-                "mcp_tools": True,
+                "mcp_tools": False,
                 "tools": [
                     "file_read",
                     "file_write",
@@ -548,6 +548,7 @@ def _autonomy_agent_id() -> str:
                     "git_status",
                     "git_diff",
                     "git_log",
+                    "git_commit",
                     "apply_patch",
                     "web_search",
                     "think",
