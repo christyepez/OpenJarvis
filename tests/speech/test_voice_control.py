@@ -142,3 +142,26 @@ def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
     from openjarvis.speech.voice_control import _agent_id_by_name
 
     assert _agent_id_by_name("Jarvis Autonomous Operator") == "new"
+
+
+def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
+    calls: list[tuple[str, dict | None, str | None]] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._agent_id_by_name",
+        lambda name: "agent-1",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        lambda path, payload=None, timeout=120, method=None: (
+            calls.append((path, payload, method)) or {"id": "agent-1"}
+        ),
+    )
+
+    from openjarvis.speech.voice_control import _autonomy_agent_id
+
+    assert _autonomy_agent_id() == "agent-1"
+    assert calls[0][0] == "/v1/managed-agents/agent-1"
+    assert calls[0][2] == "PATCH"
+    assert calls[0][1]["agent_type"] == "operative"
+    assert calls[0][1]["config"]["schedule_type"] == "interval"
