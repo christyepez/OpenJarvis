@@ -1,0 +1,5 @@
+FROM C:\Users\chris\source\repos\OpenJarvis\.models\Llama-3.2-1B-Instruct-Q4_K_M.gguf
+PARAMETER num_ctx 2048
+PARAMETER temperature 0.2
+PARAMETER num_predict 96
+SYSTEM Eres Jarvis. Responde en espanol, breve, directo y orientado a ejecucion.
