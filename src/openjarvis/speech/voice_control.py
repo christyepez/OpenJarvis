@@ -31,7 +31,7 @@ STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
-VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator")
+VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 THRESHOLD = int(os.environ.get("OPENJARVIS_VOICE_THRESHOLD", "180"))
 WAKE_THRESHOLD = float(os.environ.get("OPENJARVIS_WAKE_THRESHOLD", "0.18"))
 WAKE_MODE = os.environ.get("OPENJARVIS_WAKE_MODE", "auto").strip().lower()
@@ -68,7 +68,16 @@ def state(name: str, **extra: Any) -> None:
     }
     tmp = STATE_PATH.with_name(f"{STATE_PATH.stem}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(STATE_PATH)
+    for attempt in range(5):
+        try:
+            tmp.replace(STATE_PATH)
+            return
+        except PermissionError:
+            if attempt == 4:
+                log.warning("Could not publish voice state after retries: %s", STATE_PATH)
+                tmp.unlink(missing_ok=True)
+                return
+            time.sleep(0.05 * (attempt + 1))
 
 
 def normalize(text: str) -> str:
@@ -294,30 +303,31 @@ def direct(command: str) -> str | None:
 
 
 def chat(command: str) -> str:
-    response = api(
-        "/v1/chat/completions",
-        {
-            "model": MODEL,
-            "stream": False,
-            "temperature": 0.2,
-            "max_tokens": 500,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Eres Jarvis. Responde en espanol, breve y orientado a "
-                        "ejecucion."
-                    ),
-                },
-                {"role": "user", "content": command},
-            ],
-        },
-        timeout=180,
+    """Local fallback that talks directly to Ollama, never to a cloud engine."""
+    payload = {
+        "model": MODEL,
+        "stream": False,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Eres Jarvis. Responde en espanol, breve y orientado a "
+                    "ejecucion."
+                ),
+            },
+            {"role": "user", "content": command},
+        ],
+        "options": {"temperature": 0.2, "num_predict": 300},
+    }
+    req = urllib.request.Request(
+        "http://127.0.0.1:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-    choices = response.get("choices") or []
-    if not choices:
-        return "No recibi una respuesta valida del motor."
-    return str((choices[0].get("message") or {}).get("content") or "").strip()
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        response = json.loads(resp.read().decode("utf-8"))
+    return str((response.get("message") or {}).get("content") or "").strip()
 
 
 def _voice_agent_id() -> str | None:
@@ -325,8 +335,14 @@ def _voice_agent_id() -> str | None:
         payload = api("/v1/managed-agents", timeout=10)
     except Exception:
         return None
-    for agent in payload.get("agents", []):
+    agents = payload.get("agents", [])
+    for agent in agents:
         if str(agent.get("name", "")).strip() == VOICE_AGENT_NAME:
+            return str(agent.get("id") or "") or None
+    for agent in agents:
+        if str(agent.get("name", "")).strip().casefold().startswith(
+            "jarvis voice operator"
+        ):
             return str(agent.get("id") or "") or None
     return None
 
@@ -498,9 +514,11 @@ def fallback_command(backend) -> str:
         device=resolve_audio_device(),
     )
     amplitude = wav_rms(audio)
-    if amplitude < max(20.0, THRESHOLD * 0.35):
+    if amplitude < max(40.0, THRESHOLD * 0.60):
+        log.debug("Fallback ignored low-level audio rms=%.1f threshold=%s", amplitude, THRESHOLD)
         return ""
     heard = backend.transcribe(audio, format="wav", language="es").text.strip()
+    log.info("Fallback heard rms=%.1f transcript=%r", amplitude, heard)
     if not heard:
         return ""
     woke, command = wake_command(heard)
