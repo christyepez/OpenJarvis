@@ -88,6 +88,37 @@ def _requires_tool_evidence(command: str) -> bool:
     return any(term in n for term in action_terms)
 
 
+def _is_autonomous_objective(command: str) -> bool:
+    """Return True only for explicit, actionable autonomous objectives."""
+    n = normalize(command)
+    if len(n) < 12:
+        return False
+    if n.startswith(("que ", "como ", "cuando ", "donde ", "por que ", "cual ")):
+        return False
+    if any(
+        phrase in n
+        for phrase in (
+            "estado autonomo",
+            "estado de autonomia",
+            "deten trabajo autonomo",
+            "detener trabajo autonomo",
+            "pausa trabajo autonomo",
+            "reanuda trabajo autonomo",
+            "reanudar trabajo autonomo",
+        )
+    ):
+        return False
+    imperative_terms = (
+        "implementa ", "implementar ", "desarrolla ", "desarrollar ",
+        "corrige ", "corregir ", "revisa ", "revisar ", "continua ",
+        "continuar ", "optimiza ", "optimizar ", "migra ", "migrar ",
+        "ejecuta ", "ejecutar ", "verifica ", "verificar ", "crea ", "crear ",
+        "actualiza ", "actualizar ", "instala ", "instalar ", "haz ",
+        "hacer ", "commit", "push", "pull",
+    )
+    return any(term in n for term in imperative_terms)
+
+
 def acquire_single_instance() -> bool:
     """Allow only one native voice listener per Windows session."""
     global _INSTANCE_MUTEX
@@ -432,6 +463,35 @@ def direct(command: str) -> str | None:
             if proc.returncode == 0 and version
             else "Docker no esta respondiendo."
         )
+    if "estado autonomo" in n or "estado de autonomia" in n:
+        agent_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+        if not agent_id:
+            return "No hay un operador autonomo creado."
+        agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
+        status = str(agent.get("status") or "desconocido")
+        activity = str(agent.get("current_activity") or "").strip()
+        summary = str(agent.get("summary_memory") or "").strip()
+        detail = activity or summary[:180]
+        return (
+            f"El operador autonomo esta {status}. {detail}".strip()
+        )
+    if (
+        "deten trabajo autonomo" in n
+        or "detener trabajo autonomo" in n
+        or "pausa trabajo autonomo" in n
+    ):
+        agent_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+        if not agent_id:
+            return "No hay un operador autonomo creado."
+        api(f"/v1/managed-agents/{agent_id}/pause", {}, timeout=10)
+        return "Trabajo autonomo pausado."
+    if "reanuda trabajo autonomo" in n or "reanudar trabajo autonomo" in n:
+        agent_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+        if not agent_id:
+            return "No hay un operador autonomo creado."
+        api(f"/v1/managed-agents/{agent_id}/resume", {}, timeout=10)
+        return "Trabajo autonomo reanudado."
+
     if "lista contenedores" in n or "listar contenedores" in n or "docker ps" in n:
         proc = subprocess.run(
             ["docker", "ps", "--format", "{{.Names}}"],
@@ -646,6 +706,11 @@ def execute(command: str) -> str:
     # them directly to the already-local Ollama model to avoid polling delay.
     if not _requires_tool_evidence(command):
         return chat(command)
+    if not _is_autonomous_objective(command):
+        return (
+            "Entendi una posible accion, pero la instruccion no es suficientemente "
+            "clara para iniciar trabajo autonomo. Indica la tarea concreta."
+        )
 
     try:
         return autonomous(command)
