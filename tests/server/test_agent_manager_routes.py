@@ -883,3 +883,36 @@ class TestLightweightSystemEngineResolution:
         assert results == [backend] * 8
         assert runtime.memory_backend is backend
         assert runtime._owns_memory_backend is True
+
+
+@pytest.mark.skipif(not HAS_FASTAPI, reason="fastapi not installed")
+def test_update_agent_refreshes_scheduler_registration(manager):
+    from fastapi import FastAPI
+
+    from openjarvis.server.agent_manager_routes import create_agent_manager_router
+
+    scheduler = MagicMock()
+    app = FastAPI()
+    app.state.agent_scheduler = scheduler
+    routers = create_agent_manager_router(manager)
+    for router in routers:
+        app.include_router(router)
+    client = TestClient(app)
+
+    agent = manager.create_agent(
+        "scheduled",
+        config={"schedule_type": "manual"},
+    )
+    response = client.patch(
+        f"/v1/managed-agents/{agent['id']}",
+        json={
+            "config": {
+                "schedule_type": "interval",
+                "schedule_value": 45,
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    scheduler.deregister_agent.assert_called_once_with(agent["id"])
+    scheduler.register_agent.assert_called_once_with(agent["id"])
