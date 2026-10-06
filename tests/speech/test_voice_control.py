@@ -96,3 +96,24 @@ def test_direct_docker_status_uses_real_command_result(monkeypatch) -> None:
     answer = direct("estado docker")
 
     assert answer == "Docker esta operativo. Version del servidor 28.5.1."
+
+def test_execute_routes_conversation_directly_to_local_chat(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr("openjarvis.speech.voice_control.direct", lambda command: None)
+    monkeypatch.setattr("openjarvis.speech.voice_control.chat", lambda command: calls.append("chat") or "respuesta local")
+    monkeypatch.setattr("openjarvis.speech.voice_control.managed", lambda command: calls.append("managed") or "respuesta managed")
+
+    from openjarvis.speech.voice_control import execute
+    assert execute("cuanto es dos mas dos") == "respuesta local"
+    assert calls == ["chat"]
+
+
+def test_execute_keeps_actions_on_managed_agent(monkeypatch) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr("openjarvis.speech.voice_control.direct", lambda command: None)
+    monkeypatch.setattr("openjarvis.speech.voice_control.chat", lambda command: calls.append("chat") or "respuesta local")
+    monkeypatch.setattr("openjarvis.speech.voice_control.managed", lambda command: calls.append("managed") or "ejecutado")
+
+    from openjarvis.speech.voice_control import execute
+    assert execute("verifica el directorio actual") == "ejecutado"
+    assert calls == ["managed"]

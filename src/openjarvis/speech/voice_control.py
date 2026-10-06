@@ -458,7 +458,8 @@ def chat(command: str) -> str:
             },
             {"role": "user", "content": command},
         ],
-        "options": {"temperature": 0.2, "num_predict": 300},
+        "options": {"temperature": 0.2, "num_predict": 120, "num_ctx": 2048},
+        "keep_alive": "30m",
     }
     req = urllib.request.Request(
         "http://127.0.0.1:11434/api/chat",
@@ -537,6 +538,12 @@ def execute(command: str) -> str:
     answer = direct(command)
     if answer is not None:
         return answer
+
+    # Conversational questions do not need the managed-agent queue. Route
+    # them directly to the already-local Ollama model to avoid polling delay.
+    if not _requires_tool_evidence(command):
+        return chat(command)
+
     try:
         return managed(command)
     except UnverifiedVoiceActionError as exc:
