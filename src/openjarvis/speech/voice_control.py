@@ -61,6 +61,24 @@ log = logging.getLogger("openjarvis.voice")
 _INSTANCE_MUTEX: Any | None = None
 
 
+class UnverifiedVoiceActionError(RuntimeError):
+    """Raised when an action-like request has no real tool evidence."""
+
+
+def _requires_tool_evidence(command: str) -> bool:
+    n = normalize(command)
+    action_terms = (
+        "abre ", "abrir ", "ejecuta ", "ejecutar ", "verifica ", "verificar ",
+        "consulta ", "consultar ", "cambia ", "cambiar ", "crea ", "crear ",
+        "elimina ", "eliminar ", "borra ", "borrar ", "guarda ", "guardar ",
+        "haz ", "hacer ", "inicia ", "iniciar ", "deten ", "detener ",
+        "reinicia ", "reiniciar ", "instala ", "instalar ", "actualiza ",
+        "actualizar ", "descarga ", "descargar ", "sube ", "subir ",
+        "commit", "push", "pull", "docker ", "git ",
+    )
+    return any(term in n for term in action_terms)
+
+
 def acquire_single_instance() -> bool:
     """Allow only one native voice listener per Windows session."""
     global _INSTANCE_MUTEX
@@ -427,6 +445,10 @@ def managed(command: str) -> str:
             if message.get("direction") == "agent_to_user" and created_at >= sent_at:
                 content = str(message.get("content") or "").strip()
                 if content:
+                    if _requires_tool_evidence(command) and not message.get("tool_calls"):
+                        raise UnverifiedVoiceActionError(
+                            "La respuesta no contiene evidencia real de herramienta."
+                        )
                     return content
 
         agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
@@ -445,8 +467,19 @@ def execute(command: str) -> str:
         return answer
     try:
         return managed(command)
+    except UnverifiedVoiceActionError as exc:
+        log.warning("Managed voice action rejected: %s", exc)
+        return (
+            "No pude verificar una ejecucion real en el equipo. "
+            "No voy a afirmar que la accion se realizo."
+        )
     except Exception as exc:
         log.warning("Managed voice execution failed, falling back to chat: %s", exc)
+        if _requires_tool_evidence(command):
+            return (
+                "No pude ejecutar esa accion de forma verificable en el equipo. "
+                "La orden no fue aplicada."
+            )
         return chat(command)
 
 
