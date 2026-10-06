@@ -438,6 +438,7 @@ def wait_for_wake(detector) -> float | None:
 
     detector.reset()
     last_state = 0.0
+    last_detector_reset = time.monotonic()
     device = resolve_audio_device()
     input_rate = resolve_input_sample_rate(
         requested_rate=16000,
@@ -468,6 +469,10 @@ def wait_for_wake(detector) -> float | None:
             prediction = detector.predict(frame)
             score = max((float(np.max(v)) for v in prediction.values()), default=0.0)
             now = time.monotonic()
+            # Keep long-running wake detection memory-bounded.
+            if now - last_detector_reset >= 30.0:
+                detector.reset()
+                last_detector_reset = now
             if now - last_state >= 1.0:
                 state(
                     "listening",
@@ -558,7 +563,21 @@ def main() -> int:
     while not STOP_PATH.exists():
         try:
             if detector is not None:
-                score = wait_for_wake(detector)
+                try:
+                    score = wait_for_wake(detector)
+                except Exception as exc:
+                    log.exception(
+                        "Wake detector failed; switching to Whisper fallback for this session"
+                    )
+                    detector = None
+                    wake_mode = "whisper-fallback"
+                    state(
+                        "recovering",
+                        error=str(exc),
+                        wake_mode=wake_mode,
+                        recovery="whisper-fallback",
+                    )
+                    continue
                 if score is None:
                     break
                 state("wake-detected", wake_score=round(score, 4))
