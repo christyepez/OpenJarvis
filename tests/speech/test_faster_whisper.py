@@ -53,7 +53,7 @@ def test_faster_whisper_transcribe():
         assert result.duration_seconds == 1.5
 
 
-def test_faster_whisper_transcribe_uses_optional_initial_prompt(monkeypatch):
+def test_faster_whisper_transcribe_uses_optional_hotwords(monkeypatch):
     mock_model = MagicMock()
     mock_info = MagicMock()
     mock_info.language = "es"
@@ -61,10 +61,7 @@ def test_faster_whisper_transcribe_uses_optional_initial_prompt(monkeypatch):
     mock_info.duration = 1.0
     mock_model.transcribe.return_value = ([], mock_info)
 
-    monkeypatch.setenv(
-        "OPENJARVIS_SPEECH_INITIAL_PROMPT",
-        "Jarvis. Comandos por voz en español.",
-    )
+    monkeypatch.setenv("OPENJARVIS_SPEECH_HOTWORDS", "Jarvis")
 
     with patch(
         "openjarvis.speech.faster_whisper.WhisperModel",
@@ -75,7 +72,7 @@ def test_faster_whisper_transcribe_uses_optional_initial_prompt(monkeypatch):
 
     kwargs = mock_model.transcribe.call_args.kwargs
     assert kwargs["language"] == "es"
-    assert kwargs["initial_prompt"] == "Jarvis. Comandos por voz en español."
+    assert kwargs["hotwords"] == "Jarvis"
 
 
 def test_faster_whisper_transcribe_temp_file_reopenable_and_removed():

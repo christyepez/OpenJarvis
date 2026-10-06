@@ -153,6 +153,15 @@ def resolve_audio_device() -> int | str | None:
         return None
     if value.isdigit():
         return int(value)
+    if value.casefold() in {"default", "system-default"}:
+        try:
+            import sounddevice as sd
+
+            index = int(sd.default.device[0])
+            return index if index >= 0 else None
+        except Exception as exc:
+            log.warning("Could not resolve system default input device: %s", exc)
+            return None
     if value.casefold() != "wasapi-default":
         return value
 

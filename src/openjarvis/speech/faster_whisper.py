@@ -119,6 +119,11 @@ class FasterWhisperBackend(SpeechBackend):
                 kwargs = {}
                 if language:
                     kwargs["language"] = language
+                hotwords = os.environ.get(
+                    "OPENJARVIS_SPEECH_HOTWORDS", ""
+                ).strip()
+                if hotwords:
+                    kwargs["hotwords"] = hotwords
                 initial_prompt = os.environ.get(
                     "OPENJARVIS_SPEECH_INITIAL_PROMPT", ""
                 ).strip()

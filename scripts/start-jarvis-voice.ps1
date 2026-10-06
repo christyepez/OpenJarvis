@@ -7,9 +7,9 @@ if (-not (Test-Path $python)) {
 }
 
 $env:OPENJARVIS_WAKE_MODE = 'whisper-fallback'
-$env:OPENJARVIS_AUDIO_DEVICE = '15'
-$env:OPENJARVIS_VOICE_THRESHOLD = '400'
-$env:OPENJARVIS_SPEECH_INITIAL_PROMPT = 'Jarvis. Comandos por voz en español.'
+$env:OPENJARVIS_AUDIO_DEVICE = 'default'
+$env:OPENJARVIS_VOICE_THRESHOLD = '120'
+$env:OPENJARVIS_SPEECH_HOTWORDS = 'Jarvis'
 $env:OPENJARVIS_VOICE_REPO = $repo
 
 Start-Process -FilePath $python `
