@@ -119,3 +119,18 @@ def test_execute_routes_actions_to_autonomous_agent(monkeypatch) -> None:
     from openjarvis.speech.voice_control import execute
     assert execute("verifica el directorio actual") == "trabajo autonomo iniciado"
     assert calls == ["autonomous"]
+
+def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        lambda *args, **kwargs: {
+            "agents": [
+                {"id": "old", "name": "Jarvis Autonomous Operator", "status": "archived"},
+                {"id": "new", "name": "Jarvis Autonomous Operator", "status": "idle"},
+            ]
+        },
+    )
+
+    from openjarvis.speech.voice_control import _agent_id_by_name
+
+    assert _agent_id_by_name("Jarvis Autonomous Operator") == "new"

@@ -487,6 +487,8 @@ def _agent_id_by_name(name: str) -> str | None:
     except Exception:
         return None
     for agent in payload.get("agents", []):
+        if str(agent.get("status") or "").strip().casefold() == "archived":
+            continue
         if str(agent.get("name", "")).strip() == name:
             return str(agent.get("id") or "") or None
     return None
