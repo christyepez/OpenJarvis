@@ -232,8 +232,39 @@ def _format_bytes(size: int) -> str:
     return f"{size / (1024 * 1024):.1f} megabytes"
 
 
+def _open_windows_app(command: str) -> str | None:
+    if os.name != "nt":
+        return None
+    n = normalize(command)
+    apps = (
+        (("abre visual studio code", "abre vscode", "abre code"), ["cmd.exe", "/c", "start", "", "code"], "Visual Studio Code"),
+        (("abre explorador", "abre el explorador"), ["explorer.exe"], "el Explorador de archivos"),
+        (("abre powershell", "abre power shell"), ["powershell.exe"], "PowerShell"),
+        (("abre docker desktop", "abre docker"), [r"C:\Program Files\Docker\Docker\Docker Desktop.exe"], "Docker Desktop"),
+        (("abre chrome", "abre google chrome"), ["cmd.exe", "/c", "start", "", "chrome"], "Google Chrome"),
+    )
+    for phrases, argv, label in apps:
+        if any(phrase in n for phrase in phrases):
+            try:
+                subprocess.Popen(
+                    argv,
+                    cwd=_repo_root(),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                )
+            except Exception as exc:
+                log.warning("Could not open %s: %s", label, exc)
+                return f"No pude abrir {label}."
+            return f"Abriendo {label}."
+    return None
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
+    app_answer = _open_windows_app(command)
+    if app_answer is not None:
+        return app_answer
     if "abre dashboard" in n or "abre el panel" in n or "abre panel" in n:
         webbrowser.open("http://127.0.0.1:5173/dashboard")
         return "Abriendo el panel de Jarvis."

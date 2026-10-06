@@ -39,3 +39,21 @@ def test_direct_file_exists_uses_real_local_file(
     answer = direct("existe el archivo pyproject.toml")
 
     assert answer == "Si. El archivo pyproject.toml existe."
+
+
+def test_direct_can_open_windows_explorer(monkeypatch) -> None:
+    launched: list[list[str]] = []
+
+    class DummyProcess:
+        pass
+
+    def fake_popen(argv, **kwargs):
+        launched.append(argv)
+        return DummyProcess()
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.subprocess.Popen", fake_popen)
+
+    answer = direct("abre el explorador")
+
+    assert answer == "Abriendo el Explorador de archivos."
+    assert launched == [["explorer.exe"]]
