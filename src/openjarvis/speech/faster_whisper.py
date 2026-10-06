@@ -119,6 +119,11 @@ class FasterWhisperBackend(SpeechBackend):
                 kwargs = {}
                 if language:
                     kwargs["language"] = language
+                initial_prompt = os.environ.get(
+                    "OPENJARVIS_SPEECH_INITIAL_PROMPT", ""
+                ).strip()
+                if initial_prompt:
+                    kwargs["initial_prompt"] = initial_prompt
 
                 segments_iter, info = model.transcribe(tmp.name, **kwargs)
                 segments_list = list(segments_iter)

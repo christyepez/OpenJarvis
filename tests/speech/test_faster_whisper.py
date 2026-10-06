@@ -53,6 +53,31 @@ def test_faster_whisper_transcribe():
         assert result.duration_seconds == 1.5
 
 
+def test_faster_whisper_transcribe_uses_optional_initial_prompt(monkeypatch):
+    mock_model = MagicMock()
+    mock_info = MagicMock()
+    mock_info.language = "es"
+    mock_info.language_probability = 0.99
+    mock_info.duration = 1.0
+    mock_model.transcribe.return_value = ([], mock_info)
+
+    monkeypatch.setenv(
+        "OPENJARVIS_SPEECH_INITIAL_PROMPT",
+        "Jarvis. Comandos por voz en español.",
+    )
+
+    with patch(
+        "openjarvis.speech.faster_whisper.WhisperModel",
+        return_value=mock_model,
+    ):
+        backend = FasterWhisperBackend(model_size="base", device="cpu")
+        backend.transcribe(b"fake audio bytes", language="es")
+
+    kwargs = mock_model.transcribe.call_args.kwargs
+    assert kwargs["language"] == "es"
+    assert kwargs["initial_prompt"] == "Jarvis. Comandos por voz en español."
+
+
 def test_faster_whisper_transcribe_temp_file_reopenable_and_removed():
     """The temp file must be closed before the model reads it, and gone after.
 
