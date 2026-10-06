@@ -58,6 +58,26 @@ logging.basicConfig(
     encoding="utf-8",
 )
 log = logging.getLogger("openjarvis.voice")
+_INSTANCE_MUTEX: Any | None = None
+
+
+def acquire_single_instance() -> bool:
+    """Allow only one native voice listener per Windows session."""
+    global _INSTANCE_MUTEX
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(None, False, "Local\\OpenJarvisVoiceControl")
+        if not handle:
+            return True
+        _INSTANCE_MUTEX = handle
+        return kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
+    except Exception as exc:
+        log.warning("Could not create single-instance voice mutex: %s", exc)
+        return True
 
 
 def state(name: str, **extra: Any) -> None:
@@ -536,6 +556,9 @@ def fallback_command(backend) -> str:
 
 
 def main() -> int:
+    if not acquire_single_instance():
+        log.info("Voice control already running; duplicate launch ignored")
+        return 0
     STOP_PATH.unlink(missing_ok=True)
     backend = get_speech_backend(load_config())
     if backend is None:
