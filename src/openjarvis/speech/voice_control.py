@@ -229,13 +229,19 @@ def wav_rms(audio: bytes) -> float:
     return (sum(sample * sample for sample in samples) / len(samples)) ** 0.5
 
 
-def api(path: str, payload: dict[str, Any] | None = None, timeout: float = 120) -> Any:
+def api(
+    path: str,
+    payload: dict[str, Any] | None = None,
+    timeout: float = 120,
+    method: str | None = None,
+) -> Any:
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    http_method = method or ("POST" if data else "GET")
     req = urllib.request.Request(
         API_BASE + path,
         data=data,
         headers={"Content-Type": "application/json"},
-        method="POST" if data else "GET",
+        method=http_method,
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
@@ -570,52 +576,65 @@ def _voice_agent_id() -> str | None:
     return None
 
 
-def _autonomy_agent_id() -> str:
-    existing = _agent_id_by_name(AUTONOMY_AGENT_NAME)
-    if existing:
-        return existing
-
+def _autonomy_config() -> dict[str, Any]:
     instruction = (
-        "Trabaja de forma autonoma sobre la ultima instruccion del usuario. "
+        "Trabaja de forma autonoma sobre la ULTIMA instruccion del usuario. "
+        "Una nueva instruccion reemplaza cualquier objetivo anterior incompleto. "
         "Descompone trabajos largos en segmentos pequenos: cambio acotado, "
         "pruebas dirigidas, commit y push cuando corresponda, checkpoint y "
         "siguiente segmento. Continua sin pedir confirmacion salvo riesgo, "
         "credenciales faltantes o una decision irreversible. Verifica resultados "
-        "con herramientas reales y nunca inventes ejecuciones. Cuando el objetivo "
-        "este completamente terminado y validado, incluye exactamente "
-        "AUTONOMY_DONE en la respuesta final; nunca uses ese marcador antes."
+        "con herramientas reales y nunca inventes ejecuciones. Si un segmento "
+        "falla, diagnostica, corrige y reintenta dentro de los limites configurados. "
+        "Cuando el objetivo este completamente terminado y validado, incluye "
+        "exactamente AUTONOMY_DONE en la respuesta final; nunca uses ese marcador antes."
     )
+    return {
+        "model": MODEL,
+        "instruction": instruction,
+        "schedule_type": "interval",
+        "schedule_value": 45,
+        "timezone": "America/Guayaquil",
+        "auto_pause_on_done": True,
+        "completion_marker": "AUTONOMY_DONE",
+        "max_turns": 12,
+        "timeout_seconds": 300,
+        "max_stall_retries": 3,
+        "workspace": str(_repo_root()),
+        "mcp_tools": False,
+        "tools": [
+            "file_read",
+            "file_write",
+            "shell_exec",
+            "git_status",
+            "git_diff",
+            "git_log",
+            "git_commit",
+            "apply_patch",
+            "web_search",
+            "think",
+        ],
+    }
+
+
+def _autonomy_agent_id() -> str:
+    config = _autonomy_config()
+    existing = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+    if existing:
+        api(
+            f"/v1/managed-agents/{existing}",
+            {"agent_type": "operative", "config": config},
+            timeout=20,
+            method="PATCH",
+        )
+        return existing
+
     created = api(
         "/v1/managed-agents",
         {
             "name": AUTONOMY_AGENT_NAME,
             "agent_type": "operative",
-            "config": {
-                "model": MODEL,
-                "instruction": instruction,
-                "schedule_type": "interval",
-                "schedule_value": 45,
-                "timezone": "America/Guayaquil",
-                "auto_pause_on_done": True,
-                "completion_marker": "AUTONOMY_DONE",
-                "max_turns": 12,
-                "timeout_seconds": 300,
-                "max_stall_retries": 3,
-                "workspace": str(_repo_root()),
-                "mcp_tools": False,
-                "tools": [
-                    "file_read",
-                    "file_write",
-                    "shell_exec",
-                    "git_status",
-                    "git_diff",
-                    "git_log",
-                    "git_commit",
-                    "apply_patch",
-                    "web_search",
-                    "think",
-                ],
-            },
+            "config": config,
         },
         timeout=20,
     )
@@ -640,7 +659,14 @@ def autonomous(command: str) -> str:
 
     api(
         f"/v1/managed-agents/{agent_id}/messages",
-        {"content": command, "mode": "queued", "stream": False},
+        {
+            "content": (
+                "NEW AUTONOMOUS OBJECTIVE. Replace any previous unfinished objective. "
+                + command
+            ),
+            "mode": "queued",
+            "stream": False,
+        },
         timeout=15,
     )
     if status != "running":
