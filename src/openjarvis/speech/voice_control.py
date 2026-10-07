@@ -603,7 +603,9 @@ def _autonomy_config() -> dict[str, Any]:
         "usa read_file, write_file o edit_block. Usa siempre rutas absolutas de Windows "
         "dentro del workspace configurado y no inventes rutas Linux. "
         "Cuando el objetivo este completamente terminado y validado, incluye "
-        "exactamente AUTONOMY_DONE en la respuesta final; nunca uses ese marcador antes."
+        "exactamente AUTONOMY_DONE en ESA MISMA respuesta y en el MISMO tick que "
+        "contiene la evidencia final de herramienta. Nunca difieras AUTONOMY_DONE "
+        "a un tick posterior y nunca uses ese marcador antes de validar."
     )
     return {
         "model": MODEL,
