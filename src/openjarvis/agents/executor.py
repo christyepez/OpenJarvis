@@ -42,6 +42,14 @@ def _should_retry_empty_result(result: AgentResult) -> bool:
     return not (result.content or "").strip() and not result.tool_results
 
 
+def _has_new_autonomous_objective(messages: list[dict[str, Any]]) -> bool:
+    """Return True when pending messages contain a fresh autonomous objective."""
+    return any(
+        "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
+        for message in messages
+    )
+
+
 def _completion_has_tool_evidence(result: AgentResult) -> bool:
     """Require successful, non-thinking tool evidence in the completion tick."""
     failure_markers = (
@@ -1001,11 +1009,9 @@ class AgentExecutor:
             base = tick_note or "Continue your assigned task."
             input_text = f"Current date: {today}\n\n{base}"
         pending = self._manager.get_pending_messages(agent["id"])
+        new_objective_pending = False
         if pending:
-            new_objective_pending = any(
-                "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
-                for message in pending
-            )
+            new_objective_pending = _has_new_autonomous_objective(pending)
             if new_objective_pending:
                 if instruction:
                     input_text = (
@@ -1042,7 +1048,8 @@ class AgentExecutor:
         memory_results = []
 
         if (
-            self._system
+            not new_objective_pending
+            and self._system
             and getattr(self._system, "memory_backend", None)
             and getattr(self._system, "config", None)
             and self._system.config.agent.context_from_memory

@@ -152,6 +152,17 @@ class TestExecutorBasic:
         assert manager.get_agent(agent["id"])["status"] == "running"
 
 
+def test_new_autonomous_objective_detection() -> None:
+    from openjarvis.agents.executor import _has_new_autonomous_objective
+
+    assert _has_new_autonomous_objective(
+        [{"content": "NEW AUTONOMOUS OBJECTIVE. implementa el cambio"}]
+    ) is True
+    assert _has_new_autonomous_objective(
+        [{"content": "Continue your assigned task."}]
+    ) is False
+
+
 def test_empty_turn_with_tool_result_is_not_retried() -> None:
     from openjarvis.agents.executor import _should_retry_empty_result
 
