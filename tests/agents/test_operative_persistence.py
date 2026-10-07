@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.agents.operative import OperativeAgent
+from openjarvis.agents.operative import OperativeAgent, _recover_text_tool_calls
 from openjarvis.sessions.session import SessionStore
 
 
@@ -25,6 +25,40 @@ def test_operative_session_round_trip(tmp_path) -> None:
         ]
     finally:
         store.close()
+
+
+def test_recover_text_tool_call_only_for_allowed_tool() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "read_file"},
+        }
+    ]
+    calls = _recover_text_tool_calls(
+        '{"name":"read_file","parameters":{"path":"C:/tmp/a.txt"}}',
+        tools,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["name"] == "read_file"
+    assert '"path": "C:/tmp/a.txt"' in calls[0]["arguments"]
+
+
+def test_recover_text_tool_call_rejects_unlisted_tool() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "read_file"},
+        }
+    ]
+
+    assert (
+        _recover_text_tool_calls(
+            '{"name":"shell_exec","parameters":{"command":"whoami"}}',
+            tools,
+        )
+        == []
+    )
 
 
 def test_new_autonomous_objective_skips_stale_state_and_session(monkeypatch) -> None:

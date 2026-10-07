@@ -7,6 +7,7 @@ automatic state management between ticks.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from typing import Any, List, Optional
@@ -19,6 +20,48 @@ from openjarvis.engine._stubs import InferenceEngine
 from openjarvis.tools._stubs import BaseTool
 
 logger = logging.getLogger(__name__)
+
+
+def _recover_text_tool_calls(
+    content: str,
+    openai_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Recover a single tool call serialized as plain text by small models."""
+    raw = (content or "").strip()
+    if not raw.startswith("{") or not raw.endswith("}"):
+        return []
+
+    parsed: Any
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        try:
+            parsed = ast.literal_eval(raw)
+        except (ValueError, SyntaxError):
+            return []
+
+    if not isinstance(parsed, dict):
+        return []
+    name = str(parsed.get("name") or "").strip()
+    parameters = parsed.get("parameters")
+    if not name or not isinstance(parameters, dict):
+        return []
+
+    allowed = {
+        str((tool.get("function") or {}).get("name") or "").strip()
+        for tool in openai_tools
+        if isinstance(tool, dict)
+    }
+    if name not in allowed:
+        return []
+
+    return [
+        {
+            "id": "recovered_text_tool_call",
+            "name": name,
+            "arguments": json.dumps(parameters),
+        }
+    ]
 
 
 @AgentRegistry.register("operative")
@@ -147,6 +190,13 @@ class OperativeAgent(ToolUsingAgent):
                 total_usage[k] += usage.get(k, 0)
             content = result.get("content", "")
             raw_tool_calls = result.get("tool_calls", [])
+            if not raw_tool_calls and openai_tools:
+                raw_tool_calls = _recover_text_tool_calls(content, openai_tools)
+                if raw_tool_calls:
+                    logger.info(
+                        "Recovered text-serialized tool call from model output"
+                    )
+                    content = ""
 
             if not raw_tool_calls:
                 content = self._check_continuation(result, messages)
