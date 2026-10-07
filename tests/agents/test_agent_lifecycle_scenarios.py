@@ -85,6 +85,7 @@ def test_interval_scheduled_agent(scenario_harness: ScenarioHarness) -> None:
         mock_time.time.return_value = base_time + 61
         h.scheduler._check_due_agents()
 
+    assert h.scheduler.wait_for_workers(timeout=2.0)
     agent = h.manager.get_agent(aid)
     assert agent is not None
     assert agent["total_runs"] == 1
@@ -387,6 +388,7 @@ def test_pause_resume(scenario_harness: ScenarioHarness) -> None:
         mock_time.time.return_value = base_time + 61
         h.scheduler._check_due_agents()
 
+    assert h.scheduler.wait_for_workers(timeout=2.0)
     agent = h.manager.get_agent(aid)
     assert agent is not None
     assert agent["total_runs"] == 1
@@ -426,6 +428,7 @@ def test_multi_agent_scheduling(scenario_harness: ScenarioHarness) -> None:
         mock_time.time.return_value = base_time + 35
         h.scheduler._check_due_agents()
 
+    assert h.scheduler.wait_for_workers(timeout=2.0)
     a0 = h.manager.get_agent(agents[0]["id"])
     a1 = h.manager.get_agent(agents[1]["id"])
     a2 = h.manager.get_agent(agents[2]["id"])
@@ -442,6 +445,7 @@ def test_multi_agent_scheduling(scenario_harness: ScenarioHarness) -> None:
         mock_time.time.return_value = base_time + 65
         h.scheduler._check_due_agents()
 
+    assert h.scheduler.wait_for_workers(timeout=2.0)
     a0 = h.manager.get_agent(agents[0]["id"])
     a1 = h.manager.get_agent(agents[1]["id"])
     a2 = h.manager.get_agent(agents[2]["id"])
@@ -456,6 +460,7 @@ def test_multi_agent_scheduling(scenario_harness: ScenarioHarness) -> None:
         mock_time.time.return_value = base_time + 125
         h.scheduler._check_due_agents()
 
+    assert h.scheduler.wait_for_workers(timeout=2.0)
     a0 = h.manager.get_agent(agents[0]["id"])
     a1 = h.manager.get_agent(agents[1]["id"])
     a2 = h.manager.get_agent(agents[2]["id"])
