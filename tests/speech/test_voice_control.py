@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openjarvis.speech.voice_control import _is_autonomous_objective, _requires_tool_evidence, direct, resolve_audio_device, wake_command
+from openjarvis.speech.voice_control import (
+    _is_autonomous_objective,
+    _requires_tool_evidence,
+    direct,
+    resolve_audio_device,
+    wake_command,
+)
 
 
 def test_wake_command_accepts_spanish_whisper_jarvis_variant() -> None:
@@ -21,13 +27,12 @@ def test_action_commands_require_real_tool_evidence() -> None:
     assert _requires_tool_evidence("cuanto es dos mas dos") is False
 
 
-
-
 def test_autonomous_objective_requires_explicit_action() -> None:
     assert _is_autonomous_objective("implementa el ajuste completo del panel") is True
     assert _is_autonomous_objective("continua con la implementacion de Jarvis") is True
     assert _is_autonomous_objective("que va a hacer una cosa") is False
     assert _is_autonomous_objective("estado autonomo") is False
+
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
     class FakeSoundDevice:
@@ -106,13 +111,21 @@ def test_direct_docker_status_uses_real_command_result(monkeypatch) -> None:
 
     assert answer == "Docker esta operativo. Version del servidor 28.5.1."
 
+
 def test_execute_routes_conversation_directly_to_local_chat(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr("openjarvis.speech.voice_control.direct", lambda command: None)
-    monkeypatch.setattr("openjarvis.speech.voice_control.chat", lambda command: calls.append("chat") or "respuesta local")
-    monkeypatch.setattr("openjarvis.speech.voice_control.managed", lambda command: calls.append("managed") or "respuesta managed")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.chat",
+        lambda command: calls.append("chat") or "respuesta local",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.managed",
+        lambda command: calls.append("managed") or "respuesta managed",
+    )
 
     from openjarvis.speech.voice_control import execute
+
     assert execute("cuanto es dos mas dos") == "respuesta local"
     assert calls == ["chat"]
 
@@ -126,15 +139,21 @@ def test_execute_routes_actions_to_autonomous_agent(monkeypatch) -> None:
     )
 
     from openjarvis.speech.voice_control import execute
+
     assert execute("verifica el directorio actual") == "trabajo autonomo iniciado"
     assert calls == ["autonomous"]
+
 
 def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.api",
         lambda *args, **kwargs: {
             "agents": [
-                {"id": "old", "name": "Jarvis Autonomous Operator", "status": "archived"},
+                {
+                    "id": "old",
+                    "name": "Jarvis Autonomous Operator",
+                    "status": "archived",
+                },
                 {"id": "new", "name": "Jarvis Autonomous Operator", "status": "idle"},
             ]
         },

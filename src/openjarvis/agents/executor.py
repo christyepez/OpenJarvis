@@ -1015,8 +1015,7 @@ class AgentExecutor:
             if new_objective_pending:
                 if instruction:
                     input_text = (
-                        f"Current date: {today}\n\n"
-                        f"Standing instruction: {instruction}"
+                        f"Current date: {today}\n\nStanding instruction: {instruction}"
                     )
                 else:
                     input_text = (
@@ -1233,8 +1232,8 @@ class AgentExecutor:
                 requires_evidence = (
                     auto_config.get("completion_requires_tool_evidence") is True
                 )
-                evidence_ok = (
-                    not requires_evidence or _completion_has_tool_evidence(result)
+                evidence_ok = not requires_evidence or _completion_has_tool_evidence(
+                    result
                 )
                 if marker_reported and evidence_ok:
                     self._manager.update_agent(agent_id, status="paused")

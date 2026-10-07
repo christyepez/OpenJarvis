@@ -208,9 +208,7 @@ class AgentScheduler:
         while True:
             with self._worker_lock:
                 workers = [
-                    worker
-                    for worker in self._workers.values()
-                    if worker.is_alive()
+                    worker for worker in self._workers.values() if worker.is_alive()
                 ]
             if not workers:
                 return True

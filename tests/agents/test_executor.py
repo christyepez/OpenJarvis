@@ -96,7 +96,6 @@ class TestExecutorBasic:
         assert updated["current_activity"] == "Working..."
         assert updated["last_activity_at"] == 1234.5
 
-
     def test_execute_tick_handles_fatal_error(self, executor, manager, event_bus):
         agent = manager.create_agent(name="test", agent_type="monitor_operative")
         errors = []
@@ -155,12 +154,16 @@ class TestExecutorBasic:
 def test_new_autonomous_objective_detection() -> None:
     from openjarvis.agents.executor import _has_new_autonomous_objective
 
-    assert _has_new_autonomous_objective(
-        [{"content": "NEW AUTONOMOUS OBJECTIVE. implementa el cambio"}]
-    ) is True
-    assert _has_new_autonomous_objective(
-        [{"content": "Continue your assigned task."}]
-    ) is False
+    assert (
+        _has_new_autonomous_objective(
+            [{"content": "NEW AUTONOMOUS OBJECTIVE. implementa el cambio"}]
+        )
+        is True
+    )
+    assert (
+        _has_new_autonomous_objective([{"content": "Continue your assigned task."}])
+        is False
+    )
 
 
 def test_empty_turn_with_tool_result_is_not_retried() -> None:

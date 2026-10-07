@@ -74,16 +74,59 @@ class UnverifiedVoiceActionError(RuntimeError):
 def _requires_tool_evidence(command: str) -> bool:
     n = normalize(command)
     action_terms = (
-        "abre ", "abrir ", "ejecuta ", "ejecutar ", "verifica ", "verificar ",
-        "consulta ", "consultar ", "cambia ", "cambiar ", "crea ", "crear ",
-        "elimina ", "eliminar ", "borra ", "borrar ", "guarda ", "guardar ",
-        "haz ", "hacer ", "inicia ", "iniciar ", "deten ", "detener ",
-        "reinicia ", "reiniciar ", "instala ", "instalar ", "actualiza ",
-        "actualizar ", "descarga ", "descargar ", "sube ", "subir ",
-        "implementa ", "implementar ", "desarrolla ", "desarrollar ",
-        "corrige ", "corregir ", "revisa ", "revisar ", "continua ",
-        "continuar ", "optimiza ", "optimizar ", "migra ", "migrar ",
-        "commit", "push", "pull", "docker ", "git ",
+        "abre ",
+        "abrir ",
+        "ejecuta ",
+        "ejecutar ",
+        "verifica ",
+        "verificar ",
+        "consulta ",
+        "consultar ",
+        "cambia ",
+        "cambiar ",
+        "crea ",
+        "crear ",
+        "elimina ",
+        "eliminar ",
+        "borra ",
+        "borrar ",
+        "guarda ",
+        "guardar ",
+        "haz ",
+        "hacer ",
+        "inicia ",
+        "iniciar ",
+        "deten ",
+        "detener ",
+        "reinicia ",
+        "reiniciar ",
+        "instala ",
+        "instalar ",
+        "actualiza ",
+        "actualizar ",
+        "descarga ",
+        "descargar ",
+        "sube ",
+        "subir ",
+        "implementa ",
+        "implementar ",
+        "desarrolla ",
+        "desarrollar ",
+        "corrige ",
+        "corregir ",
+        "revisa ",
+        "revisar ",
+        "continua ",
+        "continuar ",
+        "optimiza ",
+        "optimizar ",
+        "migra ",
+        "migrar ",
+        "commit",
+        "push",
+        "pull",
+        "docker ",
+        "git ",
     )
     return any(term in n for term in action_terms)
 
@@ -109,12 +152,35 @@ def _is_autonomous_objective(command: str) -> bool:
     ):
         return False
     imperative_terms = (
-        "implementa ", "implementar ", "desarrolla ", "desarrollar ",
-        "corrige ", "corregir ", "revisa ", "revisar ", "continua ",
-        "continuar ", "optimiza ", "optimizar ", "migra ", "migrar ",
-        "ejecuta ", "ejecutar ", "verifica ", "verificar ", "crea ", "crear ",
-        "actualiza ", "actualizar ", "instala ", "instalar ", "haz ",
-        "hacer ", "commit", "push", "pull",
+        "implementa ",
+        "implementar ",
+        "desarrolla ",
+        "desarrollar ",
+        "corrige ",
+        "corregir ",
+        "revisa ",
+        "revisar ",
+        "continua ",
+        "continuar ",
+        "optimiza ",
+        "optimizar ",
+        "migra ",
+        "migrar ",
+        "ejecuta ",
+        "ejecutar ",
+        "verifica ",
+        "verificar ",
+        "crea ",
+        "crear ",
+        "actualiza ",
+        "actualizar ",
+        "instala ",
+        "instalar ",
+        "haz ",
+        "hacer ",
+        "commit",
+        "push",
+        "pull",
     )
     return any(term in n for term in imperative_terms)
 
@@ -152,7 +218,9 @@ def state(name: str, **extra: Any) -> None:
             return
         except PermissionError:
             if attempt == 4:
-                log.warning("Could not publish voice state after retries: %s", STATE_PATH)
+                log.warning(
+                    "Could not publish voice state after retries: %s", STATE_PATH
+                )
                 tmp.unlink(missing_ok=True)
                 return
             time.sleep(0.05 * (attempt + 1))
@@ -310,11 +378,27 @@ def _open_windows_app(command: str) -> str | None:
         return None
     n = normalize(command)
     apps = (
-        (("abre visual studio code", "abre vscode", "abre code"), ["cmd.exe", "/c", "start", "", "code"], "Visual Studio Code"),
-        (("abre explorador", "abre el explorador"), ["explorer.exe"], "el Explorador de archivos"),
+        (
+            ("abre visual studio code", "abre vscode", "abre code"),
+            ["cmd.exe", "/c", "start", "", "code"],
+            "Visual Studio Code",
+        ),
+        (
+            ("abre explorador", "abre el explorador"),
+            ["explorer.exe"],
+            "el Explorador de archivos",
+        ),
         (("abre powershell", "abre power shell"), ["powershell.exe"], "PowerShell"),
-        (("abre docker desktop", "abre docker"), [r"C:\Program Files\Docker\Docker\Docker Desktop.exe"], "Docker Desktop"),
-        (("abre chrome", "abre google chrome"), ["cmd.exe", "/c", "start", "", "chrome"], "Google Chrome"),
+        (
+            ("abre docker desktop", "abre docker"),
+            [r"C:\Program Files\Docker\Docker\Docker Desktop.exe"],
+            "Docker Desktop",
+        ),
+        (
+            ("abre chrome", "abre google chrome"),
+            ["cmd.exe", "/c", "start", "", "chrome"],
+            "Google Chrome",
+        ),
     )
     for phrases, argv, label in apps:
         if any(phrase in n for phrase in phrases):
@@ -478,9 +562,7 @@ def direct(command: str) -> str | None:
         activity = str(agent.get("current_activity") or "").strip()
         summary = str(agent.get("summary_memory") or "").strip()
         detail = activity or summary[:180]
-        return (
-            f"El operador autonomo esta {status}. {detail}".strip()
-        )
+        return f"El operador autonomo esta {status}. {detail}".strip()
     if (
         "deten trabajo autonomo" in n
         or "detener trabajo autonomo" in n
@@ -527,8 +609,7 @@ def chat(command: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "Eres Jarvis. Responde en espanol, breve y orientado a "
-                    "ejecucion."
+                    "Eres Jarvis. Responde en espanol, breve y orientado a ejecucion."
                 ),
             },
             {"role": "user", "content": command},
@@ -569,8 +650,11 @@ def _voice_agent_id() -> str | None:
     except Exception:
         return None
     for agent in payload.get("agents", []):
-        if str(agent.get("name", "")).strip().casefold().startswith(
-            "jarvis voice operator"
+        if (
+            str(agent.get("name", ""))
+            .strip()
+            .casefold()
+            .startswith("jarvis voice operator")
         ):
             return str(agent.get("id") or "") or None
     return None
@@ -600,7 +684,8 @@ def _autonomy_config() -> dict[str, Any]:
         "falla, diagnostica, corrige y reintenta dentro de los limites configurados. "
         "Usa Remote Desktop Commander como plano principal de ejecucion sobre el "
         "equipo enlazado. Para comandos de terminal usa start_process y para archivos "
-        "usa read_file, write_file o edit_block. Usa siempre rutas absolutas de Windows "
+        "usa read_file, write_file o edit_block. Usa siempre rutas absolutas de "
+        "Windows "
         "dentro del workspace configurado y no inventes rutas Linux. "
         "Cuando el objetivo este completamente terminado y validado, incluye "
         "exactamente AUTONOMY_DONE en ESA MISMA respuesta y en el MISMO tick que "
@@ -733,7 +818,9 @@ def managed(command: str) -> str:
             if message.get("direction") == "agent_to_user" and created_at >= sent_at:
                 content = str(message.get("content") or "").strip()
                 if content:
-                    if _requires_tool_evidence(command) and not message.get("tool_calls"):
+                    if _requires_tool_evidence(command) and not message.get(
+                        "tool_calls"
+                    ):
                         raise UnverifiedVoiceActionError(
                             "La respuesta no contiene evidencia real de herramienta."
                         )
@@ -843,7 +930,11 @@ def wait_for_wake(detector) -> float | None:
                 ).astype(np.int16)
             prediction = detector.predict(frame)
             score = max((float(np.max(v)) for v in prediction.values()), default=0.0)
-            frame_rms = float(np.sqrt(np.mean(frame.astype(np.float64) ** 2))) if len(frame) else 0.0
+            frame_rms = (
+                float(np.sqrt(np.mean(frame.astype(np.float64) ** 2)))
+                if len(frame)
+                else 0.0
+            )
             now = time.monotonic()
             # Keep long-running wake detection memory-bounded.
             if now - last_detector_reset >= 30.0:
@@ -897,7 +988,11 @@ def fallback_command(backend) -> str:
     )
     amplitude = wav_rms(audio)
     if amplitude < max(40.0, THRESHOLD * 0.60):
-        log.debug("Fallback ignored low-level audio rms=%.1f threshold=%s", amplitude, THRESHOLD)
+        log.debug(
+            "Fallback ignored low-level audio rms=%.1f threshold=%s",
+            amplitude,
+            THRESHOLD,
+        )
         return ""
     heard = backend.transcribe(audio, format="wav", language="es").text.strip()
     log.info("Fallback heard rms=%.1f transcript=%r", amplitude, heard)
@@ -947,7 +1042,8 @@ def main() -> int:
                     score = wait_for_wake(detector)
                 except Exception as exc:
                     log.exception(
-                        "Wake detector failed; switching to Whisper fallback for this session"
+                        "Wake detector failed; switching to Whisper fallback "
+                        "for this session"
                     )
                     detector = None
                     wake_mode = "whisper-fallback"
