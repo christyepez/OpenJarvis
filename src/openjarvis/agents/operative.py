@@ -93,8 +93,11 @@ class OperativeAgent(ToolUsingAgent):
         if self._system_prompt:
             sys_parts.append(self._system_prompt)
 
-        # 2. State recall from memory backend
-        previous_state = self._recall_state()
+        new_objective = input.lstrip().startswith("NEW AUTONOMOUS OBJECTIVE.")
+
+        # 2. State recall from memory backend. A new autonomous objective must
+        # not inherit stale state from a previous objective.
+        previous_state = "" if new_objective else self._recall_state()
         if previous_state:
             sys_parts.append(f"\n## Previous State\n{previous_state}")
 
@@ -103,8 +106,9 @@ class OperativeAgent(ToolUsingAgent):
         # appended so the operative's own instructions are preserved (#376).
         system_prompt = self._apply_persona(system_prompt)
 
-        # 3. Load session history
-        session_messages = self._load_session()
+        # 3. Load session history. New objectives start with a clean
+        # conversational context while subsequent ticks keep continuity.
+        session_messages = [] if new_objective else self._load_session()
 
         # 4. Build messages
         messages = self._build_operative_messages(
@@ -278,14 +282,23 @@ class OperativeAgent(ToolUsingAgent):
             if hasattr(session, "messages") and session.messages:
                 # Return last 10 messages to avoid context overflow
                 recent = session.messages[-10:]
-                return [
-                    Message(
-                        role=Role(m.get("role", "user")),
-                        content=m.get("content", ""),
+                messages: list[Message] = []
+                for item in recent:
+                    if isinstance(item, dict):
+                        role = item.get("role", "user")
+                        content = item.get("content", "")
+                    else:
+                        role = getattr(item, "role", "user")
+                        content = getattr(item, "content", "")
+                    if not content:
+                        continue
+                    messages.append(
+                        Message(
+                            role=Role(str(role)),
+                            content=str(content),
+                        )
                     )
-                    for m in recent
-                    if isinstance(m, dict)
-                ]
+                return messages
         except Exception:
             logger.debug("Could not load session for operator %s", self._operator_id)
         return []
@@ -294,16 +307,22 @@ class OperativeAgent(ToolUsingAgent):
         """Save the tick's prompt and response to the session store."""
         if not self._session_store or not self._operator_id:
             return
-        session_id = f"operator:{self._operator_id}"
+        user_id = f"operator:{self._operator_id}"
         try:
-            self._session_store.save_message(
-                session_id,
-                {"role": "user", "content": input_text},
-            )
-            self._session_store.save_message(
-                session_id,
-                {"role": "assistant", "content": response},
-            )
+            session = self._session_store.get_or_create(user_id)
+            session_id = str(getattr(session, "session_id", "") or user_id)
+            try:
+                self._session_store.save_message(session_id, "user", input_text)
+                self._session_store.save_message(session_id, "assistant", response)
+            except TypeError:
+                self._session_store.save_message(
+                    session_id,
+                    {"role": "user", "content": input_text},
+                )
+                self._session_store.save_message(
+                    session_id,
+                    {"role": "assistant", "content": response},
+                )
         except Exception:
             logger.debug("Could not save session for operator %s", self._operator_id)
 
