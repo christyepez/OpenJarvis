@@ -613,6 +613,7 @@ def _autonomy_config() -> dict[str, Any]:
         "timezone": "America/Guayaquil",
         "auto_pause_on_done": True,
         "completion_marker": "AUTONOMY_DONE",
+        "completion_requires_tool_evidence": True,
         "max_turns": 12,
         "timeout_seconds": 90,
         "max_stall_retries": 2,

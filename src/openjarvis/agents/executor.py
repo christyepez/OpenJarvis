@@ -42,6 +42,31 @@ def _should_retry_empty_result(result: AgentResult) -> bool:
     return not (result.content or "").strip() and not result.tool_results
 
 
+def _completion_has_tool_evidence(result: AgentResult) -> bool:
+    """Require successful, non-thinking tool evidence in the completion tick."""
+    failure_markers = (
+        "parsererror",
+        "commandnotfoundexception",
+        "no se reconoce como nombre",
+        "no se encuentra la ruta",
+        "failed to run",
+        "exit code 1",
+        "exit code 2",
+        "exit code 127",
+    )
+    for tool_result in reversed(result.tool_results or []):
+        name = str(getattr(tool_result, "tool_name", "") or "").strip().casefold()
+        if not name or name == "think":
+            continue
+        content = str(getattr(tool_result, "content", "") or "")
+        normalized = content.casefold()
+        if getattr(tool_result, "success", False) and not any(
+            marker in normalized for marker in failure_markers
+        ):
+            return True
+    return False
+
+
 def _resolve_tick_model(config: dict[str, Any], system: Any) -> str:
     """Resolve a managed tick model without hiding the system default."""
 
@@ -1193,14 +1218,28 @@ class AgentExecutor:
                 done_marker = str(
                     auto_config.get("completion_marker", "AUTONOMY_DONE") or ""
                 ).strip()
-                if (
+                marker_reported = bool(
                     auto_config.get("auto_pause_on_done") is True
                     and done_marker
                     and done_marker in (result.content or "")
-                ):
+                )
+                requires_evidence = (
+                    auto_config.get("completion_requires_tool_evidence") is True
+                )
+                evidence_ok = (
+                    not requires_evidence or _completion_has_tool_evidence(result)
+                )
+                if marker_reported and evidence_ok:
                     self._manager.update_agent(agent_id, status="paused")
                     logger.info(
-                        "Agent %s auto-paused after completion marker %s",
+                        "Agent %s auto-paused after verified completion marker %s",
+                        agent_id,
+                        done_marker,
+                    )
+                elif marker_reported and not evidence_ok:
+                    logger.warning(
+                        "Agent %s reported completion marker %s without "
+                        "successful tool evidence; keeping objective active",
                         agent_id,
                         done_marker,
                     )

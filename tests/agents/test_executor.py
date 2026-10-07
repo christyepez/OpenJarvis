@@ -188,6 +188,96 @@ def test_finalize_tick_auto_pauses_completed_autonomous_agent(tmp_path):
     mgr.close()
 
 
+def test_finalize_tick_requires_tool_evidence_when_configured(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-evidence.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[ToolResult(tool_name="think", content="looks done")],
+    )
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "idle"
+    mgr.close()
+
+
+def test_finalize_tick_accepts_verified_tool_evidence(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-evidence-ok.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="read_process_output",
+                content="16 passed\nProcess completed with exit code 0",
+                success=True,
+            )
+        ],
+    )
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "paused"
+    mgr.close()
+
+
+def test_finalize_tick_rejects_error_text_as_tool_evidence(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-evidence-error.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="start_process",
+                content="ParserError: command failed",
+                success=True,
+            )
+        ],
+    )
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "idle"
+    mgr.close()
+
+
 def test_finalize_tick_reads_agent_result_metadata(tmp_path):
     """_finalize_tick() accumulates cost/tokens from AgentResult.metadata."""
     from openjarvis.agents.executor import AgentExecutor
