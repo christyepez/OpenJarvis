@@ -973,6 +973,20 @@ class AgentExecutor:
             input_text = f"Current date: {today}\n\n{base}"
         pending = self._manager.get_pending_messages(agent["id"])
         if pending:
+            new_objective_pending = any(
+                "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
+                for message in pending
+            )
+            if new_objective_pending:
+                if instruction:
+                    input_text = (
+                        f"Current date: {today}\n\n"
+                        f"Standing instruction: {instruction}"
+                    )
+                else:
+                    input_text = (
+                        f"Current date: {today}\n\nContinue your assigned task."
+                    )
             user_msgs = "\n".join(f"User: {m['content']}" for m in pending)
             input_text = f"{input_text}\n\nNew instructions:\n{user_msgs}"
             for m in pending:

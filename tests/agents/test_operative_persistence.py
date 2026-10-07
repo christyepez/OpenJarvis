@@ -49,6 +49,12 @@ def test_new_autonomous_objective_skips_stale_state_and_session(monkeypatch) -> 
         },
     )
 
-    result = agent.run("NEW AUTONOMOUS OBJECTIVE. validate runtime")
+    wrapped_input = (
+        "Current date: Wednesday, October 07, 2026\n\n"
+        "Standing instruction: continue autonomously.\n\n"
+        "New instructions:\n"
+        "User: NEW AUTONOMOUS OBJECTIVE. validate runtime"
+    )
+    result = agent.run(wrapped_input)
 
     assert result.content == "checkpoint"
