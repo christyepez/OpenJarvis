@@ -192,3 +192,5 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["model"] == "llama3.2:1b"
     assert calls[0][1]["config"]["timeout_seconds"] == 300
     assert calls[0][1]["config"]["max_stall_retries"] == 2
+    assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
+    assert "C:/Users/username/Documents" in calls[0][1]["config"]["instruction"]

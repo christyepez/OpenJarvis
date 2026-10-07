@@ -674,6 +674,7 @@ def _runtime_device_id() -> str:
 
 def _autonomy_config() -> dict[str, Any]:
     runtime_device_id = _runtime_device_id()
+    workspace = str(_repo_root())
     instruction = (
         "Trabaja de forma autonoma sobre la ULTIMA instruccion del usuario. "
         "Una nueva instruccion reemplaza cualquier objetivo anterior incompleto. "
@@ -685,9 +686,11 @@ def _autonomy_config() -> dict[str, Any]:
         "falla, diagnostica, corrige y reintenta dentro de los limites configurados. "
         "Usa Remote Desktop Commander como plano principal de ejecucion sobre el "
         "equipo enlazado. Para comandos de terminal usa start_process y para archivos "
-        "usa read_file, write_file o edit_block. Usa siempre rutas absolutas de "
-        "Windows "
-        "dentro del workspace configurado y no inventes rutas Linux. "
+        "usa read_file, write_file o edit_block. El workspace REAL es "
+        f"{workspace}. Usa siempre rutas absolutas dentro de ese workspace. "
+        "Nunca uses rutas de ejemplo como C:/Users/username/Documents ni inventes "
+        "rutas Linux. Para verificar Git usa start_process con Set-Location al "
+        "workspace real antes de ejecutar git. "
         "Cuando el objetivo este completamente terminado y validado, incluye "
         "exactamente AUTONOMY_DONE en ESA MISMA respuesta y en el MISMO tick que "
         "contiene la evidencia final de herramienta. Nunca difieras AUTONOMY_DONE "
@@ -705,7 +708,7 @@ def _autonomy_config() -> dict[str, Any]:
         "max_turns": 12,
         "timeout_seconds": 300,
         "max_stall_retries": 2,
-        "workspace": str(_repo_root()),
+        "workspace": workspace,
         "runtime_machine": "trabajo",
         "runtime_machine_candidates": ["trabajo", "MarketingIndo"],
         "runtime_device_id": runtime_device_id,
