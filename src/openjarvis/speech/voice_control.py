@@ -617,6 +617,8 @@ def _autonomy_config() -> dict[str, Any]:
         "timeout_seconds": 300,
         "max_stall_retries": 3,
         "workspace": str(_repo_root()),
+        "runtime_machine": "trabajo",
+        "runtime_machine_candidates": ["trabajo", "MarketingIndo"],
         "runtime_device_id": runtime_device_id,
         "runtime_machine_status": "online" if runtime_device_id else "unknown",
         "mcp_tools": True,
@@ -664,6 +666,10 @@ def _autonomy_agent_id() -> str:
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     agent_id = _autonomy_agent_id()
+    try:
+        api("/v1/operations/machines/probe", {}, timeout=15)
+    except Exception as exc:
+        log.warning("Autonomous machine probe failed: %s", exc)
     agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
     status = str(agent.get("status") or "idle")
 
