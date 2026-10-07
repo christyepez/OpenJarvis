@@ -66,6 +66,7 @@ def test_direct_file_exists_uses_real_local_file(
 
 
 def test_direct_can_open_windows_explorer(monkeypatch) -> None:
+    monkeypatch.setattr("openjarvis.speech.voice_control.os.name", "nt")
     launched: list[list[str]] = []
 
     class DummyProcess:
