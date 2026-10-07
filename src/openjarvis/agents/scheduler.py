@@ -165,7 +165,10 @@ class AgentScheduler:
                 return False
             worker.join(timeout=max(0.0, deadline - time.monotonic()))
             if worker.is_alive():
-                logger.warning("Agent scheduler worker did not stop within %.1fs", timeout)
+                logger.warning(
+                    "Agent scheduler worker did not stop within %.1fs",
+                    timeout,
+                )
                 return False
 
         if self._thread is thread:
@@ -198,6 +201,23 @@ class AgentScheduler:
         with self._worker_lock:
             worker = self._workers.get(agent_id)
         return worker is not None and worker.is_alive()
+
+    def wait_for_workers(self, timeout: float = 10.0) -> bool:
+        """Wait for currently dispatched ticks without stopping the scheduler."""
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._worker_lock:
+                workers = [
+                    worker
+                    for worker in self._workers.values()
+                    if worker.is_alive()
+                ]
+            if not workers:
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            workers[0].join(timeout=remaining)
 
     def _run_tick_worker(self, agent_id: str) -> None:
         try:
