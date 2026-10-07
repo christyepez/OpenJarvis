@@ -72,6 +72,9 @@ class AgentScheduler:
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._worker_lock = threading.Lock()
+        self._workers: dict[str, threading.Thread] = {}
+        self._stall_notified: set[str] = set()
 
     @property
     def registered_agents(self) -> set[str]:
@@ -143,17 +146,28 @@ class AgentScheduler:
             self._bus.unsubscribe(EventType.AGENT_TICK_END, self._on_tick_event)
 
     def wait_stopped(self, timeout: float = 10.0) -> bool:
-        """Wait for an active tick to finish, retaining live thread state."""
+        """Wait for scheduler and active tick workers to stop."""
 
+        deadline = time.monotonic() + timeout
         thread = self._thread
-        if thread is None:
-            return True
-        if thread is threading.current_thread():
-            return False
-        thread.join(timeout=timeout)
-        if thread.is_alive():
-            logger.warning("Agent scheduler did not stop within %.1fs", timeout)
-            return False
+        if thread is not None:
+            if thread is threading.current_thread():
+                return False
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                logger.warning("Agent scheduler did not stop within %.1fs", timeout)
+                return False
+
+        with self._worker_lock:
+            workers = list(self._workers.values())
+        for worker in workers:
+            if worker is threading.current_thread():
+                return False
+            worker.join(timeout=max(0.0, deadline - time.monotonic()))
+            if worker.is_alive():
+                logger.warning("Agent scheduler worker did not stop within %.1fs", timeout)
+                return False
+
         if self._thread is thread:
             self._thread = None
         return True
@@ -180,13 +194,44 @@ class AgentScheduler:
                 logger.exception("Scheduler tick error")
             self._stop_event.wait(self._tick_interval)
 
+    def _worker_alive(self, agent_id: str) -> bool:
+        with self._worker_lock:
+            worker = self._workers.get(agent_id)
+        return worker is not None and worker.is_alive()
+
+    def _run_tick_worker(self, agent_id: str) -> None:
+        try:
+            self._executor.execute_tick(agent_id)
+        except Exception:
+            logger.exception("Error executing tick for agent %s", agent_id)
+        finally:
+            with self._worker_lock:
+                current = self._workers.get(agent_id)
+                if current is threading.current_thread():
+                    self._workers.pop(agent_id, None)
+                self._stall_notified.discard(agent_id)
+
+    def _dispatch_tick(self, agent_id: str) -> None:
+        with self._worker_lock:
+            existing = self._workers.get(agent_id)
+            if existing is not None and existing.is_alive():
+                return
+            worker = threading.Thread(
+                target=self._run_tick_worker,
+                args=(agent_id,),
+                daemon=True,
+                name=f"agent-tick-{agent_id}",
+            )
+            self._workers[agent_id] = worker
+        worker.start()
+
     def _check_due_agents(self) -> None:
-        """Check all registered agents and fire those that are due."""
+        """Check all registered agents and dispatch due ticks without blocking."""
         now = time.time()
 
         with self._lock:
             due = [
-                (aid, info)
+                (aid, info.copy())
                 for aid, info in self._agents.items()
                 if info["next_fire"] <= now
             ]
@@ -203,14 +248,9 @@ class AgentScheduler:
                 "stalled",
             ):
                 continue
+            if self._worker_alive(agent_id):
+                continue
 
-            logger.info("Firing tick for agent %s", agent_id)
-            try:
-                self._executor.execute_tick(agent_id)
-            except Exception:
-                logger.exception("Error executing tick for agent %s", agent_id)
-
-            # Update next fire time
             with self._lock:
                 if agent_id in self._agents:
                     if info["schedule_type"] == "cron":
@@ -223,7 +263,9 @@ class AgentScheduler:
                         self._agents[agent_id]["next_fire"] = now + float(
                             info["schedule_value"]
                         )
-                    # Manual: stays at inf
+
+            logger.info("Dispatching tick for agent %s", agent_id)
+            self._dispatch_tick(agent_id)
 
     def _reconcile(self) -> None:
         """Check running agents for stalls and handle retries."""
@@ -246,39 +288,69 @@ class AgentScheduler:
             if now - last_activity <= timeout:
                 continue
 
-            # Agent is stalled
+            # Agent is stalled. Never overlap a still-live worker with a retry.
             max_retries = config.get("max_stall_retries", 5)
             current_retries = agent.get("stall_retries", 0)
+            agent_id = agent["id"]
+
+            if self._worker_alive(agent_id):
+                with self._worker_lock:
+                    first_notice = agent_id not in self._stall_notified
+                    if first_notice:
+                        self._stall_notified.add(agent_id)
+                if first_notice:
+                    if self._bus:
+                        self._bus.publish(
+                            EventType.AGENT_STALL_DETECTED,
+                            {
+                                "agent_id": agent_id,
+                                "last_activity_at": last_activity,
+                                "stall_retries": current_retries,
+                                "worker_alive": True,
+                            },
+                        )
+                    logger.warning(
+                        "Agent %s exceeded timeout but worker is still alive; "
+                        "not starting an overlapping retry",
+                        agent_id,
+                    )
+                continue
 
             if current_retries >= max_retries:
-                self._manager.update_agent(agent["id"], status="error")
+                self._manager.update_agent(agent_id, status="error")
                 logger.warning(
                     "Agent %s stall retries exhausted (%d/%d), setting error",
-                    agent["id"],
+                    agent_id,
                     current_retries,
                     max_retries,
                 )
-            else:
-                self._manager.end_tick(agent["id"])  # Release concurrency guard
-                self._manager.update_agent(
-                    agent["id"],
-                    stall_retries=current_retries + 1,
+                continue
+
+            # The worker is gone but left a stale running lock. Release it so
+            # the next scheduler pass can safely dispatch a retry.
+            self._manager.end_tick(agent_id)
+            self._manager.update_agent(
+                agent_id,
+                stall_retries=current_retries + 1,
+            )
+            with self._worker_lock:
+                self._stall_notified.discard(agent_id)
+            if self._bus:
+                self._bus.publish(
+                    EventType.AGENT_STALL_DETECTED,
+                    {
+                        "agent_id": agent_id,
+                        "last_activity_at": last_activity,
+                        "stall_retries": current_retries + 1,
+                        "worker_alive": False,
+                    },
                 )
-                if self._bus:
-                    self._bus.publish(
-                        EventType.AGENT_STALL_DETECTED,
-                        {
-                            "agent_id": agent["id"],
-                            "last_activity_at": last_activity,
-                            "stall_retries": current_retries + 1,
-                        },
-                    )
-                logger.warning(
-                    "Agent %s stalled (retry %d/%d)",
-                    agent["id"],
-                    current_retries + 1,
-                    max_retries,
-                )
+            logger.warning(
+                "Agent %s stalled with no live worker (retry %d/%d)",
+                agent_id,
+                current_retries + 1,
+                max_retries,
+            )
 
     # -- Learning tick counting ------------------------------------------------
 

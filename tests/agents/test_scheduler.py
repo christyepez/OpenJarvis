@@ -197,7 +197,49 @@ class TestSchedulerBasic:
         release.set()
         assert scheduler.wait_stopped(timeout=1) is True
         assert scheduler._thread is None
-        assert calls == [agents[0]["id"]]
+        expected = {agent["id"] for agent in agents}
+        assert calls
+        assert set(calls).issubset(expected)
+        assert len(calls) == len(set(calls))
+
+    def test_blocking_worker_does_not_block_scheduler_reconcile(self, manager):
+        from openjarvis.agents.scheduler import AgentScheduler
+
+        started = threading.Event()
+        release = threading.Event()
+
+        class _BlockingExecutor:
+            def execute_tick(self, agent_id):
+                started.set()
+                release.wait(timeout=2)
+
+        scheduler = AgentScheduler(
+            manager=manager,
+            executor=_BlockingExecutor(),
+            tick_interval=0.01,
+        )
+        agent = manager.create_agent(
+            name="blocking",
+            agent_type="monitor_operative",
+            config={"schedule_type": "interval", "schedule_value": 0},
+        )
+        scheduler.register_agent(agent["id"])
+        original_reconcile = scheduler._reconcile
+        reconcile = MagicMock(side_effect=original_reconcile)
+        scheduler._reconcile = reconcile
+
+        scheduler.start()
+        assert started.wait(timeout=1)
+
+        deadline = time.time() + 1
+        while not reconcile.called and time.time() < deadline:
+            time.sleep(0.01)
+
+        scheduler.request_stop()
+        release.set()
+        assert scheduler.wait_stopped(timeout=1) is True
+        assert reconcile.called
+
 
     def test_skips_paused_agents(self, manager):
         from openjarvis.agents.scheduler import AgentScheduler
