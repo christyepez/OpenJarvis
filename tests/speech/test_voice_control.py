@@ -152,6 +152,10 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
         lambda name: "agent-1",
     )
     monkeypatch.setattr(
+        "openjarvis.speech.voice_control._runtime_device_id",
+        lambda: "device-1",
+    )
+    monkeypatch.setattr(
         "openjarvis.speech.voice_control.api",
         lambda path, payload=None, timeout=120, method=None: (
             calls.append((path, payload, method)) or {"id": "agent-1"}

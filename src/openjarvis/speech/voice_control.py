@@ -576,7 +576,19 @@ def _voice_agent_id() -> str | None:
     return None
 
 
+def _runtime_device_id() -> str:
+    voice_id = _voice_agent_id()
+    if not voice_id:
+        return ""
+    try:
+        agent = api(f"/v1/managed-agents/{voice_id}", timeout=10)
+    except Exception:
+        return ""
+    return str((agent.get("config") or {}).get("runtime_device_id") or "").strip()
+
+
 def _autonomy_config() -> dict[str, Any]:
+    runtime_device_id = _runtime_device_id()
     instruction = (
         "Trabaja de forma autonoma sobre la ULTIMA instruccion del usuario. "
         "Una nueva instruccion reemplaza cualquier objetivo anterior incompleto. "
@@ -586,6 +598,10 @@ def _autonomy_config() -> dict[str, Any]:
         "credenciales faltantes o una decision irreversible. Verifica resultados "
         "con herramientas reales y nunca inventes ejecuciones. Si un segmento "
         "falla, diagnostica, corrige y reintenta dentro de los limites configurados. "
+        "Usa Remote Desktop Commander como plano principal de ejecucion sobre el "
+        "equipo enlazado. Para comandos de terminal usa start_process y para archivos "
+        "usa read_file, write_file o edit_block. Usa siempre rutas absolutas de Windows "
+        "dentro del workspace configurado y no inventes rutas Linux. "
         "Cuando el objetivo este completamente terminado y validado, incluye "
         "exactamente AUTONOMY_DONE en la respuesta final; nunca uses ese marcador antes."
     )
@@ -601,11 +617,12 @@ def _autonomy_config() -> dict[str, Any]:
         "timeout_seconds": 300,
         "max_stall_retries": 3,
         "workspace": str(_repo_root()),
-        "mcp_tools": False,
+        "runtime_device_id": runtime_device_id,
+        "runtime_machine_status": "online" if runtime_device_id else "unknown",
+        "mcp_tools": True,
         "tools": [
             "file_read",
             "file_write",
-            "shell_exec",
             "git_status",
             "git_diff",
             "git_log",
