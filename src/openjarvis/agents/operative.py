@@ -310,7 +310,12 @@ class OperativeAgent(ToolUsingAgent):
         user_id = f"operator:{self._operator_id}"
         try:
             session = self._session_store.get_or_create(user_id)
-            session_id = str(getattr(session, "session_id", "") or user_id)
+            raw_session_id = getattr(session, "session_id", "")
+            session_id = (
+                raw_session_id
+                if isinstance(raw_session_id, str) and raw_session_id
+                else user_id
+            )
             try:
                 self._session_store.save_message(session_id, "user", input_text)
                 self._session_store.save_message(session_id, "assistant", response)
