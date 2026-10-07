@@ -456,6 +456,17 @@ def resolve_agent_tools(
 
     use_mcp = config.get("mcp_tools", True) is not False
     mcp_tool_list = list(mcp_tools) if use_mcp else []
+    allowlist = {
+        str(name).strip().casefold()
+        for name in _normalized_tool_config(config.get("mcp_tool_allowlist"))
+        if str(name).strip()
+    }
+    if allowlist:
+        mcp_tool_list = [
+            tool
+            for tool in mcp_tool_list
+            if _tool_name(tool).casefold() in allowlist
+        ]
     mcp_by_name: dict[str, Any] = {}
     for tool in mcp_tool_list:
         name = _tool_name(tool)

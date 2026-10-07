@@ -622,17 +622,17 @@ def _autonomy_config() -> dict[str, Any]:
         "runtime_device_id": runtime_device_id,
         "runtime_machine_status": "online" if runtime_device_id else "unknown",
         "mcp_tools": True,
-        "tools": [
-            "file_read",
-            "file_write",
-            "git_status",
-            "git_diff",
-            "git_log",
-            "git_commit",
-            "apply_patch",
-            "web_search",
-            "think",
+        "mcp_tool_allowlist": [
+            "start_process",
+            "read_process_output",
+            "read_file",
+            "write_file",
+            "edit_block",
+            "list_directory",
+            "list_processes",
+            "kill_process",
         ],
+        "tools": ["think"],
     }
 
 

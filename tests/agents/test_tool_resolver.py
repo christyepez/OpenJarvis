@@ -292,6 +292,27 @@ def test_mcp_tools_merge_after_native_tools_without_name_collisions() -> None:
     ]
 
 
+def test_mcp_tool_allowlist_filters_adapters() -> None:
+    remote = _MCPDeviceTool()
+    mcp_only = _MCPOnlyTool()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "simple",
+            "config": {
+                "tools": [],
+                "mcp_tool_allowlist": ["start_process"],
+            },
+        },
+        engine=object(),
+        model="test-model",
+        mcp_tools=[remote, mcp_only],
+    )
+
+    assert list(resolved.by_name) == ["start_process"]
+    assert "mcp_only" not in resolved.by_name
+
+
 def test_mcp_device_tool_receives_runtime_device_default() -> None:
     remote = _MCPDeviceTool()
 
