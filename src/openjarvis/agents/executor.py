@@ -258,9 +258,13 @@ class AgentExecutor:
         self._system = system
 
     def _set_activity(self, agent_id: str, activity: str) -> None:
-        """Update the agent's current_activity for progress visibility."""
+        """Update visible activity and refresh the agent heartbeat."""
         try:
-            self._manager.update_agent(agent_id, current_activity=activity)
+            self._manager.update_agent(
+                agent_id,
+                current_activity=activity,
+                last_activity_at=time.time(),
+            )
         except Exception:
             pass  # Non-critical
 

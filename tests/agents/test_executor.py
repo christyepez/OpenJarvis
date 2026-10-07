@@ -86,6 +86,17 @@ class TestExecutorBasic:
         assert statuses == ["running"]
         assert manager.get_agent(agent["id"])["status"] == "idle"
 
+    def test_set_activity_refreshes_heartbeat(self, executor, manager):
+        agent = manager.create_agent(name="heartbeat", agent_type="monitor_operative")
+
+        with patch("openjarvis.agents.executor.time.time", return_value=1234.5):
+            executor._set_activity(agent["id"], "Working...")
+
+        updated = manager.get_agent(agent["id"])
+        assert updated["current_activity"] == "Working..."
+        assert updated["last_activity_at"] == 1234.5
+
+
     def test_execute_tick_handles_fatal_error(self, executor, manager, event_bus):
         agent = manager.create_agent(name="test", agent_type="monitor_operative")
         errors = []
