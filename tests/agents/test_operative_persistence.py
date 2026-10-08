@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.agents.operative import OperativeAgent, _recover_text_tool_calls
+from openjarvis.agents.operative import (
+    OperativeAgent,
+    _recover_text_tool_calls,
+    _uses_placeholder_path,
+)
 from openjarvis.sessions.session import SessionStore
 
 
@@ -63,6 +67,21 @@ continua
 
     assert len(calls) == 1
     assert calls[0]["name"] == "write_file"
+
+
+def test_placeholder_path_guard_rejects_examples() -> None:
+    assert _uses_placeholder_path('{"path":"/path/to/file"}') is True
+    assert _uses_placeholder_path('{"path":"C:/Users/username/Documents/file.txt"}') is True
+    assert _uses_placeholder_path('{"path":"/home/jarvis/project/file.txt"}') is True
+
+
+def test_placeholder_path_guard_allows_real_workspace() -> None:
+    assert (
+        _uses_placeholder_path(
+            '{"path":"C:/Users/chris/source/repos/OpenJarvis/docs/file.md"}'
+        )
+        is False
+    )
 
 
 def test_recover_text_tool_call_rejects_unlisted_tool() -> None:

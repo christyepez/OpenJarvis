@@ -72,6 +72,32 @@ def _recover_text_tool_calls(
     ]
 
 
+def _uses_placeholder_path(arguments: str) -> bool:
+    """Reject obvious example paths before an autonomous tool can execute them."""
+    try:
+        parsed = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+
+    placeholders = (
+        "/path/to/",
+        "\\path\\to\\",
+        "c:/users/username/",
+        "c:\\users\\username\\",
+        "/home/user/",
+        "/home/jarvis/",
+    )
+    for key in ("path", "file_path", "working_directory", "cwd"):
+        value = parsed.get(key)
+        if isinstance(value, str):
+            normalized = value.strip().casefold().replace("\\\\", "\\")
+            if any(item in normalized for item in placeholders):
+                return True
+    return False
+
+
 @AgentRegistry.register("operative")
 class OperativeAgent(ToolUsingAgent):
     """Persistent autonomous agent with built-in state management.
@@ -248,7 +274,21 @@ class OperativeAgent(ToolUsingAgent):
                         )
                         continue
 
-                tool_result = self._executor.execute(tc)
+                if _uses_placeholder_path(tc.arguments):
+                    tool_result = ToolResult(
+                        tool_name=tc.name,
+                        content=(
+                            "Invalid placeholder path. Do not use example paths such as "
+                            "/path/to/file, C:/Users/username, or /home/jarvis. "
+                            "Retry using the exact Windows workspace and target path from "
+                            "the standing instruction and current objective. If the objective "
+                            "asks to create a known file, use write_file rather than read_file."
+                        ),
+                        success=False,
+                        metadata={"arguments": tc.arguments},
+                    )
+                else:
+                    tool_result = self._executor.execute(tc)
                 all_tool_results.append(tool_result)
 
                 # Track if agent stored state via memory_store
