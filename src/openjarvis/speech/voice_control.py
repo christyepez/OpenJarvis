@@ -692,6 +692,7 @@ def _autonomy_config() -> dict[str, Any]:
     return {
         "model": AUTONOMY_MODEL,
         "instruction": instruction,
+        "system_prompt": instruction,
         "schedule_type": "interval",
         "schedule_value": 45,
         "timezone": "America/Guayaquil",
