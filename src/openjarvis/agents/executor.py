@@ -964,9 +964,14 @@ class AgentExecutor:
         # before construction instead.
         if sys_prompt is not None and _accepts("system_prompt"):
             agent_kwargs["system_prompt"] = sys_prompt
-        for key in ("max_turns", "temperature", "max_tokens", "compact_prompt"):
+        for key in ("max_turns", "temperature", "compact_prompt"):
             if config.get(key) is not None and _accepts(key):
                 agent_kwargs[key] = config[key]
+        output_tokens = config.get("max_output_tokens")
+        if output_tokens is not None and _accepts("max_tokens"):
+            agent_kwargs["max_tokens"] = output_tokens
+        elif config.get("max_tokens") is not None and _accepts("max_tokens"):
+            agent_kwargs["max_tokens"] = config["max_tokens"]
         if _accepts("engine_options"):
             engine_options = {
                 key: config[key]
