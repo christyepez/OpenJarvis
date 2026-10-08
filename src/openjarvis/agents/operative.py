@@ -160,13 +160,7 @@ def _missing_parent_directory_call(
     if "enoent" not in str(tool_result.content or "").casefold():
         return None
 
-    allowed = {
-        str((tool.get("function") or {}).get("name") or "").strip()
-        for tool in openai_tools
-        if isinstance(tool, dict)
-    }
-    if "create_directory" not in allowed:
-        return None
+    del openai_tools  # Availability is verified safely by ToolExecutor.
 
     try:
         args = json.loads(tool_call.arguments or "{}")
