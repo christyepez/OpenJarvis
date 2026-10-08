@@ -258,6 +258,7 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["schedule_type"] == "interval"
     assert calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
     assert calls[0][1]["config"]["model"] == "llama3.2:1b"
+    assert calls[0][1]["config"]["max_tokens"] == 256
     assert calls[0][1]["config"]["num_ctx"] == 4096
     assert calls[0][1]["config"]["compact_prompt"] is True
     assert calls[0][1]["config"]["temperature"] == 0.1

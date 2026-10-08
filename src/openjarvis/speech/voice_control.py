@@ -705,6 +705,7 @@ def _autonomy_config() -> dict[str, Any]:
         "compact_prompt": True,
         "temperature": 0.1,
         "max_turns": 12,
+        "max_tokens": 256,
         "num_ctx": 4096,
         "timeout_seconds": 300,
         "max_stall_retries": 2,
