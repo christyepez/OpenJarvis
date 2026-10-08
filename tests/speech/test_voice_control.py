@@ -6,6 +6,7 @@ from openjarvis.speech.voice_control import (
     _ground_autonomous_command,
     _prepare_autonomy_models,
     _autonomy_tool_allowlist,
+    _autonomy_tool_specs,
     _is_autonomous_objective,
     _requires_tool_evidence,
     direct,
@@ -58,6 +59,15 @@ def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
     ) == ["write_file", "start_process", "read_process_output"]
+
+
+def test_autonomy_tool_specs_compact_start_process_schema() -> None:
+    specs = _autonomy_tool_specs(["start_process", "read_process_output"])
+
+    start = next(spec for spec in specs if spec["function"]["name"] == "start_process")
+    params = start["function"]["parameters"]
+    assert params["required"] == ["command", "timeout_ms"]
+    assert set(params["properties"]) == {"command", "timeout_ms", "shell"}
 
 
 def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:

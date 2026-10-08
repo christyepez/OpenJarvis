@@ -881,6 +881,91 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
     return selected
 
 
+
+_AUTONOMY_COMPACT_TOOL_SPECS: dict[str, dict[str, Any]] = {
+    "list_directory": {
+        "type": "function",
+        "function": {
+            "name": "list_directory",
+            "description": "List a Windows directory using an absolute path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "depth": {"type": "number"},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "write_file": {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write text to a file using an absolute Windows path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "mode": {
+                        "type": "string",
+                        "enum": ["rewrite", "append"],
+                    },
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "start_process": {
+        "type": "function",
+        "function": {
+            "name": "start_process",
+            "description": "Run a Windows command or PowerShell command.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "timeout_ms": {"type": "number"},
+                    "shell": {"type": "string"},
+                },
+                "required": ["command", "timeout_ms"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "read_process_output": {
+        "type": "function",
+        "function": {
+            "name": "read_process_output",
+            "description": "Read output from a process started by start_process.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pid": {"type": "number"},
+                    "timeout_ms": {"type": "number"},
+                    "offset": {"type": "number"},
+                    "length": {"type": "number"},
+                },
+                "required": ["pid"],
+                "additionalProperties": False,
+            },
+        },
+    },
+}
+
+
+def _autonomy_tool_specs(names: list[str]) -> list[dict[str, Any]]:
+    """Return compact advertised specs while retaining real MCP backends."""
+    return [
+        json.loads(json.dumps(_AUTONOMY_COMPACT_TOOL_SPECS[name]))
+        for name in names
+        if name in _AUTONOMY_COMPACT_TOOL_SPECS
+    ]
+
+
 def _autonomy_completion_requirements(command: str) -> list[str]:
     n = normalize(command)
     requirements: list[str] = []
@@ -929,7 +1014,9 @@ def autonomous(command: str) -> str:
     _prepare_autonomy_models()
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
-    config["mcp_tool_allowlist"] = _autonomy_tool_allowlist(command)
+    tool_allowlist = _autonomy_tool_allowlist(command)
+    config["mcp_tool_allowlist"] = tool_allowlist
+    config["tools"] = _autonomy_tool_specs(tool_allowlist)
     config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
     api(
         f"/v1/managed-agents/{agent_id}",
