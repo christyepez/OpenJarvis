@@ -278,6 +278,7 @@ class OperativeAgent(ToolUsingAgent):
         turns = 0
         content = ""
         state_stored_by_tool = False
+        missing_tool_retries = 0
         total_usage: dict[str, int] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -309,6 +310,28 @@ class OperativeAgent(ToolUsingAgent):
                     content = ""
 
             if not raw_tool_calls:
+                if (
+                    new_objective
+                    and openai_tools
+                    and not all_tool_results
+                    and missing_tool_retries < 2
+                ):
+                    missing_tool_retries += 1
+                    messages.append(
+                        Message(role=Role.ASSISTANT, content=content)
+                    )
+                    messages.append(
+                        Message(
+                            role=Role.USER,
+                            content=(
+                                "No real tool was executed. Do not narrate or claim "
+                                "evidence. Call exactly one available tool required "
+                                "for the objective now, using the real workspace and "
+                                "valid arguments."
+                            ),
+                        )
+                    )
+                    continue
                 content = self._check_continuation(result, messages)
                 break
 

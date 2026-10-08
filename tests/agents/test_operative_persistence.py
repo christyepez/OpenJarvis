@@ -11,6 +11,23 @@ from openjarvis.agents.operative import (
     _uses_placeholder_path,
 )
 from openjarvis.sessions.session import SessionStore
+from openjarvis.tools._stubs import BaseTool, ToolSpec
+from openjarvis.core.types import ToolResult
+
+
+class _ProbeTool(BaseTool):
+    tool_id = "probe"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="probe",
+            description="Safe autonomous execution probe.",
+            parameters={"type": "object", "properties": {}},
+        )
+
+    def execute(self, **params) -> ToolResult:
+        return ToolResult(tool_name="probe", content="probe-ok", success=True)
 
 
 def test_operative_session_round_trip(tmp_path) -> None:
@@ -139,6 +156,59 @@ def test_recover_text_tool_call_rejects_unlisted_tool() -> None:
         )
         == []
     )
+
+
+def test_new_autonomous_objective_retries_until_real_tool_call(monkeypatch) -> None:
+    agent = OperativeAgent(
+        object(),
+        "test-model",
+        tools=[_ProbeTool()],
+        max_turns=4,
+    )
+    responses = iter(
+        [
+            {
+                "content": "I already ran the tool. AUTONOMY_DONE",
+                "tool_calls": [],
+                "usage": {},
+                "finish_reason": "stop",
+            },
+            {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-probe",
+                        "name": "probe",
+                        "arguments": "{}",
+                    }
+                ],
+                "usage": {},
+                "finish_reason": "tool_calls",
+            },
+            {
+                "content": "Verified with real evidence. AUTONOMY_DONE",
+                "tool_calls": [],
+                "usage": {},
+                "finish_reason": "stop",
+            },
+        ]
+    )
+    calls = 0
+
+    def generate(messages, **kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr(agent, "_generate", generate)
+
+    result = agent.run("NEW AUTONOMOUS OBJECTIVE. run the safe probe")
+
+    assert calls == 3
+    assert result.content == "Verified with real evidence. AUTONOMY_DONE"
+    assert len(result.tool_results) == 1
+    assert result.tool_results[0].tool_name == "probe"
+    assert result.tool_results[0].success is True
 
 
 def test_new_autonomous_objective_skips_stale_state_and_session(monkeypatch) -> None:
