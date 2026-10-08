@@ -292,6 +292,114 @@ def test_finalize_tick_rejects_error_text_as_tool_evidence(tmp_path):
     mgr.close()
 
 
+def test_finalize_tick_rejects_incomplete_objective_evidence(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-objective-evidence.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+            "completion_evidence_requirements": [
+                "write",
+                "pytest",
+                "git_commit",
+                "git_push",
+            ],
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="read_file",
+                content="repository listing",
+                success=True,
+            )
+        ],
+    )
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "idle"
+    mgr.close()
+
+
+def test_finalize_tick_accepts_complete_objective_evidence(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-objective-evidence-ok.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+            "completion_evidence_requirements": [
+                "write",
+                "pytest",
+                "git_status",
+                "git_diff",
+                "git_commit",
+                "git_push",
+            ],
+        },
+    )
+    mgr.start_tick(agent["id"])
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="write_file",
+                content="wrote docs/jarvis-autonomy-e2e.md",
+                success=True,
+            ),
+            ToolResult(
+                tool_name="start_process",
+                content="4 passed",
+                success=True,
+                metadata={"arguments": "pytest tests/agents/test_operative_persistence.py -q"},
+            ),
+            ToolResult(
+                tool_name="start_process",
+                content="On branch main\nnothing to commit, working tree clean",
+                success=True,
+                metadata={"arguments": "git status"},
+            ),
+            ToolResult(
+                tool_name="start_process",
+                content="diff --git a/docs/jarvis-autonomy-e2e.md",
+                success=True,
+                metadata={"arguments": "git diff"},
+            ),
+            ToolResult(
+                tool_name="start_process",
+                content="[main abc1234] docs: record autonomous e2e validation\n1 file changed",
+                success=True,
+                metadata={"arguments": "git commit -m test"},
+            ),
+            ToolResult(
+                tool_name="start_process",
+                content="To https://github.com/christyepez/OpenJarvis.git\nabc1234..def5678 main -> main",
+                success=True,
+                metadata={"arguments": "git push origin main"},
+            ),
+        ],
+    )
+    executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
+
+    assert mgr.get_agent(agent["id"])["status"] == "paused"
+    mgr.close()
+
+
 def test_finalize_tick_reads_agent_result_metadata(tmp_path):
     """_finalize_tick() accumulates cost/tokens from AgentResult.metadata."""
     from openjarvis.agents.executor import AgentExecutor

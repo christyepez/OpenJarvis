@@ -75,6 +75,84 @@ def _completion_has_tool_evidence(result: AgentResult) -> bool:
     return False
 
 
+def _completion_has_required_evidence(
+    result: AgentResult,
+    requirements: list[str],
+) -> bool:
+    """Verify objective-specific evidence before accepting autonomous completion."""
+    if not requirements:
+        return True
+
+    evidence: list[tuple[str, str, str]] = []
+    for tool_result in result.tool_results or []:
+        if not getattr(tool_result, "success", False):
+            continue
+        name = str(getattr(tool_result, "tool_name", "") or "").strip().casefold()
+        if not name or name == "think":
+            continue
+        metadata = getattr(tool_result, "metadata", {}) or {}
+        arguments = metadata.get("arguments", "")
+        if not isinstance(arguments, str):
+            try:
+                arguments = json.dumps(arguments, sort_keys=True)
+            except (TypeError, ValueError):
+                arguments = str(arguments)
+        content = str(getattr(tool_result, "content", "") or "")
+        evidence.append((name, arguments.casefold(), content.casefold()))
+
+    def has(requirement: str) -> bool:
+        if requirement == "write":
+            return any(
+                name in {"write_file", "edit_block", "apply_patch"}
+                for name, _, _ in evidence
+            )
+        if requirement == "pytest":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and ("pytest" in args or " passed" in content)
+                for name, args, content in evidence
+            )
+        if requirement == "git_status":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and (
+                    "git status" in args
+                    or ("on branch" in content and "working tree" in content)
+                )
+                for name, args, content in evidence
+            )
+        if requirement == "git_diff":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and "git diff" in args
+                for name, args, _ in evidence
+            )
+        if requirement == "git_commit":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and (
+                    "git commit" in args
+                    or "[main " in content
+                    or "files changed" in content
+                    or "file changed" in content
+                )
+                for name, args, content in evidence
+            )
+        if requirement == "git_push":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and (
+                    "git push" in args
+                    or ("to https://" in content and "main" in content)
+                    or (" -> " in content and "main" in content)
+                )
+                for name, args, content in evidence
+            )
+        return False
+
+    return all(has(requirement) for requirement in requirements)
+
+
 def _resolve_tick_model(config: dict[str, Any], system: Any) -> str:
     """Resolve a managed tick model without hiding the system default."""
 
@@ -1235,7 +1313,17 @@ class AgentExecutor:
                 evidence_ok = not requires_evidence or _completion_has_tool_evidence(
                     result
                 )
-                if marker_reported and evidence_ok:
+                requirements = auto_config.get(
+                    "completion_evidence_requirements",
+                    [],
+                )
+                if not isinstance(requirements, list):
+                    requirements = []
+                requirements_ok = _completion_has_required_evidence(
+                    result,
+                    [str(item) for item in requirements],
+                )
+                if marker_reported and evidence_ok and requirements_ok:
                     self._manager.update_agent(agent_id, status="paused")
                     logger.info(
                         "Agent %s auto-paused after verified completion marker %s",
@@ -1248,6 +1336,14 @@ class AgentExecutor:
                         "successful tool evidence; keeping objective active",
                         agent_id,
                         done_marker,
+                    )
+                elif marker_reported and not requirements_ok:
+                    logger.warning(
+                        "Agent %s reported completion marker %s without "
+                        "all objective evidence %s; keeping objective active",
+                        agent_id,
+                        done_marker,
+                        requirements,
                     )
 
             # Budget enforcement (post-tick check)

@@ -755,9 +755,37 @@ def _autonomy_agent_id() -> str:
     return agent_id
 
 
+def _autonomy_completion_requirements(command: str) -> list[str]:
+    n = normalize(command)
+    requirements: list[str] = []
+
+    if any(term in n for term in ("crea ", "crear ", "modifica ", "modificar ", "edita ", "editar ", "escribe ", "escribir ", "implementa ", "implementar ")):
+        requirements.append("write")
+    if any(term in n for term in ("pytest", "prueba", "pruebas", "test ", "tests/")):
+        requirements.append("pytest")
+    if "git status" in n:
+        requirements.append("git_status")
+    if "git diff" in n:
+        requirements.append("git_diff")
+    if "commit" in n:
+        requirements.append("git_commit")
+    if "push" in n:
+        requirements.append("git_push")
+
+    return requirements
+
+
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     agent_id = _autonomy_agent_id()
+    config = _autonomy_config()
+    config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
+    api(
+        f"/v1/managed-agents/{agent_id}",
+        {"agent_type": "operative", "config": config},
+        timeout=20,
+        method="PATCH",
+    )
     try:
         api("/v1/operations/machines/probe", {}, timeout=15)
     except Exception as exc:
