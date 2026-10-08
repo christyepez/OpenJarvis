@@ -683,8 +683,9 @@ def _autonomy_config() -> dict[str, Any]:
         "actions, call one of those tools before any prose. Never say that you cannot "
         "access the filesystem or execute commands when these tools are available. "
         "For write_file, path MUST be the exact absolute target FILE path from the "
-        "objective; never pass the workspace directory itself as the path. If the parent "
-        "directory does not exist, call create_directory for that exact parent first. "
+        "objective; never pass the workspace directory itself as the path. Missing parent "
+        "directories are recovered automatically by the runtime; do not create a directory "
+        "using the target file path. "
         "Never claim execution without a successful tool result. The exact Windows workspace is "
         f"{workspace}. Use only real absolute paths in that workspace. "
         "For long work iterate change -> test -> verify -> commit/push when requested. "
@@ -822,7 +823,7 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
             "nuevo archivo",
         )
     ):
-        add("create_directory", "write_file")
+        add("write_file")
 
     if any(
         term in n

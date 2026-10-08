@@ -59,7 +59,7 @@ def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
 def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
-    ) == ["create_directory", "write_file", "start_process", "read_process_output"]
+    ) == ["write_file", "start_process", "read_process_output"]
 
 
 def test_autonomy_tool_specs_include_create_directory() -> None:

@@ -11,6 +11,7 @@ import ast
 import json
 import logging
 import ntpath
+import os
 from typing import Any, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
@@ -436,7 +437,28 @@ class OperativeAgent(ToolUsingAgent):
                         openai_tools,
                     )
                     if recovery_call is not None:
-                        recovery_result = self._executor.execute(recovery_call)
+                        try:
+                            recovery_args = json.loads(recovery_call.arguments or "{}")
+                            recovery_path = str(
+                                recovery_args.get("path") or ""
+                            ).strip()
+                            os.makedirs(recovery_path, exist_ok=True)
+                            recovery_result = ToolResult(
+                                tool_name="create_directory",
+                                content=(
+                                    "Automatically created missing parent directory "
+                                    f"{recovery_path}"
+                                ),
+                                success=True,
+                                metadata={"arguments": recovery_call.arguments},
+                            )
+                        except (OSError, json.JSONDecodeError, TypeError) as exc:
+                            recovery_result = ToolResult(
+                                tool_name="create_directory",
+                                content=f"Automatic parent directory recovery failed: {exc}",
+                                success=False,
+                                metadata={"arguments": recovery_call.arguments},
+                            )
                         all_tool_results.append(recovery_result)
                         if recovery_result.success:
                             tool_result = self._executor.execute(tc)
