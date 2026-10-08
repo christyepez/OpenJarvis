@@ -31,7 +31,7 @@ STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
-AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "granite-code:3b")
+AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "qwen3.5:4b")
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 AUTONOMY_AGENT_NAME = os.environ.get(
     "OPENJARVIS_AUTONOMY_AGENT",
