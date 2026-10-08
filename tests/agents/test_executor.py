@@ -161,6 +161,12 @@ def test_new_autonomous_objective_detection() -> None:
         is True
     )
     assert (
+        _has_new_autonomous_objective(
+            [{"content": "CONTINUE AUTONOMOUS OBJECTIVE. missing pytest"}]
+        )
+        is True
+    )
+    assert (
         _has_new_autonomous_objective([{"content": "Continue your assigned task."}])
         is False
     )
@@ -289,6 +295,75 @@ def test_finalize_tick_rejects_error_text_as_tool_evidence(tmp_path):
     executor._finalize_tick(agent["id"], result, error=None, duration=1.0)
 
     assert mgr.get_agent(agent["id"])["status"] == "idle"
+    mgr.close()
+
+
+def test_finalize_tick_accumulates_objective_evidence_across_ticks(tmp_path):
+    from openjarvis.agents.executor import AgentExecutor
+    from openjarvis.agents.manager import AgentManager
+
+    mgr = AgentManager(str(tmp_path / "test-auto-cumulative-evidence.db"))
+    executor = AgentExecutor(mgr, EventBus())
+    agent = mgr.create_agent(
+        "autonomous-agent",
+        config={
+            "auto_pause_on_done": True,
+            "completion_marker": "AUTONOMY_DONE",
+            "completion_requires_tool_evidence": True,
+            "completion_evidence_requirements": [
+                "write",
+                "pytest",
+                "process_exit_0",
+            ],
+            "active_objective": "write then run pytest",
+            "max_completion_followups": 3,
+        },
+    )
+
+    mgr.start_tick(agent["id"])
+    first = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="write_file",
+                content="Successfully wrote file",
+                success=True,
+                metadata={
+                    "arguments": '{"path":"C:/repo/docs/x.md","content":"ok"}'
+                },
+            )
+        ],
+    )
+    executor._finalize_tick(agent["id"], first, error=None, duration=1.0)
+
+    after_first = mgr.get_agent(agent["id"])
+    assert after_first["status"] == "idle"
+    assert after_first["config"]["completion_evidence_observed"] == ["write"]
+    pending = mgr.get_pending_messages(agent["id"])
+    assert len(pending) == 1
+    assert "Missing evidence: pytest, process_exit_0" in pending[0]["content"]
+
+    mgr.start_tick(agent["id"])
+    second = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="read_process_output",
+                content="11 passed\nProcess completed with exit code 0",
+                success=True,
+                metadata={"arguments": '{"pid":123}'},
+            )
+        ],
+    )
+    executor._finalize_tick(agent["id"], second, error=None, duration=1.0)
+
+    after_second = mgr.get_agent(agent["id"])
+    assert after_second["status"] == "paused"
+    assert set(after_second["config"]["completion_evidence_observed"]) == {
+        "write",
+        "pytest",
+        "process_exit_0",
+    }
     mgr.close()
 
 

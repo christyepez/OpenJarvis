@@ -281,7 +281,13 @@ class OperativeAgent(ToolUsingAgent):
         if self._system_prompt:
             sys_parts.append(self._system_prompt)
 
-        new_objective = "NEW AUTONOMOUS OBJECTIVE." in input
+        new_objective = any(
+            marker in input
+            for marker in (
+                "NEW AUTONOMOUS OBJECTIVE.",
+                "CONTINUE AUTONOMOUS OBJECTIVE.",
+            )
+        )
 
         # 2. State recall from memory backend. A new autonomous objective must
         # not inherit stale state from a previous objective.

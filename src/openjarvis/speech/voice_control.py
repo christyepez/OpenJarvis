@@ -1006,6 +1006,8 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
         requirements.append("git_commit")
     if "push" in n:
         requirements.append("git_push")
+    if "exit code 0" in n or "codigo de salida 0" in n:
+        requirements.append("process_exit_0")
 
     return requirements
 
@@ -1038,6 +1040,7 @@ def autonomous(command: str) -> str:
     _prepare_autonomy_models()
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
+    grounded_command = _ground_autonomous_command(command)
     tool_allowlist = _autonomy_tool_allowlist(command)
     tool_names = ", ".join(tool_allowlist)
     config["instruction"] += (
@@ -1048,6 +1051,11 @@ def autonomous(command: str) -> str:
     config["mcp_tool_allowlist"] = tool_allowlist
     config["tools"] = _autonomy_tool_specs(tool_allowlist)
     config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
+    config["completion_evidence_observed"] = []
+    config["completion_tool_evidence_seen"] = False
+    config["completion_followup_count"] = 0
+    config["max_completion_followups"] = 6
+    config["active_objective"] = grounded_command
     api(
         f"/v1/managed-agents/{agent_id}",
         {"agent_type": "operative", "config": config},
@@ -1068,7 +1076,6 @@ def autonomous(command: str) -> str:
         api(f"/v1/managed-agents/{agent_id}/recover", {}, timeout=10)
         status = "idle"
 
-    grounded_command = _ground_autonomous_command(command)
     api(
         f"/v1/managed-agents/{agent_id}/messages",
         {

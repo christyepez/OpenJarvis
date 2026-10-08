@@ -43,9 +43,13 @@ def _should_retry_empty_result(result: AgentResult) -> bool:
 
 
 def _has_new_autonomous_objective(messages: list[dict[str, Any]]) -> bool:
-    """Return True when pending messages contain a fresh autonomous objective."""
+    """Return True for a fresh autonomous objective or isolated continuation step."""
+    markers = (
+        "NEW AUTONOMOUS OBJECTIVE.",
+        "CONTINUE AUTONOMOUS OBJECTIVE.",
+    )
     return any(
-        "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
+        any(marker in str(message.get("content") or "") for marker in markers)
         for message in messages
     )
 
@@ -75,13 +79,13 @@ def _completion_has_tool_evidence(result: AgentResult) -> bool:
     return False
 
 
-def _completion_has_required_evidence(
+def _completion_evidence_met(
     result: AgentResult,
     requirements: list[str],
-) -> bool:
-    """Verify objective-specific evidence before accepting autonomous completion."""
+) -> set[str]:
+    """Return objective evidence satisfied by one agent tick."""
     if not requirements:
-        return True
+        return set()
 
     evidence: list[tuple[str, str, str]] = []
     for tool_result in result.tool_results or []:
@@ -148,9 +152,29 @@ def _completion_has_required_evidence(
                 )
                 for name, args, content in evidence
             )
+        if requirement == "process_exit_0":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and (
+                    "exit code 0" in content
+                    or "completed with exit code 0" in content
+                    or "process completed with exit code 0" in content
+                )
+                for name, _, content in evidence
+            )
         return False
 
-    return all(has(requirement) for requirement in requirements)
+    return {requirement for requirement in requirements if has(requirement)}
+
+
+def _completion_has_required_evidence(
+    result: AgentResult,
+    requirements: list[str],
+) -> bool:
+    """Verify objective-specific evidence before accepting autonomous completion."""
+    if not requirements:
+        return True
+    return set(requirements).issubset(_completion_evidence_met(result, requirements))
 
 
 def _resolve_tick_model(config: dict[str, Any], system: Any) -> str:
@@ -1336,19 +1360,34 @@ class AgentExecutor:
                 requires_evidence = (
                     auto_config.get("completion_requires_tool_evidence") is True
                 )
-                evidence_ok = not requires_evidence or _completion_has_tool_evidence(
-                    result
-                )
-                requirements = auto_config.get(
+                current_tool_evidence = _completion_has_tool_evidence(result)
+                tool_evidence_seen = bool(
+                    auto_config.get("completion_tool_evidence_seen", False)
+                ) or current_tool_evidence
+                auto_config["completion_tool_evidence_seen"] = tool_evidence_seen
+                evidence_ok = not requires_evidence or tool_evidence_seen
+
+                raw_requirements = auto_config.get(
                     "completion_evidence_requirements",
                     [],
                 )
-                if not isinstance(requirements, list):
-                    requirements = []
-                requirements_ok = _completion_has_required_evidence(
-                    result,
-                    [str(item) for item in requirements],
+                requirements = (
+                    [str(item) for item in raw_requirements]
+                    if isinstance(raw_requirements, list)
+                    else []
                 )
+                observed = {
+                    str(item)
+                    for item in (
+                        auto_config.get("completion_evidence_observed", []) or []
+                    )
+                    if str(item)
+                }
+                observed.update(_completion_evidence_met(result, requirements))
+                auto_config["completion_evidence_observed"] = sorted(observed)
+                requirements_ok = set(requirements).issubset(observed)
+                self._manager.update_agent(agent_id, config=auto_config)
+
                 if marker_reported and evidence_ok and requirements_ok:
                     self._manager.update_agent(agent_id, status="paused")
                     logger.info(
@@ -1356,21 +1395,68 @@ class AgentExecutor:
                         agent_id,
                         done_marker,
                     )
-                elif marker_reported and not evidence_ok:
-                    logger.warning(
-                        "Agent %s reported completion marker %s without "
-                        "successful tool evidence; keeping objective active",
-                        agent_id,
-                        done_marker,
+                elif marker_reported:
+                    missing = [
+                        requirement
+                        for requirement in requirements
+                        if requirement not in observed
+                    ]
+                    followup_count = int(
+                        auto_config.get("completion_followup_count", 0) or 0
                     )
-                elif marker_reported and not requirements_ok:
-                    logger.warning(
-                        "Agent %s reported completion marker %s without "
-                        "all objective evidence %s; keeping objective active",
-                        agent_id,
-                        done_marker,
-                        requirements,
+                    max_followups = int(
+                        auto_config.get("max_completion_followups", 6) or 6
                     )
+                    if followup_count < max_followups:
+                        auto_config["completion_followup_count"] = followup_count + 1
+                        self._manager.update_agent(agent_id, config=auto_config)
+                        objective = str(
+                            auto_config.get("active_objective", "") or ""
+                        ).strip()
+                        verified = ", ".join(sorted(observed)) or "none"
+                        missing_text = ", ".join(missing) or (
+                            "successful tool evidence"
+                            if not evidence_ok
+                            else "final verification"
+                        )
+                        continuation = (
+                            "CONTINUE AUTONOMOUS OBJECTIVE. Completion was not "
+                            "accepted yet. Do not repeat verified actions. "
+                            f"Verified evidence: {verified}. "
+                            f"Missing evidence: {missing_text}. "
+                            "For pytest and Git evidence use start_process with "
+                            "valid arguments; if it returns a running PID, use "
+                            "read_process_output until completion. "
+                            "Report AUTONOMY_DONE only after the missing evidence "
+                            "succeeds."
+                        )
+                        if objective:
+                            continuation += f" Original objective: {objective}"
+                        self._manager.send_message(
+                            agent_id,
+                            continuation,
+                            mode="queued",
+                        )
+                        logger.warning(
+                            "Agent %s reported %s early; queued follow-up %d/%d "
+                            "for missing evidence %s",
+                            agent_id,
+                            done_marker,
+                            followup_count + 1,
+                            max_followups,
+                            missing,
+                        )
+                    else:
+                        self._manager.update_agent(
+                            agent_id,
+                            status="needs_attention",
+                        )
+                        logger.warning(
+                            "Agent %s exhausted completion follow-ups with "
+                            "missing evidence %s",
+                            agent_id,
+                            missing,
+                        )
 
             # Budget enforcement (post-tick check)
             agent_data = self._manager.get_agent(agent_id)

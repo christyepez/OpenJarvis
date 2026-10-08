@@ -5,6 +5,7 @@ from pathlib import Path
 from openjarvis.speech.voice_control import (
     _ground_autonomous_command,
     _prepare_autonomy_models,
+    _autonomy_completion_requirements,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
     _is_autonomous_objective,
@@ -60,6 +61,19 @@ def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
     ) == ["write_file", "start_process", "read_process_output"]
+
+
+def test_autonomy_completion_requirements_include_process_exit_zero() -> None:
+    requirements = _autonomy_completion_requirements(
+        "ejecuta pytest, git status, git diff, commit y push; termina con exit code 0"
+    )
+
+    assert "pytest" in requirements
+    assert "git_status" in requirements
+    assert "git_diff" in requirements
+    assert "git_commit" in requirements
+    assert "git_push" in requirements
+    assert "process_exit_0" in requirements
 
 
 def test_autonomy_tool_specs_include_create_directory() -> None:
