@@ -1097,7 +1097,13 @@ class AgentExecutor:
             else:
                 tick_note = f"Previous tick: {first_sentence}"
 
-        if instruction:
+        compact_system_policy = bool(
+            config.get("compact_prompt") and config.get("system_prompt")
+        )
+        if compact_system_policy:
+            base = tick_note or "Continue your assigned task."
+            input_text = f"Current date: {today}\n\n{base}"
+        elif instruction:
             input_text = f"Current date: {today}\n\nStanding instruction: {instruction}"
             if tick_note:
                 input_text += f"\n\n{tick_note}"
@@ -1109,7 +1115,9 @@ class AgentExecutor:
         if pending:
             new_objective_pending = _has_new_autonomous_objective(pending)
             if new_objective_pending:
-                if instruction:
+                if compact_system_policy:
+                    input_text = f"Current date: {today}"
+                elif instruction:
                     input_text = (
                         f"Current date: {today}\n\nStanding instruction: {instruction}"
                     )

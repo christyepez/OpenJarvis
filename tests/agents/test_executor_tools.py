@@ -30,6 +30,7 @@ class _CapturingToolAgent:
     accepts_tools = True
     captured_tools = []
     captured_search_result = None
+    captured_input = ""
 
     def __init__(self, engine, model, *, tools=None, **kwargs):
         self.engine = engine
@@ -37,6 +38,7 @@ class _CapturingToolAgent:
         type(self).captured_tools = list(tools or [])
 
     def run(self, input_text, context=None):
+        type(self).captured_input = input_text
         tools_by_name = {tool.spec.name: tool for tool in self.captured_tools}
         search = tools_by_name.get("knowledge_search")
         if search is not None:
@@ -617,6 +619,46 @@ def test_executor_preserves_custom_dict_tool_schema(tmp_path):
         assert configured_tool.to_openai_function() == custom_spec
         assert configured_tool.spec.description == "Agent-specific thinking schema"
         assert configured_tool.execute(thought="same instance").success is True
+    finally:
+        manager.close()
+
+
+def test_compact_system_policy_is_not_duplicated_in_tick_input(tmp_path) -> None:
+    AgentRegistry.register_value("capturing", _CapturingToolAgent)
+    _CapturingToolAgent.captured_input = ""
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    agent = manager.create_agent(
+        "compact",
+        agent_type="capturing",
+        config={
+            "model": "test-model",
+            "instruction": "TOOL FIRST POLICY",
+            "system_prompt": "TOOL FIRST POLICY",
+            "compact_prompt": True,
+            "mcp_tools": False,
+        },
+    )
+    manager.send_message(
+        agent["id"],
+        "NEW AUTONOMOUS OBJECTIVE. create the requested file",
+        mode="queued",
+    )
+    system = SimpleNamespace(
+        engine=FakeEngine([{"content": "unused"}]),
+        model="system-model",
+        memory_backend=None,
+        channel_backend=None,
+        tool_executor=None,
+        _mcp_clients=[],
+        config=None,
+        session_store=None,
+    )
+
+    try:
+        AgentExecutor(manager, EventBus(), system=system).execute_tick(agent["id"])
+        assert "Standing instruction:" not in _CapturingToolAgent.captured_input
+        assert "New instructions:" in _CapturingToolAgent.captured_input
+        assert "NEW AUTONOMOUS OBJECTIVE." in _CapturingToolAgent.captured_input
     finally:
         manager.close()
 
