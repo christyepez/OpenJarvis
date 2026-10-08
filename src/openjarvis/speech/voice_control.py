@@ -682,6 +682,8 @@ def _autonomy_config() -> dict[str, Any]:
         "tool allowlist. TOOL FIRST: for filesystem, process, test, Git, or system "
         "actions, call one of those tools before any prose. Never say that you cannot "
         "access the filesystem or execute commands when these tools are available. "
+        "For write_file, path MUST be the exact absolute target FILE path from the "
+        "objective; never pass the workspace directory itself as the path. "
         "Never claim execution without a successful tool result. The exact Windows workspace is "
         f"{workspace}. Use only real absolute paths in that workspace. "
         "For long work iterate change -> test -> verify -> commit/push when requested. "
