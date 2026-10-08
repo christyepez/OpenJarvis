@@ -6,13 +6,14 @@ import pytest
 
 from openjarvis.agents.operative import (
     OperativeAgent,
+    _missing_parent_directory_call,
     _recover_text_tool_calls,
     _sanitize_tool_arguments,
     _uses_placeholder_path,
 )
 from openjarvis.sessions.session import SessionStore
 from openjarvis.tools._stubs import BaseTool, ToolSpec
-from openjarvis.core.types import ToolResult
+from openjarvis.core.types import ToolCall, ToolResult
 
 
 class _ProbeTool(BaseTool):
@@ -138,6 +139,41 @@ def test_placeholder_path_guard_allows_real_workspace() -> None:
             '{"path":"C:/Users/chris/source/repos/OpenJarvis/docs/file.md"}'
         )
         is False
+    )
+
+
+def test_missing_parent_directory_recovery_uses_exact_parent() -> None:
+    call = ToolCall(
+        id="call-1",
+        name="write_file",
+        arguments=json.dumps(
+            {
+                "path": r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\x.md",
+                "content": "ok",
+            }
+        ),
+    )
+    result = ToolResult(
+        tool_name="write_file",
+        content="Error: ENOENT: no such file or directory",
+        success=False,
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "create_directory",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+
+    recovery = _missing_parent_directory_call(call, result, tools)
+
+    assert recovery is not None
+    assert recovery.name == "create_directory"
+    assert json.loads(recovery.arguments)["path"] == (
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations"
     )
 
 

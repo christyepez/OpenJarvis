@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+import ntpath
 from typing import Any, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
@@ -146,6 +147,43 @@ def _sanitize_tool_arguments(
         cleaned[key] = _coerce_tool_value(value, field_schema)
 
     return json.dumps(cleaned)
+
+
+def _missing_parent_directory_call(
+    tool_call: ToolCall,
+    tool_result: ToolResult,
+    openai_tools: list[dict[str, Any]],
+) -> ToolCall | None:
+    """Return a create_directory recovery call for write_file ENOENT failures."""
+    if tool_call.name != "write_file" or tool_result.success:
+        return None
+    if "enoent" not in str(tool_result.content or "").casefold():
+        return None
+
+    allowed = {
+        str((tool.get("function") or {}).get("name") or "").strip()
+        for tool in openai_tools
+        if isinstance(tool, dict)
+    }
+    if "create_directory" not in allowed:
+        return None
+
+    try:
+        args = json.loads(tool_call.arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return None
+    path = str(args.get("path") or "").strip()
+    if not path:
+        return None
+    parent = ntpath.dirname(path)
+    if not parent or parent == path:
+        return None
+
+    return ToolCall(
+        id=f"{tool_call.id}_mkdir",
+        name="create_directory",
+        arguments=json.dumps({"path": parent}),
+    )
 
 
 def _uses_placeholder_path(arguments: str) -> bool:
@@ -398,6 +436,21 @@ class OperativeAgent(ToolUsingAgent):
                     )
                 else:
                     tool_result = self._executor.execute(tc)
+                    recovery_call = _missing_parent_directory_call(
+                        tc,
+                        tool_result,
+                        openai_tools,
+                    )
+                    if recovery_call is not None:
+                        recovery_result = self._executor.execute(recovery_call)
+                        all_tool_results.append(recovery_result)
+                        if recovery_result.success:
+                            tool_result = self._executor.execute(tc)
+                            if tool_result.success:
+                                tool_result.content = (
+                                    "Recovered missing parent directory and retried "
+                                    f"write successfully. {tool_result.content}"
+                                )
                 all_tool_results.append(tool_result)
 
                 # Track if agent stored state via memory_store
