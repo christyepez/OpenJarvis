@@ -676,25 +676,15 @@ def _autonomy_config() -> dict[str, Any]:
     runtime_device_id = _runtime_device_id()
     workspace = str(_repo_root())
     instruction = (
-        "Trabaja de forma autonoma sobre la ULTIMA instruccion del usuario. "
-        "Una nueva instruccion reemplaza cualquier objetivo anterior incompleto. "
-        "Descompone trabajos largos en segmentos pequenos: cambio acotado, "
-        "pruebas dirigidas, commit y push cuando corresponda, checkpoint y "
-        "siguiente segmento. Continua sin pedir confirmacion salvo riesgo, "
-        "credenciales faltantes o una decision irreversible. Verifica resultados "
-        "con herramientas reales y nunca inventes ejecuciones. Si un segmento "
-        "falla, diagnostica, corrige y reintenta dentro de los limites configurados. "
-        "Usa Remote Desktop Commander como plano principal de ejecucion sobre el "
-        "equipo enlazado. Para comandos de terminal usa start_process y para archivos "
-        "usa read_file, write_file o edit_block. El workspace REAL es "
-        f"{workspace}. Usa siempre rutas absolutas dentro de ese workspace. "
-        "Nunca uses rutas de ejemplo como C:/Users/username/Documents ni inventes "
-        "rutas Linux. Para verificar Git usa start_process con Set-Location al "
-        "workspace real antes de ejecutar git. "
-        "Cuando el objetivo este completamente terminado y validado, incluye "
-        "exactamente AUTONOMY_DONE en ESA MISMA respuesta y en el MISMO tick que "
-        "contiene la evidencia final de herramienta. Nunca difieras AUTONOMY_DONE "
-        "a un tick posterior y nunca uses ese marcador antes de validar."
+        "Autonomous executor. Execute the latest user objective with REAL tools. "
+        "TOOL FIRST: for filesystem, process, test, Git, or system actions, call "
+        "an available tool before any prose. Never claim execution without a "
+        "successful tool result. The exact Windows workspace is "
+        f"{workspace}. Use only real absolute paths in that workspace. "
+        "For long work iterate change -> test -> verify -> commit/push when requested. "
+        "Retry recoverable failures. Ask only for missing credentials, irreversible "
+        "risk, or a decision that cannot be inferred. Output AUTONOMY_DONE only "
+        "after every requested action has real evidence."
     )
     return {
         "model": AUTONOMY_MODEL,
@@ -705,6 +695,8 @@ def _autonomy_config() -> dict[str, Any]:
         "auto_pause_on_done": True,
         "completion_marker": "AUTONOMY_DONE",
         "completion_requires_tool_evidence": True,
+        "compact_prompt": True,
+        "temperature": 0.1,
         "max_turns": 12,
         "num_ctx": 4096,
         "timeout_seconds": 300,

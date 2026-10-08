@@ -212,6 +212,7 @@ class OperativeAgent(ToolUsingAgent):
         interactive: bool = False,
         confirm_callback=None,
         prompt_builder: Optional[Any] = None,
+        compact_prompt: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -228,6 +229,7 @@ class OperativeAgent(ToolUsingAgent):
             **kwargs,
         )
         self._system_prompt = system_prompt or ""
+        self._compact_prompt = compact_prompt
         self._operator_id = operator_id
         self._session_store = session_store
         self._memory_backend = memory_backend
@@ -255,9 +257,10 @@ class OperativeAgent(ToolUsingAgent):
             sys_parts.append(f"\n## Previous State\n{previous_state}")
 
         system_prompt = "\n\n".join(sys_parts) if sys_parts else None
-        # Honor SOUL.md / MEMORY.md / USER.md persona files like `jarvis ask`,
-        # appended so the operative's own instructions are preserved (#376).
-        system_prompt = self._apply_persona(system_prompt)
+        # Compact autonomous mode intentionally skips persona/memory prompt
+        # expansion so small local models see the tool-first objective clearly.
+        if not self._compact_prompt:
+            system_prompt = self._apply_persona(system_prompt)
 
         # 3. Load session history. New objectives start with a clean
         # conversational context while subsequent ticks keep continuity.

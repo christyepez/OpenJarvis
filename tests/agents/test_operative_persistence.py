@@ -158,6 +158,29 @@ def test_recover_text_tool_call_rejects_unlisted_tool() -> None:
     )
 
 
+def test_compact_prompt_skips_persona_expansion(monkeypatch) -> None:
+    agent = OperativeAgent(object(), "test-model", compact_prompt=True)
+
+    def fail_persona(prompt):
+        pytest.fail("compact prompt must skip persona expansion")
+
+    monkeypatch.setattr(agent, "_apply_persona", fail_persona)
+    monkeypatch.setattr(
+        agent,
+        "_generate",
+        lambda messages, **kwargs: {
+            "content": "ok",
+            "tool_calls": [],
+            "usage": {},
+            "finish_reason": "stop",
+        },
+    )
+
+    result = agent.run("NEW AUTONOMOUS OBJECTIVE. inspect safely")
+
+    assert result.content == "ok"
+
+
 def test_new_autonomous_objective_retries_until_real_tool_call(monkeypatch) -> None:
     agent = OperativeAgent(
         object(),

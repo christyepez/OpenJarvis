@@ -964,6 +964,9 @@ class AgentExecutor:
         # before construction instead.
         if sys_prompt is not None and _accepts("system_prompt"):
             agent_kwargs["system_prompt"] = sys_prompt
+        for key in ("max_turns", "temperature", "max_tokens", "compact_prompt"):
+            if config.get(key) is not None and _accepts(key):
+                agent_kwargs[key] = config[key]
         if _accepts("engine_options"):
             engine_options = {
                 key: config[key]
@@ -996,8 +999,10 @@ class AgentExecutor:
             # agents, mirroring the one-shot `jarvis ask` path so they no
             # longer apply to CLI calls only (#376).
             cfg = getattr(self._system, "config", None)
-            if _accepts("prompt_builder") and (
-                cfg is not None or sys_prompt is not None
+            if (
+                not config.get("compact_prompt")
+                and _accepts("prompt_builder")
+                and (cfg is not None or sys_prompt is not None)
             ):
                 from openjarvis.prompt.builder import SystemPromptBuilder
 
