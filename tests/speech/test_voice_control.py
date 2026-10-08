@@ -58,7 +58,7 @@ def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
 def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
-    ) == ["write_file", "start_process", "read_process_output"]
+    ) == ["create_directory", "write_file", "start_process", "read_process_output"]
 
 
 def test_autonomy_tool_specs_compact_start_process_schema() -> None:
@@ -259,4 +259,4 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["tools"] == []
     assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
     assert "real absolute paths" in calls[0][1]["config"]["instruction"]
-    assert "write_file, start_process, and read_process_output" in calls[0][1]["config"]["instruction"]
+    assert "create_directory, write_file, start_process, and read_process_output" in calls[0][1]["config"]["instruction"]
