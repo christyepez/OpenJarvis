@@ -429,6 +429,20 @@ class TestToolUsingAgent:
         agent = _ConcreteToolAgent(engine, "m")
         assert agent._tools == []
 
+    def test_propagates_engine_options_to_generate(self):
+        engine = MagicMock()
+        engine.generate.return_value = {"content": "", "usage": {}}
+        agent = _ConcreteToolAgent(
+            engine,
+            "m",
+            engine_options={"num_ctx": 4096},
+        )
+
+        agent._generate([Message(role=Role.USER, content="probe")])
+
+        kwargs = engine.generate.call_args.kwargs
+        assert kwargs["num_ctx"] == 4096
+
     def test_inherits_base_helpers(self):
         bus = EventBus(record_history=True)
         engine = MagicMock()
