@@ -792,6 +792,103 @@ def _ground_autonomous_command(command: str) -> str:
     )
 
 
+def _autonomy_tool_allowlist(command: str) -> list[str]:
+    """Advertise only the MCP tools needed for one autonomous objective."""
+    n = normalize(command)
+    selected: list[str] = []
+
+    def add(*names: str) -> None:
+        for name in names:
+            if name not in selected:
+                selected.append(name)
+
+    if (
+        "list_directory" in n
+        or "lista el contenido" in n
+        or "listar el contenido" in n
+        or "lista directorio" in n
+        or "listar directorio" in n
+    ):
+        add("list_directory")
+
+    if any(
+        term in n
+        for term in (
+            "crea ",
+            "crear ",
+            "escribe ",
+            "escribir ",
+            "write_file",
+            "nuevo archivo",
+        )
+    ):
+        add("write_file")
+
+    if any(
+        term in n
+        for term in (
+            "modifica ",
+            "modificar ",
+            "edita ",
+            "editar ",
+            "ajusta ",
+            "ajustar ",
+            "edit_block",
+        )
+    ):
+        add("read_file", "edit_block")
+
+    if any(
+        term in n
+        for term in (
+            "lee ",
+            "leer ",
+            "read_file",
+            "revisa el archivo",
+            "contenido del archivo",
+        )
+    ):
+        add("read_file")
+
+    if any(
+        term in n
+        for term in (
+            "ejecuta ",
+            "ejecutar ",
+            "git ",
+            "pytest",
+            "test ",
+            "tests",
+            "prueba",
+            "commit",
+            "push",
+            "docker",
+            "terminal",
+            "comando",
+            "start_process",
+        )
+    ):
+        add("start_process", "read_process_output")
+
+    if any(
+        term in n
+        for term in (
+            "lista procesos",
+            "listar procesos",
+            "list_processes",
+            "mata proceso",
+            "deten proceso",
+            "kill_process",
+        )
+    ):
+        add("list_processes", "kill_process")
+
+    if not selected:
+        add("start_process", "read_process_output", "read_file", "list_directory")
+
+    return selected
+
+
 def _autonomy_completion_requirements(command: str) -> list[str]:
     n = normalize(command)
     requirements: list[str] = []
@@ -816,6 +913,7 @@ def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
+    config["mcp_tool_allowlist"] = _autonomy_tool_allowlist(command)
     config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
     api(
         f"/v1/managed-agents/{agent_id}",

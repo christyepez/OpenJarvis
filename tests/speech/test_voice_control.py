@@ -4,6 +4,7 @@ from pathlib import Path
 
 from openjarvis.speech.voice_control import (
     _ground_autonomous_command,
+    _autonomy_tool_allowlist,
     _is_autonomous_objective,
     _requires_tool_evidence,
     direct,
@@ -44,6 +45,18 @@ def test_ground_autonomous_command_expands_repo_paths() -> None:
     assert "EXACT WINDOWS WORKSPACE:" in grounded
     assert str(Path("docs") / "jarvis-autonomy-e2e.md") in grounded
     assert str(Path("tests") / "agents" / "test_operative_persistence.py") in grounded
+
+
+def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
+    assert _autonomy_tool_allowlist(
+        "Lista el contenido del workspace usando list_directory"
+    ) == ["list_directory"]
+
+
+def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
+    assert _autonomy_tool_allowlist(
+        "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
+    ) == ["write_file", "start_process", "read_process_output"]
 
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
