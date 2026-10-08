@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from openjarvis.speech.voice_control import (
+    _ground_autonomous_command,
     _is_autonomous_objective,
     _requires_tool_evidence,
     direct,
@@ -32,6 +33,17 @@ def test_autonomous_objective_requires_explicit_action() -> None:
     assert _is_autonomous_objective("continua con la implementacion de Jarvis") is True
     assert _is_autonomous_objective("que va a hacer una cosa") is False
     assert _is_autonomous_objective("estado autonomo") is False
+
+
+def test_ground_autonomous_command_expands_repo_paths() -> None:
+    grounded = _ground_autonomous_command(
+        "crea docs/jarvis-autonomy-e2e.md y ejecuta "
+        "tests/agents/test_operative_persistence.py -q"
+    )
+
+    assert "EXACT WINDOWS WORKSPACE:" in grounded
+    assert str(Path("docs") / "jarvis-autonomy-e2e.md") in grounded
+    assert str(Path("tests") / "agents" / "test_operative_persistence.py") in grounded
 
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:

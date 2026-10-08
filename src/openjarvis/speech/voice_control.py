@@ -755,6 +755,42 @@ def _autonomy_agent_id() -> str:
     return agent_id
 
 
+_AUTONOMY_REPO_PREFIXES = (
+    "assets",
+    "configs",
+    "deploy",
+    "desktop",
+    "docs",
+    "examples",
+    "frontend",
+    "rust",
+    "scripts",
+    "src",
+    "tests",
+)
+
+
+def _ground_autonomous_command(command: str) -> str:
+    """Expand known repo-relative paths and foreground the exact Windows workspace."""
+    workspace = str(_repo_root())
+    prefixes = "|".join(re.escape(item) for item in _AUTONOMY_REPO_PREFIXES)
+    pattern = re.compile(
+        rf"(?<![A-Za-z0-9_:\\/])((?:{prefixes})[\\/][A-Za-z0-9_.\\/\-]+)"
+    )
+
+    def replace(match: re.Match[str]) -> str:
+        relative = match.group(1).replace("\\", os.sep).replace("/", os.sep)
+        return str(Path(workspace) / relative)
+
+    grounded = pattern.sub(replace, command)
+    return (
+        f"EXACT WINDOWS WORKSPACE: {workspace}. "
+        "Use exact absolute Windows paths from this instruction and never use "
+        "placeholder paths. "
+        + grounded
+    )
+
+
 def _autonomy_completion_requirements(command: str) -> list[str]:
     n = normalize(command)
     requirements: list[str] = []
@@ -800,12 +836,13 @@ def autonomous(command: str) -> str:
         api(f"/v1/managed-agents/{agent_id}/recover", {}, timeout=10)
         status = "idle"
 
+    grounded_command = _ground_autonomous_command(command)
     api(
         f"/v1/managed-agents/{agent_id}/messages",
         {
             "content": (
                 "NEW AUTONOMOUS OBJECTIVE. Replace any previous unfinished objective. "
-                + command
+                + grounded_command
             ),
             "mode": "queued",
             "stream": False,
