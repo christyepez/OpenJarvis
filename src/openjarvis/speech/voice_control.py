@@ -706,6 +706,7 @@ def _autonomy_config() -> dict[str, Any]:
         "completion_marker": "AUTONOMY_DONE",
         "completion_requires_tool_evidence": True,
         "max_turns": 12,
+        "num_ctx": 4096,
         "timeout_seconds": 300,
         "max_stall_retries": 2,
         "workspace": workspace,

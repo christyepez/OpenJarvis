@@ -202,6 +202,7 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["agent_type"] == "operative"
     assert calls[0][1]["config"]["schedule_type"] == "interval"
     assert calls[0][1]["config"]["model"] == "llama3.2:1b"
+    assert calls[0][1]["config"]["num_ctx"] == 4096
     assert calls[0][1]["config"]["timeout_seconds"] == 300
     assert calls[0][1]["config"]["max_stall_retries"] == 2
     assert calls[0][1]["config"]["tools"] == []

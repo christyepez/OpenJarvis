@@ -964,6 +964,14 @@ class AgentExecutor:
         # before construction instead.
         if sys_prompt is not None and _accepts("system_prompt"):
             agent_kwargs["system_prompt"] = sys_prompt
+        if _accepts("engine_options"):
+            engine_options = {
+                key: config[key]
+                for key in ("num_ctx", "num_gpu")
+                if config.get(key) is not None
+            }
+            if engine_options:
+                agent_kwargs["engine_options"] = engine_options
         if _accepts("max_advertised_tools"):
             compact_limit = int(config.get("max_advertised_tools", 0) or 0)
             if compact_limit > 0:
