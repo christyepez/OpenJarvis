@@ -724,7 +724,7 @@ def _autonomy_config() -> dict[str, Any]:
             "list_processes",
             "kill_process",
         ],
-        "tools": ["think"],
+        "tools": [],
     }
 
 
