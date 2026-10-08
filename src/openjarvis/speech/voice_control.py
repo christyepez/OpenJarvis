@@ -31,7 +31,7 @@ STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
-AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "llama3.2:1b")
+AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "qwen3.5:4b")
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 AUTONOMY_AGENT_NAME = os.environ.get(
     "OPENJARVIS_AUTONOMY_AGENT",
@@ -697,7 +697,6 @@ def _autonomy_config() -> dict[str, Any]:
         "completion_requires_tool_evidence": True,
         "compact_prompt": True,
         "temperature": 0.1,
-        "max_tokens": 512,
         "max_turns": 12,
         "num_ctx": 4096,
         "timeout_seconds": 300,
@@ -904,7 +903,12 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
 
 def _prepare_autonomy_models() -> None:
     """Free CPU/RAM from non-autonomy LLMs before a durable objective starts."""
-    other_models = {MODEL, "jarvis-voice:latest"} - {AUTONOMY_MODEL}
+    other_models = {
+        MODEL,
+        "jarvis-voice:latest",
+        "llama3.2:1b",
+        "granite-code:3b",
+    } - {AUTONOMY_MODEL}
     for model in sorted(other_models):
         if not model:
             continue
@@ -943,7 +947,7 @@ def autonomous(command: str) -> str:
     if status == "paused":
         api(f"/v1/managed-agents/{agent_id}/resume", {}, timeout=10)
         status = "idle"
-    elif status in {"error", "needs_attention"}:
+    elif status in {"error", "needs_attention", "budget_exceeded"}:
         api(f"/v1/managed-agents/{agent_id}/recover", {}, timeout=10)
         status = "idle"
 
