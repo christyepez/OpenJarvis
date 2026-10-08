@@ -258,3 +258,4 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["tools"] == []
     assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
     assert "real absolute paths" in calls[0][1]["config"]["instruction"]
+    assert "write_file, start_process, and read_process_output" in calls[0][1]["config"]["instruction"]

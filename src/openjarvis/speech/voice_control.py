@@ -677,9 +677,12 @@ def _autonomy_config() -> dict[str, Any]:
     workspace = str(_repo_root())
     instruction = (
         "Autonomous executor. Execute the latest user objective with REAL tools. "
-        "TOOL FIRST: for filesystem, process, test, Git, or system actions, call "
-        "an available tool before any prose. Never claim execution without a "
-        "successful tool result. The exact Windows workspace is "
+        "You DO have execution tools. For this objective the available tools are "
+        "write_file, start_process, and read_process_output when selected by the "
+        "tool allowlist. TOOL FIRST: for filesystem, process, test, Git, or system "
+        "actions, call one of those tools before any prose. Never say that you cannot "
+        "access the filesystem or execute commands when these tools are available. "
+        "Never claim execution without a successful tool result. The exact Windows workspace is "
         f"{workspace}. Use only real absolute paths in that workspace. "
         "For long work iterate change -> test -> verify -> commit/push when requested. "
         "Retry recoverable failures. Ask only for missing credentials, irreversible "
