@@ -9,6 +9,7 @@ from openjarvis.speech.voice_control import (
     _autonomy_tool_specs,
     _is_autonomous_objective,
     _requires_tool_evidence,
+    autonomous,
     direct,
     resolve_audio_device,
     wake_command,
@@ -267,4 +268,4 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["tools"] == []
     assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
     assert "real absolute paths" in calls[0][1]["config"]["instruction"]
-    assert "create_directory, write_file, start_process, and read_process_output" in calls[0][1]["config"]["instruction"]
+    assert "Only the tool schemas provided by the runtime" in calls[0][1]["config"]["instruction"]

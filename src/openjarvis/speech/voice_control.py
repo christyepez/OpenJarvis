@@ -677,9 +677,9 @@ def _autonomy_config() -> dict[str, Any]:
     workspace = str(_repo_root())
     instruction = (
         "Autonomous executor. Execute the latest user objective with REAL tools. "
-        "You DO have execution tools. For this objective the available tools include "
-        "create_directory, write_file, start_process, and read_process_output when selected by the "
-        "tool allowlist. TOOL FIRST: for filesystem, process, test, Git, or system "
+        "You DO have execution tools. Only the tool schemas provided by the runtime "
+        "for the current objective are available. Never invent or call a tool that is not "
+        "explicitly listed for this objective. TOOL FIRST: for filesystem, process, test, Git, or system "
         "actions, call one of those tools before any prose. Never say that you cannot "
         "access the filesystem or execute commands when these tools are available. "
         "For write_file, path MUST be the exact absolute target FILE path from the "
@@ -1038,6 +1038,12 @@ def autonomous(command: str) -> str:
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
     tool_allowlist = _autonomy_tool_allowlist(command)
+    tool_names = ", ".join(tool_allowlist)
+    config["instruction"] += (
+        f" Available tools for this objective: {tool_names}. "
+        "Use only these exact tool names and their provided schemas."
+    )
+    config["system_prompt"] = config["instruction"]
     config["mcp_tool_allowlist"] = tool_allowlist
     config["tools"] = _autonomy_tool_specs(tool_allowlist)
     config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
