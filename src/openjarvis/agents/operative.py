@@ -72,6 +72,82 @@ def _recover_text_tool_calls(
     ]
 
 
+def _coerce_tool_value(value: Any, schema: dict[str, Any]) -> Any:
+    expected = schema.get("type")
+    if expected in {"integer", "number"} and isinstance(value, str):
+        try:
+            return int(value) if expected == "integer" else float(value)
+        except ValueError:
+            return value
+    if expected == "boolean" and isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
+        return value
+    if expected in {"object", "array"} and isinstance(value, str):
+        parsed: Any
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            try:
+                parsed = ast.literal_eval(value)
+            except (ValueError, SyntaxError):
+                return value
+        if expected == "object" and isinstance(parsed, dict):
+            return parsed
+        if expected == "array" and isinstance(parsed, list):
+            return parsed
+        return value
+    if expected == "string" and not isinstance(value, str):
+        return str(value)
+    return value
+
+
+def _sanitize_tool_arguments(
+    name: str,
+    arguments: Any,
+    openai_tools: list[dict[str, Any]],
+) -> str:
+    """Drop unsupported fields and coerce simple types using the tool schema."""
+    if isinstance(arguments, str):
+        try:
+            parsed = json.loads(arguments or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return arguments
+    elif isinstance(arguments, dict):
+        parsed = arguments
+    else:
+        return json.dumps({})
+
+    if not isinstance(parsed, dict):
+        return json.dumps({})
+
+    schema: dict[str, Any] = {}
+    for tool in openai_tools:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if not isinstance(function, dict) or function.get("name") != name:
+            continue
+        parameters = function.get("parameters")
+        if isinstance(parameters, dict):
+            schema = parameters
+        break
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return json.dumps(parsed)
+
+    cleaned: dict[str, Any] = {}
+    for key, value in parsed.items():
+        field_schema = properties.get(key)
+        if not isinstance(field_schema, dict):
+            continue
+        cleaned[key] = _coerce_tool_value(value, field_schema)
+
+    return json.dumps(cleaned)
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -236,14 +312,21 @@ class OperativeAgent(ToolUsingAgent):
                 content = self._check_continuation(result, messages)
                 break
 
-            tool_calls = [
-                ToolCall(
-                    id=tc.get("id", f"call_{i}"),
-                    name=tc.get("name", ""),
-                    arguments=tc.get("arguments", "{}"),
+            tool_calls = []
+            for i, tc in enumerate(raw_tool_calls):
+                name = tc.get("name", "")
+                arguments = _sanitize_tool_arguments(
+                    name,
+                    tc.get("arguments", "{}"),
+                    openai_tools,
                 )
-                for i, tc in enumerate(raw_tool_calls)
-            ]
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.get("id", f"call_{i}"),
+                        name=name,
+                        arguments=arguments,
+                    )
+                )
 
             messages.append(
                 Message(

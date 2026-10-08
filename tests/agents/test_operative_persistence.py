@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from openjarvis.agents.operative import (
     OperativeAgent,
     _recover_text_tool_calls,
+    _sanitize_tool_arguments,
     _uses_placeholder_path,
 )
 from openjarvis.sessions.session import SessionStore
@@ -67,6 +70,43 @@ continua
 
     assert len(calls) == 1
     assert calls[0]["name"] == "write_file"
+
+
+def test_sanitize_tool_arguments_uses_schema() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string"},
+                        "offset": {"type": "number"},
+                        "length": {"type": "number"},
+                        "options": {"type": "object"},
+                    },
+                },
+            },
+        }
+    ]
+    raw = {
+        "path": "C:/Users/chris/source/repos/OpenJarvis/docs/file.md",
+        "offset": "0",
+        "length": "100",
+        "options": "{'mode': 'rewrite'}",
+        "content": "{}",
+        "mode": "rewrite",
+    }
+
+    sanitized = json.loads(_sanitize_tool_arguments("read_file", raw, tools))
+
+    assert sanitized == {
+        "path": "C:/Users/chris/source/repos/OpenJarvis/docs/file.md",
+        "offset": 0.0,
+        "length": 100.0,
+        "options": {"mode": "rewrite"},
+    }
 
 
 def test_placeholder_path_guard_rejects_examples() -> None:
