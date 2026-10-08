@@ -35,6 +35,11 @@ class MultiEngine(InferenceEngine):
         for key, engine in self._engines:
             try:
                 for model_id in engine.list_models():
+                    # Preserve the first owner. The primary engine is added first,
+                    # so duplicate model IDs discovered later cannot silently
+                    # hijack local routing (e.g. Ollama vs vLLM proxies).
+                    if model_id in self._model_map:
+                        continue
                     self._model_map[model_id] = engine
                     self._model_key_map[model_id] = key
             except Exception as exc:

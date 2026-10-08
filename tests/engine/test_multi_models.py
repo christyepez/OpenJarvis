@@ -57,6 +57,17 @@ def test_multi_engine_groups_models_by_engine() -> None:
     }
 
 
+def test_multi_engine_preserves_first_owner_for_duplicate_model() -> None:
+    multi = MultiEngine(
+        [
+            ("ollama", _StubEngine(["llama3.2:1b"])),
+            ("vllm", _StubEngine(["llama3.2:1b"])),
+        ]
+    )
+
+    assert multi._model_key_map["llama3.2:1b"] == "ollama"
+
+
 def test_instrumented_engine_preserves_grouped_model_discovery() -> None:
     multi = MultiEngine(
         [
