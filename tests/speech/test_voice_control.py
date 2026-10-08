@@ -61,6 +61,13 @@ def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     ) == ["create_directory", "write_file", "start_process", "read_process_output"]
 
 
+def test_autonomy_tool_specs_include_create_directory() -> None:
+    specs = _autonomy_tool_specs(["create_directory"])
+    create = specs[0]
+    assert create["function"]["name"] == "create_directory"
+    assert create["function"]["parameters"]["required"] == ["path"]
+
+
 def test_autonomy_tool_specs_compact_start_process_schema() -> None:
     specs = _autonomy_tool_specs(["start_process", "read_process_output"])
 

@@ -890,6 +890,21 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
 
 
 _AUTONOMY_COMPACT_TOOL_SPECS: dict[str, dict[str, Any]] = {
+    "create_directory": {
+        "type": "function",
+        "function": {
+            "name": "create_directory",
+            "description": "Create a Windows directory using an absolute path.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
     "list_directory": {
         "type": "function",
         "function": {
