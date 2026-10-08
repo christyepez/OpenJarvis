@@ -901,8 +901,27 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
     return requirements
 
 
+def _prepare_autonomy_models() -> None:
+    """Free CPU/RAM from non-autonomy LLMs before a durable objective starts."""
+    other_models = {MODEL, "jarvis-voice:latest"} - {AUTONOMY_MODEL}
+    for model in sorted(other_models):
+        if not model:
+            continue
+        try:
+            subprocess.run(
+                ["ollama", "stop", model],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            log.warning("Could not unload Ollama model %s: %s", model, exc)
+
+
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
+    _prepare_autonomy_models()
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
     config["mcp_tool_allowlist"] = _autonomy_tool_allowlist(command)

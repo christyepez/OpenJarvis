@@ -4,6 +4,7 @@ from pathlib import Path
 
 from openjarvis.speech.voice_control import (
     _ground_autonomous_command,
+    _prepare_autonomy_models,
     _autonomy_tool_allowlist,
     _is_autonomous_objective,
     _requires_tool_evidence,
@@ -57,6 +58,29 @@ def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
     ) == ["write_file", "start_process", "read_process_output"]
+
+
+def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda args, **kwargs: calls.append(args),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.MODEL",
+        "qwen3.5:4b",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.AUTONOMY_MODEL",
+        "llama3.2:1b",
+    )
+
+    _prepare_autonomy_models()
+
+    assert ["ollama", "stop", "qwen3.5:4b"] in calls
+    assert ["ollama", "stop", "jarvis-voice:latest"] in calls
+    assert ["ollama", "stop", "llama3.2:1b"] not in calls
 
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
