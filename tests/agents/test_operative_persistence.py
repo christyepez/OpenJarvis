@@ -44,6 +44,27 @@ def test_recover_text_tool_call_only_for_allowed_tool() -> None:
     assert '"path": "C:/tmp/a.txt"' in calls[0]["arguments"]
 
 
+def test_recover_fenced_json_tool_call() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "write_file"},
+        }
+    ]
+    content = """## respuesta
+
+```json
+{"name":"write_file","parameters":{"path":"C:/tmp/a.txt","content":"ok","mode":"rewrite"}}
+```
+
+continua
+"""
+    calls = _recover_text_tool_calls(content, tools)
+
+    assert len(calls) == 1
+    assert calls[0]["name"] == "write_file"
+
+
 def test_recover_text_tool_call_rejects_unlisted_tool() -> None:
     tools = [
         {

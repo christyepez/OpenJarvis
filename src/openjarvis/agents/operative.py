@@ -28,8 +28,16 @@ def _recover_text_tool_calls(
 ) -> list[dict[str, Any]]:
     """Recover a single tool call serialized as plain text by small models."""
     raw = (content or "").strip()
-    if not raw.startswith("{") or not raw.endswith("}"):
-        return []
+    if not (raw.startswith("{") and raw.endswith("}")):
+        fence_start = raw.find("```json")
+        fence_end = raw.find("```", fence_start + 7) if fence_start >= 0 else -1
+        if fence_start < 0 or fence_end < 0:
+            return []
+        if raw.find("```json", fence_start + 7) >= 0:
+            return []
+        raw = raw[fence_start + 7 : fence_end].strip()
+        if not (raw.startswith("{") and raw.endswith("}")):
+            return []
 
     parsed: Any
     try:
