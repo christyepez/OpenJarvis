@@ -159,13 +159,27 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
         return arguments
     if not isinstance(parsed, dict):
         return arguments
+
+    path_pattern = (
+        r'([A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*'
+        r'[^\\/:*?"<>|\r\n]+\.[A-Za-z0-9]{1,10})'
+    )
+    targeted_path = re.search(
+        r"(?:write_file[^\r\n]{0,120}?|"
+        r"(?:crea|crear|escribe|escribir)\s+(?:exactamente\s+)?)"
+        + path_pattern,
+        objective,
+        flags=re.IGNORECASE,
+    )
     path_matches = re.findall(
-        r'([A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+\.[A-Za-z0-9]{1,10})',
+        path_pattern,
         objective,
         flags=re.IGNORECASE,
     )
     content_match = re.search(
-        r"(?:con el contenido|with content)\s+(.+?)(?=\.\s+(?:No |Despues|Después|Then|Do not|Solo |Only )|$)",
+        r"(?:con el contenido|with content)\s+(.+?)"
+        r"(?=\.\s+(?:(?:\d+\)|No\b|Despues\b|Después\b|Then\b|"
+        r"Do not\b|Solo\b|Only\b))|$)",
         objective,
         flags=re.IGNORECASE | re.DOTALL,
     )
@@ -173,7 +187,11 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
         return arguments
 
     repaired = dict(parsed)
-    repaired["path"] = path_matches[-1].strip()
+    repaired["path"] = (
+        targeted_path.group(1).strip()
+        if targeted_path is not None
+        else path_matches[0].strip()
+    )
     repaired["content"] = content_match.group(1).strip().rstrip(".")
     repaired["mode"] = "rewrite"
     return json.dumps(repaired)

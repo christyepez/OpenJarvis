@@ -57,6 +57,27 @@ def test_repair_write_file_arguments_from_explicit_objective() -> None:
     assert repaired["mode"] == "rewrite"
 
 
+def test_repair_write_file_arguments_prefers_explicit_multistep_target() -> None:
+    objective = (
+        r"1) Usa write_file para crear "
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\autonomy-e2e.md "
+        r"con el contenido JARVIS AUTONOMY E2E OK. "
+        r"2) Usa start_process para ejecutar "
+        r"C:\Users\chris\source\repos\OpenJarvis\.venv\Scripts\python.exe "
+        r"-m pytest "
+        r"C:\Users\chris\source\repos\OpenJarvis\tests\agents\test_operative_persistence.py -q. "
+        r"No toques C:\Users\chris\source\repos\OpenJarvis\JARVIS_OPERATIONAL_SMOKE_20261005.txt."
+    )
+
+    repaired = json.loads(_repair_write_file_arguments("{}", objective))
+
+    assert repaired["path"] == (
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\autonomy-e2e.md"
+    )
+    assert repaired["content"] == "JARVIS AUTONOMY E2E OK"
+    assert repaired["mode"] == "rewrite"
+
+
 def test_repair_write_file_arguments_requires_explicit_content() -> None:
     objective = (
         r"Use write_file for "
