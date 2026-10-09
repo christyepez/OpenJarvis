@@ -110,6 +110,14 @@ def _completion_evidence_met(
                 name in {"write_file", "edit_block", "apply_patch"}
                 for name, _, _ in evidence
             )
+        if requirement == "process_start":
+            return any(name == "start_process" for name, _, _ in evidence)
+        if requirement == "autonomy_gate_ok":
+            return any(
+                name in {"start_process", "read_process_output"}
+                and "autonomy_gate_ok" in content
+                for name, _, content in evidence
+            )
         if requirement == "pytest":
             return any(
                 name in {"start_process", "read_process_output"}

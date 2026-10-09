@@ -154,6 +154,15 @@ def test_autonomy_completion_requirements_include_process_exit_zero() -> None:
     assert "process_exit_0" in requirements
 
 
+def test_autonomy_completion_requirements_include_process_gate() -> None:
+    requirements = _autonomy_completion_requirements(
+        "Usa start_process y termina solo si aparece [E2E] AUTONOMY_GATE_OK."
+    )
+
+    assert "process_start" in requirements
+    assert "autonomy_gate_ok" in requirements
+
+
 def test_autonomy_tool_specs_include_create_directory() -> None:
     specs = _autonomy_tool_specs(["create_directory"])
     create = specs[0]

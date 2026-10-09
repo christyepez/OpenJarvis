@@ -998,6 +998,10 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
         requirements.append("write")
     if any(term in n for term in ("pytest", "prueba", "pruebas", "test ", "tests/")):
         requirements.append("pytest")
+    if "start_process" in n:
+        requirements.append("process_start")
+    if "autonomy_gate_ok" in n or "autonomy gate ok" in n:
+        requirements.append("autonomy_gate_ok")
     if "git status" in n:
         requirements.append("git_status")
     if "git diff" in n:
