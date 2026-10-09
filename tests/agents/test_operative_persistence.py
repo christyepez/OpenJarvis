@@ -7,6 +7,7 @@ import pytest
 from openjarvis.agents.operative import (
     OperativeAgent,
     _continuation_tools,
+    _forced_continuation_start_call,
     _missing_parent_directory_call,
     _process_output_followup_call,
     _recover_text_tool_calls,
@@ -142,6 +143,28 @@ def test_continuation_tools_focuses_process_evidence() -> None:
     assert [
         tool["function"]["name"] for tool in focused
     ] == ["start_process", "read_process_output"]
+
+
+def test_forced_continuation_start_call_uses_explicit_command() -> None:
+    tools = [
+        {"type": "function", "function": {"name": "start_process"}},
+        {"type": "function", "function": {"name": "read_process_output"}},
+    ]
+    prompt = (
+        "CONTINUE AUTONOMOUS OBJECTIVE. "
+        "Missing evidence: pytest, process_start, git_push. "
+        "Original objective execution step: "
+        "Usa start_process una sola vez con este comando exactamente: "
+        "Set-Location 'C:\\repo'; pytest -q"
+    )
+
+    call = _forced_continuation_start_call(prompt, tools)
+
+    assert call is not None
+    assert call["name"] == "start_process"
+    args = json.loads(call["arguments"])
+    assert args["command"] == "Set-Location 'C:\\repo'; pytest -q"
+    assert args["timeout_ms"] == 120000
 
 
 def test_protected_objective_path_blocks_explicit_target() -> None:

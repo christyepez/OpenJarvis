@@ -377,6 +377,34 @@ def _continuation_tools(
     ]
 
 
+def _forced_continuation_start_call(
+    input_text: str,
+    openai_tools: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return a deterministic start_process call for missing process evidence."""
+    if (
+        "CONTINUE AUTONOMOUS OBJECTIVE." not in input_text
+        or "Missing evidence:" not in input_text
+        or "process_start" not in input_text
+    ):
+        return None
+    allowed = {
+        str((tool.get("function") or {}).get("name") or "").strip()
+        for tool in openai_tools
+        if isinstance(tool, dict)
+    }
+    if "start_process" not in allowed:
+        return None
+    arguments = _repair_start_process_arguments("{}", input_text)
+    if arguments == "{}":
+        return None
+    return {
+        "id": "forced_continuation_start",
+        "name": "start_process",
+        "arguments": arguments,
+    }
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -524,6 +552,7 @@ class OperativeAgent(ToolUsingAgent):
         # 5. Run function-calling tool loop
         openai_tools = self._executor.get_openai_tools() if self._tools else []
         openai_tools = _continuation_tools(input, openai_tools)
+        forced_start_call = _forced_continuation_start_call(input, openai_tools)
         all_tool_results: list[ToolResult] = []
         turns = 0
         content = ""
@@ -551,12 +580,18 @@ class OperativeAgent(ToolUsingAgent):
             if openai_tools:
                 gen_kwargs["tools"] = openai_tools
 
-            result = self._generate(messages, **gen_kwargs)
-            usage = result.get("usage", {})
-            for k in total_usage:
-                total_usage[k] += usage.get(k, 0)
-            content = result.get("content", "")
-            raw_tool_calls = result.get("tool_calls", [])
+            if forced_start_call is not None and not all_tool_results:
+                result = {"content": "", "usage": {}}
+                raw_tool_calls = [forced_start_call]
+                forced_start_call = None
+                content = ""
+            else:
+                result = self._generate(messages, **gen_kwargs)
+                usage = result.get("usage", {})
+                for k in total_usage:
+                    total_usage[k] += usage.get(k, 0)
+                content = result.get("content", "")
+                raw_tool_calls = result.get("tool_calls", [])
             if not raw_tool_calls and openai_tools:
                 raw_tool_calls = _recover_text_tool_calls(content, openai_tools)
                 if raw_tool_calls:
