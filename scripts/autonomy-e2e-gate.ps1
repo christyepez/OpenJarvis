@@ -39,25 +39,47 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+$alreadyCommitted = $false
 git diff --cached --quiet -- "docs/operations/autonomy-e2e.md"
 if ($LASTEXITCODE -eq 0) {
-    Write-Error "[E2E] target produced no staged change"
-    exit 12
+    $headContent = git show "HEAD:docs/operations/autonomy-e2e.md" 2>$null
+    if ($LASTEXITCODE -ne 0 -or ($headContent -join "`n").Trim() -ne $expected) {
+        Write-Error "[E2E] target produced no staged change and HEAD does not contain expected marker"
+        exit 12
+    }
+
+    git fetch origin main --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[E2E] fetch failed while verifying idempotent state"
+        exit $LASTEXITCODE
+    }
+    $headSha = (git rev-parse HEAD).Trim()
+    $originSha = (git rev-parse origin/main).Trim()
+    if ($headSha -ne $originSha) {
+        Write-Error "[E2E] expected marker is committed locally but not synchronized to origin/main"
+        exit 13
+    }
+
+    $alreadyCommitted = $true
+    Write-Output "[E2E] commit=already-ok"
+    Write-Output "[E2E] push=already-ok"
 }
 
-git commit -m "test: validate autonomous e2e" -- "docs/operations/autonomy-e2e.md"
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "[E2E] commit failed"
-    exit $LASTEXITCODE
-}
-Write-Output "[E2E] commit=ok"
+if (-not $alreadyCommitted) {
+    git commit -m "test: validate autonomous e2e" -- "docs/operations/autonomy-e2e.md"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[E2E] commit failed"
+        exit $LASTEXITCODE
+    }
+    Write-Output "[E2E] commit=ok"
 
-git push origin main
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "[E2E] push failed"
-    exit $LASTEXITCODE
+    git push origin main
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[E2E] push failed"
+        exit $LASTEXITCODE
+    }
+    Write-Output "[E2E] push=ok"
 }
-Write-Output "[E2E] push=ok"
 
 Write-Output "[E2E] git_log:"
 git log -1 --oneline
