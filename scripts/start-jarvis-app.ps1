@@ -55,9 +55,11 @@ if (Test-Path $voice) {
     Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$voice -WorkingDirectory $repo -WindowStyle Hidden
 }
 
+$programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+$programFiles = [Environment]::GetFolderPath('ProgramFiles')
 $edge = @(
-    "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
-    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+    (Join-Path $programFilesX86 'Microsoft\Edge\Application\msedge.exe'),
+    (Join-Path $programFiles 'Microsoft\Edge\Application\msedge.exe')
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if ($edge) {
