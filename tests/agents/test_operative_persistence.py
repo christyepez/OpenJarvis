@@ -114,6 +114,23 @@ def test_repair_write_file_arguments_requires_explicit_content() -> None:
     assert _repair_write_file_arguments("{}", objective) == "{}"
 
 
+def test_operative_stops_before_generation_when_objective_is_superseded() -> None:
+    agent = OperativeAgent(
+        object(),
+        "test-model",
+        objective_guard=lambda: False,
+        temperature=0.1,
+        max_tokens=32,
+        max_turns=1,
+    )
+
+    result = agent.run("NEW AUTONOMOUS OBJECTIVE. Do something.")
+
+    assert result.content == "OBJECTIVE_SUPERSEDED"
+    assert result.metadata["objective_superseded"] is True
+    assert result.tool_results == []
+
+
 def test_operative_session_round_trip(tmp_path) -> None:
     store = SessionStore(tmp_path / "sessions.db")
     try:

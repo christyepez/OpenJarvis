@@ -730,8 +730,8 @@ def _autonomy_config() -> dict[str, Any]:
     }
 
 
-def _autonomy_agent_id() -> str:
-    config = _autonomy_config()
+def _autonomy_agent_id(config: dict[str, Any] | None = None) -> str:
+    config = config or _autonomy_config()
     existing = _agent_id_by_name(AUTONOMY_AGENT_NAME)
     if existing:
         api(
@@ -1069,10 +1069,7 @@ def _wait_for_autonomy_idle(agent_id: str, timeout_seconds: float = 20.0) -> Non
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     _prepare_autonomy_models()
-    existing_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
-    if existing_id:
-        _wait_for_autonomy_idle(existing_id)
-    agent_id = _autonomy_agent_id()
+
     config = _autonomy_config()
     grounded_command = _ground_autonomous_command(command)
     tool_allowlist = _autonomy_tool_allowlist(command)
@@ -1090,12 +1087,12 @@ def autonomous(command: str) -> str:
     config["completion_followup_count"] = 0
     config["max_completion_followups"] = 6
     config["active_objective"] = grounded_command
-    api(
-        f"/v1/managed-agents/{agent_id}",
-        {"agent_type": "operative", "config": config},
-        timeout=20,
-        method="PATCH",
-    )
+    config["objective_token"] = str(time.time_ns())
+
+    existing_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+    agent_id = _autonomy_agent_id(config)
+    if existing_id:
+        _wait_for_autonomy_idle(agent_id, timeout_seconds=45.0)
     try:
         api("/v1/operations/machines/probe", {}, timeout=15)
     except Exception as exc:
