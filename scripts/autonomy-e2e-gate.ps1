@@ -90,4 +90,5 @@ git status --short
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Output "[E2E] AUTONOMY_GATE_OK"
+Write-Output "[E2E] Process completed with exit code 0"
 exit 0
