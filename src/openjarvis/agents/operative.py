@@ -13,7 +13,7 @@ import logging
 import ntpath
 import os
 import re
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
 from openjarvis.core.events import EventBus
@@ -367,6 +367,7 @@ class OperativeAgent(ToolUsingAgent):
         confirm_callback=None,
         prompt_builder: Optional[Any] = None,
         compact_prompt: bool = False,
+        objective_guard: Optional[Callable[[], bool]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -387,6 +388,16 @@ class OperativeAgent(ToolUsingAgent):
         self._operator_id = operator_id
         self._session_store = session_store
         self._memory_backend = memory_backend
+        self._objective_guard = objective_guard
+
+    def _objective_is_current(self) -> bool:
+        if self._objective_guard is None:
+            return True
+        try:
+            return bool(self._objective_guard())
+        except Exception as exc:
+            logger.warning("Objective guard failed; stopping stale-capable tick: %s", exc)
+            return False
 
     def run(
         self,
@@ -442,6 +453,7 @@ class OperativeAgent(ToolUsingAgent):
         content = ""
         state_stored_by_tool = False
         missing_tool_retries = 0
+        objective_superseded = False
         total_usage: dict[str, int] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -450,6 +462,11 @@ class OperativeAgent(ToolUsingAgent):
 
         for _turn in range(self._max_turns):
             turns += 1
+
+            if not self._objective_is_current():
+                objective_superseded = True
+                content = "OBJECTIVE_SUPERSEDED"
+                break
 
             if self._loop_guard:
                 messages = self._loop_guard.compress_context(messages)
@@ -524,6 +541,11 @@ class OperativeAgent(ToolUsingAgent):
             )
 
             for tc in tool_calls:
+                if not self._objective_is_current():
+                    objective_superseded = True
+                    content = "OBJECTIVE_SUPERSEDED"
+                    break
+
                 # Loop guard check
                 if self._loop_guard:
                     verdict = self._loop_guard.check_call(tc.name, tc.arguments)
@@ -643,6 +665,9 @@ class OperativeAgent(ToolUsingAgent):
                         name=tc.name,
                     )
                 )
+
+            if objective_superseded:
+                break
         else:
             # Max turns exceeded
             self._save_session(input, content)
@@ -650,6 +675,17 @@ class OperativeAgent(ToolUsingAgent):
             meta["max_turns_exceeded"] = True
             return AgentResult(
                 content=content or "Maximum turns reached without a final answer.",
+                tool_results=all_tool_results,
+                turns=turns,
+                metadata=meta,
+            )
+
+        if objective_superseded:
+            meta = dict(total_usage)
+            meta["objective_superseded"] = True
+            self._emit_turn_end(turns=turns, content_length=len(content))
+            return AgentResult(
+                content="OBJECTIVE_SUPERSEDED",
                 tool_results=all_tool_results,
                 turns=turns,
                 metadata=meta,

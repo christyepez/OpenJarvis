@@ -1015,6 +1015,22 @@ class AgentExecutor:
         state_kwargs: dict[str, Any] = {}
         if _accepts("operator_id"):
             state_kwargs["operator_id"] = agent["id"]
+
+        objective_token = str(config.get("objective_token") or "")
+        if objective_token and _accepts("objective_guard"):
+            expected_token = objective_token
+            managed_agent_id = agent["id"]
+
+            def _objective_guard() -> bool:
+                current = self._manager.get_agent(managed_agent_id)
+                if not current:
+                    return False
+                current_config = current.get("config") or {}
+                current_token = str(current_config.get("objective_token") or "")
+                return current_token == expected_token
+
+            state_kwargs["objective_guard"] = _objective_guard
+
         if self._system is not None:
             if _accepts("session_store"):
                 state_kwargs["session_store"] = getattr(
