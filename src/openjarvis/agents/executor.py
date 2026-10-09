@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import time
 from typing import TYPE_CHECKING, Any
@@ -117,6 +118,10 @@ def _completion_evidence_met(
         content = str(getattr(tool_result, "content", "") or "")
         evidence.append((name, arguments.casefold(), content.casefold()))
 
+    def exit_zero(content: str) -> bool:
+        exit_codes = re.findall(r"exit code\s+(-?\d+)", content)
+        return bool(exit_codes) and all(code == "0" for code in exit_codes)
+
     def has(requirement: str) -> bool:
         if requirement == "write":
             return any(
@@ -134,14 +139,17 @@ def _completion_evidence_met(
         if requirement == "pytest":
             return any(
                 name in {"start_process", "read_process_output"}
-                and ("pytest" in args or " passed" in content)
+                and (
+                    " passed" in content
+                    or ("pytest" in args and exit_zero(content))
+                )
                 for name, args, content in evidence
             )
         if requirement == "git_status":
             return any(
                 name in {"start_process", "read_process_output"}
                 and (
-                    "git status" in args
+                    ("git status" in args and exit_zero(content))
                     or ("on branch" in content and "working tree" in content)
                 )
                 for name, args, content in evidence
@@ -149,14 +157,17 @@ def _completion_evidence_met(
         if requirement == "git_diff":
             return any(
                 name in {"start_process", "read_process_output"}
-                and "git diff" in args
-                for name, args, _ in evidence
+                and (
+                    ("git diff" in args and exit_zero(content))
+                    or "diff --git" in content
+                )
+                for name, args, content in evidence
             )
         if requirement == "git_commit":
             return any(
                 name in {"start_process", "read_process_output"}
                 and (
-                    "git commit" in args
+                    ("git commit" in args and exit_zero(content))
                     or "[main " in content
                     or "files changed" in content
                     or "file changed" in content
@@ -167,7 +178,7 @@ def _completion_evidence_met(
             return any(
                 name in {"start_process", "read_process_output"}
                 and (
-                    "git push" in args
+                    ("git push" in args and exit_zero(content))
                     or ("to https://" in content and "main" in content)
                     or (" -> " in content and "main" in content)
                 )

@@ -475,6 +475,38 @@ def test_finalize_tick_accepts_complete_objective_evidence(tmp_path):
     mgr.close()
 
 
+def test_failed_process_does_not_satisfy_autonomous_completion_evidence() -> None:
+    from openjarvis.agents.executor import _completion_evidence_met
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="start_process",
+                content=(
+                    "pytest: error: unrecognized arguments: --check --short\n"
+                    "Process completed with exit code 1"
+                ),
+                success=True,
+                metadata={
+                    "arguments": (
+                        "python -m pytest tests/test_x.py -q; "
+                        "git diff --check; git status --short; "
+                        "git commit -m test; git push origin main"
+                    )
+                },
+            )
+        ],
+    )
+
+    met = _completion_evidence_met(
+        result,
+        ["pytest", "git_status", "git_diff", "git_commit", "git_push"],
+    )
+
+    assert met == set()
+
+
 def test_finalize_tick_reads_agent_result_metadata(tmp_path):
     """_finalize_tick() accumulates cost/tokens from AgentResult.metadata."""
     from openjarvis.agents.executor import AgentExecutor
