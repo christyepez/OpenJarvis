@@ -257,6 +257,51 @@ def _process_output_followup_call(
     )
 
 
+def _protected_objective_names(objective: str) -> set[str]:
+    """Extract explicitly protected file/directory names from objective text."""
+    match = re.search(
+        r"(?:no\s+toques|do\s+not\s+touch)\s+(.+?)(?:\.(?:\s|$)|$)",
+        objective,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return set()
+
+    names: set[str] = set()
+    for item in re.split(
+        r"\s*(?:,|;|\bni\b|\band\b|\bnor\b)\s*",
+        match.group(1),
+        flags=re.IGNORECASE,
+    ):
+        cleaned = item.strip().strip("\'\"`")
+        if not cleaned:
+            continue
+        names.add(ntpath.basename(cleaned.replace("/", "\\" )).casefold())
+    return names
+
+
+def _targets_protected_objective_path(arguments: str, objective: str) -> bool:
+    """Return True when a tool call targets a path explicitly marked protected."""
+    protected = _protected_objective_names(objective)
+    if not protected:
+        return False
+    try:
+        parsed = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return False
+    if not isinstance(parsed, dict):
+        return False
+
+    for key in ("path", "file_path", "source", "destination", "old_path", "new_path"):
+        value = parsed.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        name = ntpath.basename(value.strip().replace("/", "\\" )).casefold()
+        if name in protected:
+            return True
+    return False
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -499,7 +544,20 @@ class OperativeAgent(ToolUsingAgent):
                         )
                         continue
 
-                if _uses_placeholder_path(tc.arguments):
+                if (
+                    tc.name in {"write_file", "edit_block", "move_file"}
+                    and _targets_protected_objective_path(tc.arguments, input)
+                ):
+                    tool_result = ToolResult(
+                        tool_name=tc.name,
+                        content=(
+                            "Protected objective path blocked. The current objective "
+                            "explicitly says not to modify this target."
+                        ),
+                        success=False,
+                        metadata={"arguments": tc.arguments},
+                    )
+                elif _uses_placeholder_path(tc.arguments):
                     tool_result = ToolResult(
                         tool_name=tc.name,
                         content=(

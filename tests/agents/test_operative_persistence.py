@@ -11,6 +11,7 @@ from openjarvis.agents.operative import (
     _recover_text_tool_calls,
     _repair_write_file_arguments,
     _sanitize_tool_arguments,
+    _targets_protected_objective_path,
     _uses_placeholder_path,
 )
 from openjarvis.sessions.session import SessionStore
@@ -76,6 +77,15 @@ def test_repair_write_file_arguments_prefers_explicit_multistep_target() -> None
     )
     assert repaired["content"] == "JARVIS AUTONOMY E2E OK"
     assert repaired["mode"] == "rewrite"
+
+
+def test_protected_objective_path_blocks_explicit_target() -> None:
+    objective = "Do not touch protected.txt."
+    protected_args = json.dumps({"path": r"C:\workspace\protected.txt", "content": "x"})
+    safe_args = json.dumps({"path": r"C:\workspace\safe.txt", "content": "x"})
+
+    assert _targets_protected_objective_path(protected_args, objective) is True
+    assert _targets_protected_objective_path(safe_args, objective) is False
 
 
 def test_repair_write_file_arguments_requires_explicit_content() -> None:
