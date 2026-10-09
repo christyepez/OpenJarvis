@@ -380,6 +380,22 @@ class AgentScheduler:
         if agent is None:
             return
 
+        # A message can arrive while the current tick is already running.
+        # Do not make a replacement objective wait for the normal interval:
+        # schedule the next tick immediately once the current worker finishes.
+        try:
+            pending = self._manager.get_pending_messages(agent_id)
+        except Exception:
+            pending = []
+        if pending:
+            with self._lock:
+                info = self._agents.get(agent_id)
+                if info is not None:
+                    info["next_fire"] = min(
+                        float(info.get("next_fire", float("inf"))),
+                        time.time(),
+                    )
+
         config = agent.get("config", {})
         if not config.get("learning_enabled", False):
             return

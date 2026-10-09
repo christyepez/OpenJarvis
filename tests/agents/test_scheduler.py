@@ -44,6 +44,26 @@ class TestSchedulerBasic:
         scheduler.register_agent(agent["id"])
         assert agent["id"] in scheduler.registered_agents
 
+    def test_pending_message_advances_next_tick_after_completion(self, manager):
+        from openjarvis.agents.scheduler import AgentScheduler
+
+        scheduler = AgentScheduler(manager=manager, executor=MagicMock())
+        agent = manager.create_agent(
+            name="pending-agent",
+            agent_type="operative",
+            config={"schedule_type": "interval", "schedule_value": 60},
+        )
+        scheduler.register_agent(agent["id"])
+        original_next_fire = scheduler._agents[agent["id"]]["next_fire"]
+        manager.send_message(agent["id"], "NEW AUTONOMOUS OBJECTIVE. do work")
+
+        before = time.time()
+        scheduler._on_tick_completed(agent["id"])
+
+        assert scheduler._agents[agent["id"]]["next_fire"] <= time.time()
+        assert scheduler._agents[agent["id"]]["next_fire"] < original_next_fire
+        assert scheduler._agents[agent["id"]]["next_fire"] >= before - 1
+
     def test_register_agent_with_cron(self, manager):
         from openjarvis.agents.scheduler import AgentScheduler
 
