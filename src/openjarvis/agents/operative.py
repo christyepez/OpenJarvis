@@ -791,13 +791,25 @@ class OperativeAgent(ToolUsingAgent):
                         openai_tools,
                     )
                     if followup_call is not None:
-                        followup_result = self._executor.execute(followup_call)
-                        all_tool_results.append(followup_result)
-                        if followup_result.content:
+                        followup_chunks: list[str] = []
+                        for _followup_attempt in range(6):
+                            followup_result = self._executor.execute(followup_call)
+                            all_tool_results.append(followup_result)
+                            if followup_result.content:
+                                followup_chunks.append(str(followup_result.content))
+                            normalized_followup = str(
+                                followup_result.content or ""
+                            ).casefold()
+                            if (
+                                not followup_result.success
+                                or "process completed with exit code" in normalized_followup
+                            ):
+                                break
+                        if followup_chunks:
                             tool_result.content = (
                                 f"{tool_result.content}\n\n"
                                 "Process follow-up output:\n"
-                                f"{followup_result.content}"
+                                + "\n\n".join(followup_chunks)
                             )
                 all_tool_results.append(tool_result)
 
