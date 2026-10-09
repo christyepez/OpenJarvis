@@ -46,6 +46,7 @@ def test_repair_write_file_arguments_from_explicit_objective() -> None:
         {
             "path": r"C:\Users\chris\source\repos\OpenJarvis\wrong.md",
             "content": "This is not the requested content",
+            "mode": "append",
         }
     )
     repaired = json.loads(_repair_write_file_arguments(model_args, objective))

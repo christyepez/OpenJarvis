@@ -175,7 +175,7 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
     repaired = dict(parsed)
     repaired["path"] = path_matches[-1].strip()
     repaired["content"] = content_match.group(1).strip().rstrip(".")
-    repaired.setdefault("mode", "rewrite")
+    repaired["mode"] = "rewrite"
     return json.dumps(repaired)
 
 
