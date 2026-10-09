@@ -173,7 +173,7 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
     content_match = re.search(
         r"(?:con el contenido|with content)\s+(.+?)"
         r"(?=\.\s+(?:\d+\)|No\b|Despues\b|Después\b|Luego\b|Then\b|"
-        r"Do not\b|Solo\b|Only\b|Termina\b)|$)",
+        r"Do not\b|Solo\b|Only\b|Termina\b|Usa\b|Use\b)|$)",
         objective,
         flags=re.IGNORECASE | re.DOTALL,
     )
