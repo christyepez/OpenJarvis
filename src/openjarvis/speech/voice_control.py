@@ -823,7 +823,7 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
             "nuevo archivo",
         )
     ):
-        add("create_directory", "write_file")
+        add("write_file")
 
     if any(
         term in n
