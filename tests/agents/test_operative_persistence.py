@@ -6,6 +6,7 @@ import pytest
 
 from openjarvis.agents.operative import (
     OperativeAgent,
+    _continuation_tools,
     _missing_parent_directory_call,
     _process_output_followup_call,
     _recover_text_tool_calls,
@@ -120,6 +121,27 @@ def test_repair_start_process_arguments_preserves_valid_command() -> None:
         _repair_start_process_arguments(original, "Usa start_process para ejecutar: dir")
         == original
     )
+
+
+def test_continuation_tools_focuses_process_evidence() -> None:
+    tools = [
+        {"type": "function", "function": {"name": "create_directory"}},
+        {"type": "function", "function": {"name": "write_file"}},
+        {"type": "function", "function": {"name": "start_process"}},
+        {"type": "function", "function": {"name": "read_process_output"}},
+    ]
+    prompt = (
+        "CONTINUE AUTONOMOUS OBJECTIVE. "
+        "Verified evidence: write. Missing evidence: pytest, process_start, "
+        "autonomy_gate_ok, git_status, git_diff, git_commit, git_push. "
+        "For pytest and Git evidence use start_process."
+    )
+
+    focused = _continuation_tools(prompt, tools)
+
+    assert [
+        tool["function"]["name"] for tool in focused
+    ] == ["start_process", "read_process_output"]
 
 
 def test_protected_objective_path_blocks_explicit_target() -> None:

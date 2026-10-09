@@ -332,6 +332,51 @@ def _targets_protected_objective_path(arguments: str, objective: str) -> bool:
     return False
 
 
+def _continuation_tools(
+    input_text: str,
+    openai_tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Hide already-verified tool classes during evidence follow-up ticks."""
+    if "CONTINUE AUTONOMOUS OBJECTIVE." not in input_text:
+        return openai_tools
+    match = re.search(
+        r"Missing evidence:\s*(.+?)\.(?:\s+For\b|\s+Original objective:|$)",
+        input_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        return openai_tools
+    missing = {
+        item.strip().casefold()
+        for item in match.group(1).split(",")
+        if item.strip()
+    }
+    process_requirements = {
+        "pytest",
+        "process_start",
+        "autonomy_gate_ok",
+        "git_status",
+        "git_diff",
+        "git_commit",
+        "git_push",
+        "process_exit_0",
+    }
+    write_requirements = {"write"}
+    allowed_names: set[str] = set()
+    if missing & process_requirements:
+        allowed_names.update({"start_process", "read_process_output"})
+    if missing & write_requirements:
+        allowed_names.update({"create_directory", "write_file"})
+    if not allowed_names:
+        return openai_tools
+    return [
+        tool
+        for tool in openai_tools
+        if str((tool.get("function") or {}).get("name") or "").strip()
+        in allowed_names
+    ]
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -478,6 +523,7 @@ class OperativeAgent(ToolUsingAgent):
 
         # 5. Run function-calling tool loop
         openai_tools = self._executor.get_openai_tools() if self._tools else []
+        openai_tools = _continuation_tools(input, openai_tools)
         all_tool_results: list[ToolResult] = []
         turns = 0
         content = ""
