@@ -612,9 +612,22 @@ class OperativeAgent(ToolUsingAgent):
                         for tool in openai_tools
                         if isinstance(tool, dict)
                     }
+                    has_successful_start = any(
+                        result.tool_name == "start_process" and result.success
+                        for result in all_tool_results
+                    )
+                    continuation_needs_start = (
+                        "CONTINUE AUTONOMOUS OBJECTIVE." in input
+                        and "Missing evidence:" in input
+                        and "process_start" in input
+                        and not has_successful_start
+                    )
                     if (
-                        not process_args.get("pid")
-                        and "start_process" in available_names
+                        "start_process" in available_names
+                        and (
+                            continuation_needs_start
+                            or not process_args.get("pid")
+                        )
                     ):
                         recovered = _repair_start_process_arguments("{}", input)
                         if recovered != "{}":
