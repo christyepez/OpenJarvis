@@ -43,6 +43,32 @@ def _get_runtime_event_bus(runtime: Any = None) -> Any:
     return bus if bus is not None else get_event_bus()
 
 
+def _managed_agent_worker_alive(app_state: Any, agent_id: str) -> bool:
+    """Return whether a managed-agent tick worker is alive in this server process."""
+    scheduler = getattr(app_state, "agent_scheduler", None)
+    scheduler_check = getattr(scheduler, "_worker_alive", None)
+    if callable(scheduler_check):
+        try:
+            if scheduler_check(agent_id):
+                return True
+        except Exception:
+            logger.debug("Could not inspect scheduler worker for %s", agent_id)
+
+    lock = getattr(app_state, "_managed_worker_lock", None)
+    workers = getattr(app_state, "_managed_workers", None) or set()
+
+    def _matches(worker: Any) -> bool:
+        name = str(getattr(worker, "name", "") or "")
+        is_alive = getattr(worker, "is_alive", None)
+        return agent_id in name and callable(is_alive) and bool(is_alive())
+
+    if lock is None:
+        return any(_matches(worker) for worker in list(workers))
+
+    with lock:
+        return any(_matches(worker) for worker in list(workers))
+
+
 def _start_managed_worker(app_state: Any, target: Any, *, name: str) -> Any:
     """Start and track a managed-agent worker for orderly app shutdown."""
 
@@ -1676,6 +1702,16 @@ def create_agent_manager_router(
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
         return agent
+
+    @agents_router.get("/{agent_id}/runtime")
+    async def get_agent_runtime(agent_id: str, request: Request):
+        agent = manager.get_agent(agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return {
+            "status": agent.get("status"),
+            "worker_alive": _managed_agent_worker_alive(request.app.state, agent_id),
+        }
 
     @agents_router.patch("/{agent_id}")
     async def update_agent(agent_id: str, req: UpdateAgentRequest, request: Request):

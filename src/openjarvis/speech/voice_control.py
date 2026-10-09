@@ -1043,6 +1043,23 @@ def _wait_for_autonomy_idle(agent_id: str, timeout_seconds: float = 20.0) -> Non
         status = str(agent.get("status") or "idle")
         if status != "running":
             return
+
+        try:
+            runtime = api(
+                f"/v1/managed-agents/{agent_id}/runtime",
+                timeout=5,
+            )
+        except Exception:
+            runtime = {}
+
+        if runtime.get("worker_alive") is False:
+            api(
+                f"/v1/managed-agents/{agent_id}/recover",
+                {},
+                timeout=10,
+            )
+            return
+
         time.sleep(0.5)
     raise TimeoutError(
         "El trabajo autonomo anterior sigue ejecutandose; no se reemplazo el objetivo."

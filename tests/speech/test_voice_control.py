@@ -56,9 +56,14 @@ def test_wait_for_autonomy_idle_waits_for_running_tick(monkeypatch) -> None:
     statuses = iter(["running", "idle"])
     ticks = iter([0.0, 0.1, 0.2])
 
+    def fake_api(path, *args, **kwargs):
+        if str(path).endswith("/runtime"):
+            return {"worker_alive": True}
+        return {"status": next(statuses)}
+
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.api",
-        lambda *args, **kwargs: {"status": next(statuses)},
+        fake_api,
     )
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.time.monotonic",
@@ -75,9 +80,14 @@ def test_wait_for_autonomy_idle_waits_for_running_tick(monkeypatch) -> None:
 def test_wait_for_autonomy_idle_times_out_without_replacement(monkeypatch) -> None:
     ticks = iter([0.0, 0.1, 0.6])
 
+    def fake_api(path, *args, **kwargs):
+        if str(path).endswith("/runtime"):
+            return {"worker_alive": True}
+        return {"status": "running"}
+
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.api",
-        lambda *args, **kwargs: {"status": "running"},
+        fake_api,
     )
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.time.monotonic",
@@ -92,6 +102,31 @@ def test_wait_for_autonomy_idle_times_out_without_replacement(monkeypatch) -> No
 
     with pytest.raises(TimeoutError):
         _wait_for_autonomy_idle("agent-1", timeout_seconds=0.5)
+
+
+def test_wait_for_autonomy_idle_recovers_orphaned_running_tick(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_api(path, *args, **kwargs):
+        calls.append(str(path))
+        if str(path).endswith("/runtime"):
+            return {"worker_alive": False}
+        if str(path).endswith("/recover"):
+            return {"recovered": True}
+        return {"status": "running"}
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        fake_api,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.time.monotonic",
+        lambda: 0.0,
+    )
+
+    _wait_for_autonomy_idle("agent-1", timeout_seconds=1.0)
+
+    assert "/v1/managed-agents/agent-1/recover" in calls
 
 
 def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
