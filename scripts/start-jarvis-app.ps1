@@ -11,9 +11,25 @@ function Test-Url([string]$Url) {
 }
 
 if (-not (Test-Url 'http://127.0.0.1:8000/health')) {
-    $pythonw = Join-Path $repo '.venv\Scripts\pythonw.exe'
-    if (Test-Path $pythonw) {
-        Start-Process -FilePath $pythonw -ArgumentList '-m openjarvis.cli serve --host 127.0.0.1 --port 8000' -WorkingDirectory $repo -WindowStyle Hidden
+    $python = Join-Path $repo '.venv\Scripts\python.exe'
+    if (Test-Path $python) {
+        $args = @(
+            '/c',
+            'start',
+            '"OpenJarvis Backend"',
+            '/D',
+            ('"' + $repo + '"'),
+            '/min',
+            ('"' + $python + '"'),
+            '-m',
+            'openjarvis.cli',
+            'serve',
+            '--host',
+            '127.0.0.1',
+            '--port',
+            '8000'
+        )
+        Start-Process -FilePath 'cmd.exe' -ArgumentList $args -WindowStyle Hidden
     }
 }
 
