@@ -663,9 +663,31 @@ def serve(
             )
             executor.set_system(system)
 
+            # Scheduled managed agents must not inherit the server's global
+            # engine routing (for example NIM). Give the scheduler its own
+            # lightweight system that respects preferred_engine/default,
+            # which is Ollama for this local runtime.
+            from openjarvis.agents.executor import AgentExecutor as _AgentExecutor
+            from openjarvis.server.agent_manager_routes import (
+                _make_lightweight_system,
+            )
+
+            scheduler_system = _make_lightweight_system(
+                engine,
+                model_name,
+                config,
+                system,
+            )
+            scheduler_executor = _AgentExecutor(
+                manager=agent_manager,
+                event_bus=bus,
+                system=scheduler_system,
+                trace_store=_trace_store,
+            )
+
             agent_scheduler = AgentScheduler(
                 manager=agent_manager,
-                executor=executor,
+                executor=scheduler_executor,
                 event_bus=bus,
             )
             for ag in agent_manager.list_agents():
