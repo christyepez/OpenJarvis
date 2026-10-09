@@ -421,8 +421,7 @@ class OperativeAgent(ToolUsingAgent):
 
             if not raw_tool_calls:
                 if (
-                    new_objective
-                    and openai_tools
+                    openai_tools
                     and not all_tool_results
                     and missing_tool_retries < 2
                 ):

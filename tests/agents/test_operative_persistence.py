@@ -336,6 +336,52 @@ def test_new_autonomous_objective_retries_until_real_tool_call(monkeypatch) -> N
     assert result.tool_results[0].success is True
 
 
+def test_continuation_tick_retries_until_real_tool_call(monkeypatch) -> None:
+    agent = OperativeAgent(
+        object(),
+        "test-model",
+        tools=[_ProbeTool()],
+        max_turns=4,
+    )
+    responses = iter(
+        [
+            {
+                "content": "I cannot access the filesystem.",
+                "tool_calls": [],
+                "usage": {},
+                "finish_reason": "stop",
+            },
+            {
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call-probe",
+                        "name": "probe",
+                        "arguments": "{}",
+                    }
+                ],
+                "usage": {},
+                "finish_reason": "tool_calls",
+            },
+            {
+                "content": "Continuation verified.",
+                "tool_calls": [],
+                "usage": {},
+                "finish_reason": "stop",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(agent, "_generate", lambda messages, **kwargs: next(responses))
+
+    result = agent.run("CONTINUE AUTONOMOUS OBJECTIVE. run the safe probe")
+
+    assert result.content == "Continuation verified."
+    assert len(result.tool_results) == 1
+    assert result.tool_results[0].tool_name == "probe"
+    assert result.tool_results[0].success is True
+
+
 def test_new_autonomous_objective_skips_stale_state_and_session(monkeypatch) -> None:
     agent = OperativeAgent(object(), "test-model")
 
