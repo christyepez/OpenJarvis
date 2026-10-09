@@ -24,7 +24,9 @@ if (-not (Test-Url 'http://127.0.0.1:8000/health')) {
             '--engine',
             'ollama',
             '--model',
-            'qwen3.5:4b'
+            'qwen3.5:4b',
+            '--agent',
+            'orchestrator'
         ) -WorkingDirectory $repo -WindowStyle Hidden
     }
 }
@@ -37,14 +39,20 @@ if (-not (Test-Url 'http://127.0.0.1:5173/dashboard')) {
     }
 }
 
+$deadline = (Get-Date).AddSeconds(45)
+while (
+    (Get-Date) -lt $deadline -and
+    (
+        -not (Test-Url 'http://127.0.0.1:8000/health') -or
+        -not (Test-Url 'http://127.0.0.1:5173/dashboard')
+    )
+) {
+    Start-Sleep -Milliseconds 500
+}
+
 $voice = Join-Path $repo 'scripts\start-jarvis-voice.ps1'
 if (Test-Path $voice) {
     Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$voice -WorkingDirectory $repo -WindowStyle Hidden
-}
-
-$deadline = (Get-Date).AddSeconds(20)
-while ((Get-Date) -lt $deadline -and -not (Test-Url 'http://127.0.0.1:5173/dashboard')) {
-    Start-Sleep -Milliseconds 500
 }
 
 $edge = @(
