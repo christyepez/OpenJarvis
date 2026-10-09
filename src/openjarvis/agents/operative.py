@@ -12,6 +12,7 @@ import json
 import logging
 import ntpath
 import os
+import re
 from typing import Any, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
@@ -148,6 +149,37 @@ def _sanitize_tool_arguments(
         cleaned[key] = _coerce_tool_value(value, field_schema)
 
     return json.dumps(cleaned)
+
+
+def _repair_write_file_arguments(arguments: str, objective: str) -> str:
+    """Repair an empty write_file call only from explicit objective text."""
+    try:
+        parsed = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return arguments
+    if not isinstance(parsed, dict):
+        return arguments
+    if parsed.get("path") and parsed.get("content") is not None:
+        return arguments
+
+    path_match = re.search(
+        r"([A-Za-z]:\\[^\r\n]+?\.[A-Za-z0-9]{1,10})(?=\s+(?:con el contenido|with content|content\s*=)|[.,;]|$)",
+        objective,
+        flags=re.IGNORECASE,
+    )
+    content_match = re.search(
+        r"(?:con el contenido|with content)\s+(.+?)(?=\.\s+(?:No |Despues|Después|Then|Do not|Solo |Only )|$)",
+        objective,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not path_match or not content_match:
+        return arguments
+
+    repaired = dict(parsed)
+    repaired.setdefault("path", path_match.group(1).strip())
+    repaired.setdefault("content", content_match.group(1).strip().rstrip("."))
+    repaired.setdefault("mode", "rewrite")
+    return json.dumps(repaired)
 
 
 def _missing_parent_directory_call(
@@ -385,6 +417,8 @@ class OperativeAgent(ToolUsingAgent):
                     tc.get("arguments", "{}"),
                     openai_tools,
                 )
+                if name == "write_file":
+                    arguments = _repair_write_file_arguments(arguments, input)
                 tool_calls.append(
                     ToolCall(
                         id=tc.get("id", f"call_{i}"),

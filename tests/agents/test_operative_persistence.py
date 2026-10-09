@@ -8,6 +8,7 @@ from openjarvis.agents.operative import (
     OperativeAgent,
     _missing_parent_directory_call,
     _recover_text_tool_calls,
+    _repair_write_file_arguments,
     _sanitize_tool_arguments,
     _uses_placeholder_path,
 )
@@ -29,6 +30,30 @@ class _ProbeTool(BaseTool):
 
     def execute(self, **params) -> ToolResult:
         return ToolResult(tool_name="probe", content="probe-ok", success=True)
+
+
+def test_repair_write_file_arguments_from_explicit_objective() -> None:
+    objective = (
+        r"NEW AUTONOMOUS OBJECTIVE. Use write_file for "
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\smoke.md "
+        "con el contenido Jarvis autonomous tool smoke passed. "
+        "No hagas ninguna otra modificacion."
+    )
+
+    repaired = json.loads(_repair_write_file_arguments("{}", objective))
+
+    assert repaired["path"].endswith(r"docs\operations\smoke.md")
+    assert repaired["content"] == "Jarvis autonomous tool smoke passed"
+    assert repaired["mode"] == "rewrite"
+
+
+def test_repair_write_file_arguments_requires_explicit_content() -> None:
+    objective = (
+        r"Use write_file for "
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\smoke.md"
+    )
+
+    assert _repair_write_file_arguments("{}", objective) == "{}"
 
 
 def test_operative_session_round_trip(tmp_path) -> None:
