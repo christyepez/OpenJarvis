@@ -210,6 +210,45 @@ def _missing_parent_directory_call(
     )
 
 
+
+def _process_output_followup_call(
+    tool_call: ToolCall,
+    tool_result: ToolResult,
+    openai_tools: list[dict[str, Any]],
+) -> ToolCall | None:
+    """Read output once for a process started by Commander in the same tool loop."""
+    if tool_call.name != "start_process" or not tool_result.success:
+        return None
+
+    allowed = {
+        str((tool.get("function") or {}).get("name") or "").strip()
+        for tool in openai_tools
+        if isinstance(tool, dict)
+    }
+    if "read_process_output" not in allowed:
+        return None
+
+    content = str(tool_result.content or "")
+    if "process completed with exit code" in content.casefold():
+        return None
+    match = re.search(r"Process started with PID\s+(\d+)", content, re.IGNORECASE)
+    if match is None:
+        return None
+
+    return ToolCall(
+        id=f"{tool_call.id}_output",
+        name="read_process_output",
+        arguments=json.dumps(
+            {
+                "pid": int(match.group(1)),
+                "offset": 0,
+                "length": 200,
+                "timeout_ms": 5000,
+            }
+        ),
+    )
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -504,6 +543,21 @@ class OperativeAgent(ToolUsingAgent):
                                     "Recovered missing parent directory and retried "
                                     f"write successfully. {tool_result.content}"
                                 )
+
+                    followup_call = _process_output_followup_call(
+                        tc,
+                        tool_result,
+                        openai_tools,
+                    )
+                    if followup_call is not None:
+                        followup_result = self._executor.execute(followup_call)
+                        all_tool_results.append(followup_result)
+                        if followup_result.content:
+                            tool_result.content = (
+                                f"{tool_result.content}\n\n"
+                                "Process follow-up output:\n"
+                                f"{followup_result.content}"
+                            )
                 all_tool_results.append(tool_result)
 
                 # Track if agent stored state via memory_store

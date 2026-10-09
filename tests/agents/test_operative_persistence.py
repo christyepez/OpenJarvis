@@ -7,6 +7,7 @@ import pytest
 from openjarvis.agents.operative import (
     OperativeAgent,
     _missing_parent_directory_call,
+    _process_output_followup_call,
     _recover_text_tool_calls,
     _repair_write_file_arguments,
     _sanitize_tool_arguments,
@@ -209,6 +210,37 @@ def test_missing_parent_directory_recovery_uses_exact_parent() -> None:
     assert json.loads(recovery.arguments)["path"] == (
         r"C:\Users\chris\source\repos\OpenJarvis\docs\operations"
     )
+
+
+def test_process_output_followup_uses_started_pid() -> None:
+    call = ToolCall(
+        id="call-process",
+        name="start_process",
+        arguments=json.dumps({"command": "pytest -q", "timeout_ms": 300000}),
+    )
+    result = ToolResult(
+        tool_name="start_process",
+        content=(
+            "Process started with PID 7604 (shell: powershell.exe)\n"
+            "Initial output:\n. [100%]"
+        ),
+        success=True,
+    )
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_process_output",
+                "parameters": {"type": "object"},
+            },
+        }
+    ]
+
+    followup = _process_output_followup_call(call, result, tools)
+
+    assert followup is not None
+    assert followup.name == "read_process_output"
+    assert json.loads(followup.arguments)["pid"] == 7604
 
 
 def test_recover_text_tool_call_rejects_unlisted_tool() -> None:
