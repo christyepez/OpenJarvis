@@ -10,7 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from openjarvis.agents._stubs import AgentResult
-from openjarvis.agents.executor import AgentExecutor, _retrieve_scoped_memory
+from openjarvis.agents.executor import (
+    AgentExecutor,
+    _compact_continuation_objective,
+    _retrieve_scoped_memory,
+)
 from openjarvis.agents.manager import AgentManager
 from openjarvis.agents.tool_resolver import ResolvedAgentTools
 from openjarvis.connectors.store import KnowledgeStore
@@ -673,6 +677,21 @@ def test_compact_system_policy_is_not_duplicated_in_tick_input(tmp_path) -> None
         assert "old continuation" not in _CapturingToolAgent.captured_input
     finally:
         manager.close()
+
+
+def test_compact_continuation_objective_keeps_only_process_step() -> None:
+    objective = (
+        "Usa write_file para crear C:\\repo\\a.md con el contenido ok.\n"
+        "Usa start_process una sola vez con este comando exactamente: "
+        "Set-Location 'C:\\repo'; pytest -q\n"
+        "Termina con AUTONOMY_DONE."
+    )
+
+    compact = _compact_continuation_objective(objective)
+
+    assert compact.startswith("Usa start_process")
+    assert "write_file" not in compact
+    assert "pytest -q" in compact
 
 
 def test_compact_system_policy_accepts_continuation_only_pending(tmp_path) -> None:

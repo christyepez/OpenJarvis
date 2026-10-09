@@ -54,6 +54,19 @@ def _has_new_autonomous_objective(messages: list[dict[str, Any]]) -> bool:
     )
 
 
+def _compact_continuation_objective(objective: str) -> str:
+    """Keep only the explicit process step when continuing missing process evidence."""
+    prefixes = (
+        "usa start_process",
+        "use start_process",
+    )
+    for line in objective.splitlines():
+        normalized = line.strip().casefold()
+        if any(normalized.startswith(prefix) for prefix in prefixes):
+            return line.strip()
+    return objective.strip()
+
+
 def _completion_has_tool_evidence(result: AgentResult) -> bool:
     """Require successful, non-thinking tool evidence in the completion tick."""
     failure_markers = (
@@ -1466,7 +1479,13 @@ class AgentExecutor:
                             "succeeds."
                         )
                         if objective:
-                            continuation += f" Original objective: {objective}"
+                            compact_objective = _compact_continuation_objective(
+                                objective
+                            )
+                            continuation += (
+                                " Original objective execution step: "
+                                f"{compact_objective}"
+                            )
                         self._manager.send_message(
                             agent_id,
                             continuation,
