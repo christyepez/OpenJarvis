@@ -159,8 +159,8 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
         return arguments
     if not isinstance(parsed, dict):
         return arguments
-    path_match = re.search(
-        r"([A-Za-z]:\\[^\r\n]+?\.[A-Za-z0-9]{1,10})(?=\s+(?:con el contenido|with content|content\s*=)|[.,;]|$)",
+    path_matches = re.findall(
+        r'([A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+\.[A-Za-z0-9]{1,10})',
         objective,
         flags=re.IGNORECASE,
     )
@@ -169,11 +169,11 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
         objective,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    if not path_match or not content_match:
+    if not path_matches or not content_match:
         return arguments
 
     repaired = dict(parsed)
-    repaired["path"] = path_match.group(1).strip()
+    repaired["path"] = path_matches[-1].strip()
     repaired["content"] = content_match.group(1).strip().rstrip(".")
     repaired.setdefault("mode", "rewrite")
     return json.dumps(repaired)

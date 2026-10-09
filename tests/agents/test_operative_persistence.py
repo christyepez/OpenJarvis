@@ -34,7 +34,9 @@ class _ProbeTool(BaseTool):
 
 def test_repair_write_file_arguments_from_explicit_objective() -> None:
     objective = (
-        r"NEW AUTONOMOUS OBJECTIVE. Use write_file for "
+        r"NEW AUTONOMOUS OBJECTIVE. EXACT WINDOWS WORKSPACE: "
+        r"C:\Users\chris\source\repos\OpenJarvis. "
+        r"Use exact absolute Windows paths from this instruction. Use write_file for "
         r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\smoke.md "
         "con el contenido Jarvis autonomous tool smoke passed. "
         "No hagas ninguna otra modificacion."
