@@ -640,6 +640,16 @@ def test_compact_system_policy_is_not_duplicated_in_tick_input(tmp_path) -> None
     )
     manager.send_message(
         agent["id"],
+        "NEW AUTONOMOUS OBJECTIVE. old objective",
+        mode="queued",
+    )
+    manager.send_message(
+        agent["id"],
+        "CONTINUE AUTONOMOUS OBJECTIVE. old continuation",
+        mode="queued",
+    )
+    manager.send_message(
+        agent["id"],
         "NEW AUTONOMOUS OBJECTIVE. create the requested file",
         mode="queued",
     )
@@ -659,6 +669,8 @@ def test_compact_system_policy_is_not_duplicated_in_tick_input(tmp_path) -> None
         assert "Standing instruction:" not in _CapturingToolAgent.captured_input
         assert "New instructions:" in _CapturingToolAgent.captured_input
         assert "NEW AUTONOMOUS OBJECTIVE." in _CapturingToolAgent.captured_input
+        assert "old objective" not in _CapturingToolAgent.captured_input
+        assert "old continuation" not in _CapturingToolAgent.captured_input
     finally:
         manager.close()
 

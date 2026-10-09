@@ -1139,6 +1139,15 @@ class AgentExecutor:
         if pending:
             new_objective_pending = _has_new_autonomous_objective(pending)
             if new_objective_pending:
+                latest_new_objective = max(
+                    i
+                    for i, message in enumerate(pending)
+                    if "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
+                )
+                stale_pending = pending[:latest_new_objective]
+                pending = pending[latest_new_objective:]
+                for message in stale_pending:
+                    self._manager.mark_message_delivered(message["id"])
                 if compact_system_policy:
                     input_text = f"Current date: {today}"
                 elif instruction:
