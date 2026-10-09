@@ -63,7 +63,14 @@ $edge = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if ($edge) {
-    Start-Process -FilePath $edge -ArgumentList '--app=http://127.0.0.1:5173/dashboard','--start-maximized'
+    $edgeProfile = Join-Path $env:USERPROFILE '.openjarvis\edge-app-profile'
+    New-Item -ItemType Directory -Force -Path $edgeProfile | Out-Null
+    Start-Process -FilePath $edge -ArgumentList @(
+        ('--user-data-dir=' + $edgeProfile),
+        '--app=http://127.0.0.1:5173/dashboard',
+        '--start-maximized',
+        '--no-first-run'
+    )
 } else {
     Start-Process 'http://127.0.0.1:5173/dashboard'
 }
