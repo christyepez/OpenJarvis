@@ -195,7 +195,13 @@ def _repair_start_process_arguments(arguments: str, objective: str) -> str:
         return arguments
     if not isinstance(parsed, dict):
         return arguments
-    if str(parsed.get("command") or "").strip():
+
+    explicit_exact = re.search(
+        r"start_process[^\r\n]{0,100}\b(?:exactamente|exacto|exactly)\b",
+        objective,
+        flags=re.IGNORECASE,
+    )
+    if str(parsed.get("command") or "").strip() and explicit_exact is None:
         return arguments
 
     command_match = re.search(

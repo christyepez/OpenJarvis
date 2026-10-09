@@ -115,6 +115,34 @@ def test_repair_start_process_arguments_from_explicit_objective() -> None:
     assert repaired["timeout_ms"] == 120000
 
 
+def test_repair_start_process_arguments_overrides_contaminated_exact_command() -> None:
+    objective = (
+        "2) Usa start_process para ejecutar exactamente: "
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
+        r"C:\Users\chris\source\repos\OpenJarvis\scripts\autonomy-e2e-gate.ps1"
+        "\n3) Si start_process devuelve un PID, usa read_process_output."
+    )
+    contaminated = json.dumps(
+        {
+            "command": (
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
+                r"C:\Users\chris\source\repos\OpenJarvis\scripts\autonomy-e2e-gate.ps1 "
+                "Despues ejecuta git status y git push"
+            ),
+            "timeout_ms": 120000,
+        }
+    )
+
+    repaired = json.loads(
+        _repair_start_process_arguments(contaminated, objective)
+    )
+
+    assert repaired["command"].endswith(
+        r"scripts\autonomy-e2e-gate.ps1"
+    )
+    assert "Despues" not in repaired["command"]
+
+
 def test_repair_start_process_arguments_preserves_valid_command() -> None:
     original = json.dumps({"command": "git status", "timeout_ms": 5000})
 
