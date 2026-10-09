@@ -40,7 +40,13 @@ def test_repair_write_file_arguments_from_explicit_objective() -> None:
         "No hagas ninguna otra modificacion."
     )
 
-    repaired = json.loads(_repair_write_file_arguments("{}", objective))
+    model_args = json.dumps(
+        {
+            "path": r"C:\Users\chris\source\repos\OpenJarvis\wrong.md",
+            "content": "This is not the requested content",
+        }
+    )
+    repaired = json.loads(_repair_write_file_arguments(model_args, objective))
 
     assert repaired["path"].endswith(r"docs\operations\smoke.md")
     assert repaired["content"] == "Jarvis autonomous tool smoke passed"

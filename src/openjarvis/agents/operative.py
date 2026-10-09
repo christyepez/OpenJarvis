@@ -152,16 +152,13 @@ def _sanitize_tool_arguments(
 
 
 def _repair_write_file_arguments(arguments: str, objective: str) -> str:
-    """Repair an empty write_file call only from explicit objective text."""
+    """Ground write_file path/content in explicit objective text when available."""
     try:
         parsed = json.loads(arguments or "{}")
     except (json.JSONDecodeError, TypeError):
         return arguments
     if not isinstance(parsed, dict):
         return arguments
-    if parsed.get("path") and parsed.get("content") is not None:
-        return arguments
-
     path_match = re.search(
         r"([A-Za-z]:\\[^\r\n]+?\.[A-Za-z0-9]{1,10})(?=\s+(?:con el contenido|with content|content\s*=)|[.,;]|$)",
         objective,
@@ -176,8 +173,8 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
         return arguments
 
     repaired = dict(parsed)
-    repaired.setdefault("path", path_match.group(1).strip())
-    repaired.setdefault("content", content_match.group(1).strip().rstrip("."))
+    repaired["path"] = path_match.group(1).strip()
+    repaired["content"] = content_match.group(1).strip().rstrip(".")
     repaired.setdefault("mode", "rewrite")
     return json.dumps(repaired)
 
