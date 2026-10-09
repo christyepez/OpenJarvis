@@ -79,6 +79,23 @@ def test_repair_write_file_arguments_prefers_explicit_multistep_target() -> None
     assert repaired["mode"] == "rewrite"
 
 
+def test_repair_write_file_arguments_stops_before_luego_step() -> None:
+    objective = (
+        r"Usa write_file para crear exactamente "
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\autonomy-e2e-final.md "
+        r"con el contenido JARVIS AUTONOMY E2E FINAL OK. "
+        r"Luego usa start_process para ejecutar pytest y git push."
+    )
+
+    repaired = json.loads(_repair_write_file_arguments("{}", objective))
+
+    assert repaired["path"] == (
+        r"C:\Users\chris\source\repos\OpenJarvis\docs\operations\autonomy-e2e-final.md"
+    )
+    assert repaired["content"] == "JARVIS AUTONOMY E2E FINAL OK"
+    assert repaired["mode"] == "rewrite"
+
+
 def test_protected_objective_path_blocks_explicit_target() -> None:
     objective = "Do not touch protected.txt."
     protected_args = json.dumps({"path": r"C:\workspace\protected.txt", "content": "x"})
