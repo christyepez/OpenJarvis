@@ -9,6 +9,7 @@ from openjarvis.agents.operative import (
     _missing_parent_directory_call,
     _process_output_followup_call,
     _recover_text_tool_calls,
+    _repair_start_process_arguments,
     _repair_write_file_arguments,
     _sanitize_tool_arguments,
     _targets_protected_objective_path,
@@ -94,6 +95,31 @@ def test_repair_write_file_arguments_stops_before_luego_step() -> None:
     )
     assert repaired["content"] == "JARVIS AUTONOMY E2E FINAL OK"
     assert repaired["mode"] == "rewrite"
+
+
+def test_repair_start_process_arguments_from_explicit_objective() -> None:
+    objective = (
+        "2) Usa start_process para ejecutar exactamente: "
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass -File "
+        r"C:\Users\chris\source\repos\OpenJarvis\scripts\autonomy-e2e-gate.ps1"
+        "\n3) Si start_process devuelve un PID, usa read_process_output."
+    )
+
+    repaired = json.loads(_repair_start_process_arguments("{}", objective))
+
+    assert repaired["command"].endswith(
+        r"scripts\autonomy-e2e-gate.ps1"
+    )
+    assert repaired["timeout_ms"] == 120000
+
+
+def test_repair_start_process_arguments_preserves_valid_command() -> None:
+    original = json.dumps({"command": "git status", "timeout_ms": 5000})
+
+    assert (
+        _repair_start_process_arguments(original, "Usa start_process para ejecutar: dir")
+        == original
+    )
 
 
 def test_protected_objective_path_blocks_explicit_target() -> None:

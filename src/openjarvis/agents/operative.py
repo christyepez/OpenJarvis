@@ -187,6 +187,36 @@ def _repair_write_file_arguments(arguments: str, objective: str) -> str:
     return json.dumps(repaired)
 
 
+def _repair_start_process_arguments(arguments: str, objective: str) -> str:
+    """Ground start_process in an explicit command written in the objective."""
+    try:
+        parsed = json.loads(arguments or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return arguments
+    if not isinstance(parsed, dict):
+        return arguments
+    if str(parsed.get("command") or "").strip():
+        return arguments
+
+    command_match = re.search(
+        r"(?:usa\s+start_process(?:\s+una\s+sola\s+vez)?\s+"
+        r"(?:para\s+ejecutar|con\s+este\s+comando)"
+        r"(?:\s+exactamente|\s+exacto)?|"
+        r"use\s+start_process\s+to\s+run(?:\s+exactly)?)"
+        r"\s*:\s*(.+?)"
+        r"(?=\r?\n\s*(?:\d+\)|Si\b|No\b|Termina\b|If\b|Do not\b)|$)",
+        objective,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if command_match is None:
+        return arguments
+
+    repaired = dict(parsed)
+    repaired["command"] = command_match.group(1).strip()
+    repaired.setdefault("timeout_ms", 120000)
+    return json.dumps(repaired)
+
+
 def _missing_parent_directory_call(
     tool_call: ToolCall,
     tool_result: ToolResult,
@@ -524,6 +554,30 @@ class OperativeAgent(ToolUsingAgent):
                 )
                 if name == "write_file":
                     arguments = _repair_write_file_arguments(arguments, input)
+                if name == "start_process":
+                    arguments = _repair_start_process_arguments(arguments, input)
+                if name == "read_process_output":
+                    try:
+                        process_args = json.loads(arguments or "{}")
+                    except (json.JSONDecodeError, TypeError):
+                        process_args = {}
+                    available_names = {
+                        str((tool.get("function") or {}).get("name") or "").strip()
+                        for tool in openai_tools
+                        if isinstance(tool, dict)
+                    }
+                    if (
+                        not process_args.get("pid")
+                        and "start_process" in available_names
+                    ):
+                        recovered = _repair_start_process_arguments("{}", input)
+                        if recovered != "{}":
+                            name = "start_process"
+                            arguments = _sanitize_tool_arguments(
+                                name,
+                                recovered,
+                                openai_tools,
+                            )
                 tool_calls.append(
                     ToolCall(
                         id=tc.get("id", f"call_{i}"),

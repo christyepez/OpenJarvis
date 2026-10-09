@@ -11,7 +11,7 @@ if (-not (Test-Path $target)) {
     exit 10
 }
 
-$expected = "JARVIS AUTONOMY E2E OK"
+$expected = "JARVIS AUTONOMY E2E FINAL OK"
 $actual = (Get-Content $target -Raw).Trim()
 if ($actual -ne $expected) {
     Write-Error "[E2E] target content mismatch"
