@@ -10,6 +10,7 @@ from openjarvis.speech.voice_control import (
     _autonomy_tool_specs,
     _is_autonomous_objective,
     _requires_tool_evidence,
+    _wait_for_autonomy_idle,
     autonomous,
     direct,
     resolve_audio_device,
@@ -51,6 +52,48 @@ def test_ground_autonomous_command_expands_repo_paths() -> None:
     assert str(Path("tests") / "agents" / "test_operative_persistence.py") in grounded
 
 
+def test_wait_for_autonomy_idle_waits_for_running_tick(monkeypatch) -> None:
+    statuses = iter(["running", "idle"])
+    ticks = iter([0.0, 0.1, 0.2])
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        lambda *args, **kwargs: {"status": next(statuses)},
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.time.monotonic",
+        lambda: next(ticks),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.time.sleep",
+        lambda _seconds: None,
+    )
+
+    _wait_for_autonomy_idle("agent-1", timeout_seconds=1.0)
+
+
+def test_wait_for_autonomy_idle_times_out_without_replacement(monkeypatch) -> None:
+    ticks = iter([0.0, 0.1, 0.6])
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        lambda *args, **kwargs: {"status": "running"},
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.time.monotonic",
+        lambda: next(ticks),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.time.sleep",
+        lambda _seconds: None,
+    )
+
+    import pytest
+
+    with pytest.raises(TimeoutError):
+        _wait_for_autonomy_idle("agent-1", timeout_seconds=0.5)
+
+
 def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
     assert _autonomy_tool_allowlist(
         "Lista el contenido del workspace usando list_directory"
@@ -60,7 +103,7 @@ def test_autonomy_tool_allowlist_keeps_directory_task_minimal() -> None:
 def test_autonomy_tool_allowlist_keeps_e2e_task_focused() -> None:
     assert _autonomy_tool_allowlist(
         "Crea docs/test.md, ejecuta pytest, git diff, commit y push"
-    ) == ["write_file", "start_process", "read_process_output"]
+    ) == ["create_directory", "write_file", "start_process", "read_process_output"]
 
 
 def test_autonomy_completion_requirements_include_process_exit_zero() -> None:

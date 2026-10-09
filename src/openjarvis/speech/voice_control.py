@@ -823,7 +823,7 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
             "nuevo archivo",
         )
     ):
-        add("write_file")
+        add("create_directory", "write_file")
 
     if any(
         term in n
@@ -1035,9 +1035,26 @@ def _prepare_autonomy_models() -> None:
             log.warning("Could not unload Ollama model %s: %s", model, exc)
 
 
+def _wait_for_autonomy_idle(agent_id: str, timeout_seconds: float = 20.0) -> None:
+    """Wait for a previous autonomous tick to finish before replacing its objective."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
+        status = str(agent.get("status") or "idle")
+        if status != "running":
+            return
+        time.sleep(0.5)
+    raise TimeoutError(
+        "El trabajo autonomo anterior sigue ejecutandose; no se reemplazo el objetivo."
+    )
+
+
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     _prepare_autonomy_models()
+    existing_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
+    if existing_id:
+        _wait_for_autonomy_idle(existing_id)
     agent_id = _autonomy_agent_id()
     config = _autonomy_config()
     grounded_command = _ground_autonomous_command(command)
