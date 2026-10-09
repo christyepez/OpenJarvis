@@ -1162,12 +1162,14 @@ class AgentExecutor:
         new_objective_pending = False
         if pending:
             new_objective_pending = _has_new_autonomous_objective(pending)
-            if new_objective_pending:
-                latest_new_objective = max(
-                    i
-                    for i, message in enumerate(pending)
-                    if "NEW AUTONOMOUS OBJECTIVE." in str(message.get("content") or "")
-                )
+            fresh_objective_indexes = [
+                i
+                for i, message in enumerate(pending)
+                if "NEW AUTONOMOUS OBJECTIVE."
+                in str(message.get("content") or "")
+            ]
+            if fresh_objective_indexes:
+                latest_new_objective = max(fresh_objective_indexes)
                 stale_pending = pending[:latest_new_objective]
                 pending = pending[latest_new_objective:]
                 for message in stale_pending:

@@ -675,6 +675,44 @@ def test_compact_system_policy_is_not_duplicated_in_tick_input(tmp_path) -> None
         manager.close()
 
 
+def test_compact_system_policy_accepts_continuation_only_pending(tmp_path) -> None:
+    AgentRegistry.register_value("capturing", _CapturingToolAgent)
+    _CapturingToolAgent.captured_input = ""
+    manager = AgentManager(db_path=str(tmp_path / "agents.db"))
+    agent = manager.create_agent(
+        "compact-continuation",
+        agent_type="capturing",
+        config={
+            "model": "test-model",
+            "instruction": "TOOL FIRST POLICY",
+            "system_prompt": "TOOL FIRST POLICY",
+            "compact_prompt": True,
+            "mcp_tools": False,
+        },
+    )
+    manager.send_message(
+        agent["id"],
+        "CONTINUE AUTONOMOUS OBJECTIVE. run the next required evidence step",
+        mode="queued",
+    )
+    system = SimpleNamespace(
+        engine=FakeEngine([{"content": "unused"}]),
+        model="system-model",
+        memory_backend=None,
+        channel_backend=None,
+        tool_executor=None,
+        _mcp_clients=[],
+        config=None,
+        session_store=None,
+    )
+
+    try:
+        AgentExecutor(manager, EventBus(), system=system).execute_tick(agent["id"])
+        assert "CONTINUE AUTONOMOUS OBJECTIVE." in _CapturingToolAgent.captured_input
+    finally:
+        manager.close()
+
+
 def test_executor_closes_resolver_resources_when_pre_run_setup_fails(
     tmp_path,
     monkeypatch,
