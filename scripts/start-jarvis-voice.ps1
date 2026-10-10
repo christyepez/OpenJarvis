@@ -6,7 +6,7 @@ if (-not (Test-Path $python)) {
     throw "OpenJarvis virtual environment not found: $python"
 }
 
-$env:OPENJARVIS_WAKE_MODE = 'auto'
+$env:OPENJARVIS_WAKE_MODE = 'whisper-fallback'
 $env:OPENJARVIS_AUDIO_DEVICE = 'default'
 $env:OPENJARVIS_VOICE_THRESHOLD = '100'
 $env:OPENJARVIS_WAKE_THRESHOLD = '0.05'

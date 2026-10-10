@@ -14,6 +14,7 @@ from openjarvis.speech.voice_control import (
     audio_device_candidates,
     autonomous,
     direct,
+    fallback_command,
     record_voice_audio,
     resolve_audio_device,
     wait_for_wake,
@@ -29,6 +30,26 @@ def test_wake_command_accepts_spanish_whisper_jarvis_variant() -> None:
 
 def test_wake_command_ignores_unrelated_speech() -> None:
     assert wake_command("esto es una conversación normal") == (False, "")
+
+
+def test_fallback_command_ignores_unrelated_speech(monkeypatch) -> None:
+    class Transcript:
+        text = "esto es una conversación ambiental sin palabra de activación"
+
+    class Backend:
+        def transcribe(self, audio, format, language):
+            return Transcript()
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.record_voice_audio",
+        lambda **kwargs: b"wav",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.wav_rms",
+        lambda audio: 500.0,
+    )
+
+    assert fallback_command(Backend()) == ""
 
 
 def test_action_commands_require_real_tool_evidence() -> None:
