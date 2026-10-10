@@ -1142,9 +1142,9 @@ def autonomous(command: str) -> str:
     config["objective_token"] = str(time.time_ns())
 
     existing_id = _agent_id_by_name(AUTONOMY_AGENT_NAME)
-    agent_id = _autonomy_agent_id(config)
     if existing_id:
-        _wait_for_autonomy_idle(agent_id, timeout_seconds=45.0)
+        _wait_for_autonomy_idle(existing_id, timeout_seconds=45.0)
+    agent_id = _autonomy_agent_id(config)
     try:
         api("/v1/operations/machines/probe", {}, timeout=15)
     except Exception as exc:

@@ -437,6 +437,59 @@ def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
     assert _agent_id_by_name("Jarvis Autonomous Operator") == "new"
 
 
+def test_autonomous_waits_before_reconciling_existing_agent(monkeypatch) -> None:
+    order: list[str] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._prepare_autonomy_models",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_config",
+        lambda: {"instruction": "base"},
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ground_autonomous_command",
+        lambda command: command,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_allowlist",
+        lambda command: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_specs",
+        lambda names: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_completion_requirements",
+        lambda command: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._agent_id_by_name",
+        lambda name: "agent-1",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._wait_for_autonomy_idle",
+        lambda agent_id, timeout_seconds=45.0: order.append("wait"),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_agent_id",
+        lambda config: order.append("reconcile") or "agent-1",
+    )
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        if path.endswith("/agent-1"):
+            return {"status": "idle"}
+        return {}
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    answer = autonomous("verifica el directorio actual")
+
+    assert order == ["wait", "reconcile"]
+    assert "Inicie el trabajo autonomo" in answer
+
+
 def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     calls: list[tuple[str, dict | None, str | None]] = []
 
