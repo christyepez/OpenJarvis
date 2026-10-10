@@ -362,6 +362,33 @@ def test_direct_can_open_windows_explorer(monkeypatch) -> None:
     assert launched == [["explorer.exe"]]
 
 
+def test_direct_verifies_current_repository_directory(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = str(tmp_path)
+
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs["cwd"]))
+        return Result()
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = direct("verifica el directorio actual")
+
+    assert answer == f"Directorio actual verificado: {tmp_path}."
+    assert calls == [(["git", "rev-parse", "--show-toplevel"], tmp_path)]
+
+
 def test_direct_voice_help_lists_capabilities() -> None:
     answer = direct("que puedes hacer")
 
