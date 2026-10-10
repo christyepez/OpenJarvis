@@ -13,7 +13,10 @@ from openjarvis.speech.voice_control import (
     _wait_for_autonomy_idle,
     autonomous,
     direct,
+    audio_device_candidates,
+    record_voice_audio,
     resolve_audio_device,
+    wait_for_wake,
     wake_command,
 )
 
@@ -211,6 +214,85 @@ def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", FakeSoundDevice())
 
     assert resolve_audio_device() == 7
+
+def test_audio_device_candidates_falls_back_from_wasapi(monkeypatch) -> None:
+    class FakeSoundDevice:
+        default = type("Default", (), {"device": [0, 4]})()
+
+        @staticmethod
+        def query_hostapis():
+            return [
+                {"name": "MME", "default_input_device": 0},
+                {"name": "Windows WASAPI", "default_input_device": 3},
+            ]
+
+        @staticmethod
+        def query_devices():
+            return [
+                {"name": "Microphone Array", "max_input_channels": 2},
+                {"name": "Speakers", "max_input_channels": 0},
+                {"name": "AirPods", "max_input_channels": 1},
+                {"name": "Headset Mic", "max_input_channels": 1},
+            ]
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.AUDIO_DEVICE",
+        "wasapi-default",
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", FakeSoundDevice())
+
+    assert audio_device_candidates() == [3, 0, 2]
+
+
+def test_record_voice_audio_retries_next_device(monkeypatch) -> None:
+    attempts: list[int | str | None] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.audio_device_candidates",
+        lambda: [3, 0],
+    )
+
+    def fake_record_until_silence(*, device=None, **kwargs):
+        attempts.append(device)
+        if device == 3:
+            raise RuntimeError("Unanticipated host error")
+        return b"wav"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.record_until_silence",
+        fake_record_until_silence,
+    )
+
+    assert record_voice_audio(max_seconds=1.0) == b"wav"
+    assert attempts == [3, 0]
+
+
+def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
+    attempts: list[int | str | None] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.audio_device_candidates",
+        lambda: [3, 0],
+    )
+
+    def fake_wait(detector, device):
+        attempts.append(device)
+        if device == 3:
+            raise RuntimeError("PortAudio host error")
+        return 0.25
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._wait_for_wake_on_device",
+        fake_wait,
+    )
+
+    class Detector:
+        def reset(self):
+            return None
+
+    assert wait_for_wake(Detector()) == 0.25
+    assert attempts == [3, 0]
+
 
 
 def test_direct_file_size_uses_real_local_file(

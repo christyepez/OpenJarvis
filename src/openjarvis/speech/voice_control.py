@@ -255,35 +255,79 @@ def wake_command(text: str) -> tuple[bool, str]:
     return False, ""
 
 
-def resolve_audio_device() -> int | str | None:
-    """Resolve the input device used by native voice control."""
-    value = AUDIO_DEVICE
-    if not value:
-        return None
-    if value.isdigit():
-        return int(value)
-    if value.casefold() in {"default", "system-default"}:
-        try:
-            import sounddevice as sd
-
-            index = int(sd.default.device[0])
-            return index if index >= 0 else None
-        except Exception as exc:
-            log.warning("Could not resolve system default input device: %s", exc)
-            return None
-    if value.casefold() != "wasapi-default":
-        return value
-
+def audio_device_candidates() -> list[int | str | None]:
+    """Return ordered input-device candidates for resilient voice capture."""
     try:
         import sounddevice as sd
-
-        for host in sd.query_hostapis():
-            if "wasapi" in str(host.get("name", "")).casefold():
-                index = int(host.get("default_input_device", -1))
-                return index if index >= 0 else None
     except Exception as exc:
-        log.warning("Could not resolve WASAPI input device: %s", exc)
-    return None
+        log.warning("Could not inspect audio devices: %s", exc)
+        return [None]
+
+    candidates: list[int | str | None] = []
+
+    def add(device: int | str | None) -> None:
+        if device is not None and device not in candidates:
+            candidates.append(device)
+
+    value = AUDIO_DEVICE
+    if value:
+        if value.isdigit():
+            add(int(value))
+        elif value.casefold() in {"default", "system-default"}:
+            try:
+                index = int(sd.default.device[0])
+                if index >= 0:
+                    add(index)
+            except Exception as exc:
+                log.warning("Could not resolve system default input device: %s", exc)
+        elif value.casefold() == "wasapi-default":
+            try:
+                for host in sd.query_hostapis():
+                    if "wasapi" in str(host.get("name", "")).casefold():
+                        index = int(host.get("default_input_device", -1))
+                        if index >= 0:
+                            add(index)
+            except Exception as exc:
+                log.warning("Could not resolve WASAPI input device: %s", exc)
+        else:
+            add(value)
+
+    try:
+        index = int(sd.default.device[0])
+        if index >= 0:
+            add(index)
+    except Exception as exc:
+        log.debug("Could not add system default input candidate: %s", exc)
+
+    try:
+        for index, info in enumerate(sd.query_devices()):
+            if int(info.get("max_input_channels", 0)) > 0:
+                add(index)
+    except Exception as exc:
+        log.debug("Could not enumerate input devices: %s", exc)
+
+    if not candidates:
+        candidates.append(None)
+    return candidates
+
+
+def resolve_audio_device() -> int | str | None:
+    """Resolve the preferred input device used by native voice control."""
+    return audio_device_candidates()[0]
+
+
+def record_voice_audio(**kwargs: Any) -> bytes:
+    """Capture audio, failing over across available input devices."""
+    last_error: Exception | None = None
+    for device in audio_device_candidates():
+        try:
+            return record_until_silence(device=device, **kwargs)
+        except Exception as exc:
+            last_error = exc
+            log.warning("Voice capture failed on device %r: %s", device, exc)
+    if last_error is not None:
+        raise last_error
+    return record_until_silence(device=None, **kwargs)
 
 
 def wav_rms(audio: bytes) -> float:
@@ -1237,14 +1281,16 @@ def load_wake_detector():
         return None
 
 
-def wait_for_wake(detector) -> float | None:
+def _wait_for_wake_on_device(
+    detector,
+    device: int | str | None,
+) -> float | None:
     import numpy as np
     import sounddevice as sd
 
     detector.reset()
     last_state = 0.0
     last_detector_reset = time.monotonic()
-    device = resolve_audio_device()
     input_rate = resolve_input_sample_rate(
         requested_rate=16000,
         device=device,
@@ -1279,7 +1325,6 @@ def wait_for_wake(detector) -> float | None:
                 else 0.0
             )
             now = time.monotonic()
-            # Keep long-running wake detection memory-bounded.
             if now - last_detector_reset >= 30.0:
                 detector.reset()
                 last_detector_reset = now
@@ -1299,15 +1344,28 @@ def wait_for_wake(detector) -> float | None:
     return None
 
 
+def wait_for_wake(detector) -> float | None:
+    """Listen for the wake word, failing over when an input device breaks."""
+    last_error: Exception | None = None
+    for device in audio_device_candidates():
+        try:
+            return _wait_for_wake_on_device(detector, device)
+        except Exception as exc:
+            last_error = exc
+            log.warning("Wake input failed on device %r: %s", device, exc)
+            detector.reset()
+    if last_error is not None:
+        raise last_error
+    return None
+
 def capture_command(backend) -> str:
     state("awake", wake_word="Hey Jarvis")
     speak("Te escucho.")
-    audio = record_until_silence(
+    audio = record_voice_audio(
         silence_threshold=THRESHOLD,
         silence_seconds=0.9,
         startup_silence_seconds=6.0,
         max_seconds=20.0,
-        device=resolve_audio_device(),
     )
     amplitude = wav_rms(audio)
     if amplitude < max(20.0, THRESHOLD * 0.35):
@@ -1322,12 +1380,11 @@ def capture_command(backend) -> str:
 
 def fallback_command(backend) -> str:
     state("listening", wake_word="Jarvis", mode="whisper-fallback")
-    audio = record_until_silence(
+    audio = record_voice_audio(
         silence_threshold=THRESHOLD,
         silence_seconds=0.9,
         startup_silence_seconds=2.5,
         max_seconds=18.0,
-        device=resolve_audio_device(),
     )
     amplitude = wav_rms(audio)
     if amplitude < max(40.0, THRESHOLD * 0.60):
