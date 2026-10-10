@@ -1382,9 +1382,9 @@ def fallback_command(backend) -> str:
     state("listening", wake_word="Jarvis", mode="whisper-fallback")
     audio = record_voice_audio(
         silence_threshold=THRESHOLD,
-        silence_seconds=0.9,
-        startup_silence_seconds=2.5,
-        max_seconds=18.0,
+        silence_seconds=0.7,
+        startup_silence_seconds=1.5,
+        max_seconds=6.0,
     )
     amplitude = wav_rms(audio)
     if amplitude < max(40.0, THRESHOLD * 0.60):
