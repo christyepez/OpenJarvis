@@ -146,6 +146,19 @@ class TestAgentManagerRoutes:
         assert resp.status_code == 200
         assert resp.json()["name"] == "new"
 
+    def test_update_agent_can_reset_summary_memory(self, client, manager):
+        create_resp = client.post("/v1/managed-agents", json={"name": "memory-test"})
+        agent_id = create_resp.json()["id"]
+        manager.update_summary_memory(agent_id, "old accumulated memory")
+
+        resp = client.patch(
+            f"/v1/managed-agents/{agent_id}",
+            json={"summary_memory": ""},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["summary_memory"] == ""
+
     def test_delete_agent(self, client):
         create_resp = client.post("/v1/managed-agents", json={"name": "doomed"})
         agent_id = create_resp.json()["id"]

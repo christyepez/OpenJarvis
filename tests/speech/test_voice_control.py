@@ -461,6 +461,7 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][0] == "/v1/managed-agents/agent-1"
     assert calls[0][2] == "PATCH"
     assert calls[0][1]["agent_type"] == "operative"
+    assert calls[0][1]["summary_memory"] == ""
     assert calls[0][1]["config"]["schedule_type"] == "interval"
     assert calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
     assert calls[0][1]["config"]["model"] == "llama3.2:1b"

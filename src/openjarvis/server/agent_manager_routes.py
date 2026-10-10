@@ -116,6 +116,7 @@ class UpdateAgentRequest(BaseModel):
     name: Optional[str] = None
     agent_type: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
+    summary_memory: Optional[str] = None
 
 
 class CreateTaskRequest(BaseModel):
@@ -1725,6 +1726,9 @@ def create_agent_manager_router(
         if req.config is not None:
             kwargs["config"] = req.config
         agent = manager.update_agent(agent_id, **kwargs)
+        if req.summary_memory is not None:
+            manager.update_summary_memory(agent_id, req.summary_memory)
+            agent = manager.get_agent(agent_id) or agent
 
         scheduler = getattr(request.app.state, "agent_scheduler", None)
         if scheduler and req.config is not None:

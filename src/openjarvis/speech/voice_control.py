@@ -780,7 +780,11 @@ def _autonomy_agent_id(config: dict[str, Any] | None = None) -> str:
     if existing:
         api(
             f"/v1/managed-agents/{existing}",
-            {"agent_type": "operative", "config": config},
+            {
+                "agent_type": "operative",
+                "config": config,
+                "summary_memory": "",
+            },
             timeout=20,
             method="PATCH",
         )
