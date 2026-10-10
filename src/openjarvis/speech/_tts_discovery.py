@@ -49,10 +49,10 @@ def get_tts_backend(
     ``attempted`` lets a caller carry state across calls so a backend that
     already failed is not retried; it is mutated in place.
     """
-    # Import triggers built-in backend registration only when voice output is
-    # actually requested.
-    import openjarvis.speech  # noqa: F401
     from openjarvis.core.registry import TTSRegistry
+    from openjarvis.speech import load_builtin_backends
+
+    load_builtin_backends()
 
     seen = attempted if attempted is not None else set()
 

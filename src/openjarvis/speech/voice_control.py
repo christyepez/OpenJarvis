@@ -21,11 +21,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from openjarvis.core.config import load_config
-from openjarvis.speech._discovery import get_speech_backend
-from openjarvis.speech.voice_io import record_until_silence, resolve_input_sample_rate
-
 HOME = Path.home() / ".openjarvis"
+
+
+def record_until_silence(*args, **kwargs):
+    from openjarvis.speech.voice_io import record_until_silence as _record
+
+    return _record(*args, **kwargs)
+
+
+def resolve_input_sample_rate(*args, **kwargs):
+    from openjarvis.speech.voice_io import resolve_input_sample_rate as _resolve
+
+    return _resolve(*args, **kwargs)
+
 LOG_PATH = HOME / "voice-control.log"
 STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
@@ -1442,6 +1451,10 @@ def main() -> int:
         log.info("Voice control already running; duplicate launch ignored")
         return 0
     STOP_PATH.unlink(missing_ok=True)
+
+    from openjarvis.core.config import load_config
+    from openjarvis.speech._discovery import get_speech_backend
+
     backend = get_speech_backend(load_config())
     if backend is None:
         state("error", error="speech-backend-unavailable")
