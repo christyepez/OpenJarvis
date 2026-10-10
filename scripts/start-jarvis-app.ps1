@@ -13,6 +13,7 @@ function Test-Url([string]$Url) {
 if (-not (Test-Url 'http://127.0.0.1:8000/health')) {
     $python = Join-Path $repo '.venv\Scripts\python.exe'
     if (Test-Path $python) {
+        & $python -m openjarvis.cli stop *> $null
         Start-Process -FilePath $python -ArgumentList @(
             '-m',
             'openjarvis.cli',
