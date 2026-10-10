@@ -60,6 +60,7 @@ WAKE_ALIASES = (
     "jarbis",
     "arvis",
     "arbis",
+    "arbiz",
     "harvis",
     "ya hareis",
     "ya jaris",

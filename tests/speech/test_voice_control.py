@@ -28,6 +28,13 @@ def test_wake_command_accepts_spanish_whisper_jarvis_variant() -> None:
     assert command == "prueba de voz"
 
 
+def test_wake_command_accepts_arbiz_variant() -> None:
+    woke, command = wake_command("Y Arbiz verifica el directorio actual.")
+
+    assert woke is True
+    assert command == "verifica el directorio actual"
+
+
 def test_wake_command_ignores_unrelated_speech() -> None:
     assert wake_command("esto es una conversación normal") == (False, "")
 
