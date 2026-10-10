@@ -5,6 +5,25 @@ from unittest.mock import MagicMock, call, patch
 from openjarvis.core.config import JarvisConfig
 
 
+def test_get_speech_backend_loads_builtins_before_resolution():
+    from openjarvis.speech._discovery import get_speech_backend
+
+    config = JarvisConfig()
+    config.speech.backend = "faster-whisper"
+
+    with (
+        patch("openjarvis.speech.load_builtin_backends") as load_builtins,
+        patch("openjarvis.speech._discovery._create_backend") as create,
+    ):
+        backend = MagicMock()
+        backend.health.return_value = True
+        create.return_value = backend
+
+        assert get_speech_backend(config) is backend
+
+    load_builtins.assert_called_once_with()
+
+
 def test_get_speech_backend_explicit():
     """Explicit backend selection works."""
     from openjarvis.speech._discovery import get_speech_backend
