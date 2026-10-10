@@ -3,17 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from openjarvis.speech.voice_control import (
-    _ground_autonomous_command,
-    _prepare_autonomy_models,
     _autonomy_completion_requirements,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
+    _ground_autonomous_command,
     _is_autonomous_objective,
+    _prepare_autonomy_models,
     _requires_tool_evidence,
     _wait_for_autonomy_idle,
+    audio_device_candidates,
     autonomous,
     direct,
-    audio_device_candidates,
     record_voice_audio,
     resolve_audio_device,
     wait_for_wake,
@@ -214,6 +214,7 @@ def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", FakeSoundDevice())
 
     assert resolve_audio_device() == 7
+
 
 def test_audio_device_candidates_falls_back_from_wasapi(monkeypatch) -> None:
     class FakeSoundDevice:
