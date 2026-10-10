@@ -31,7 +31,7 @@ STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
-AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "llama3.2:1b")
+AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", MODEL)
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 AUTONOMY_AGENT_NAME = os.environ.get(
     "OPENJARVIS_AUTONOMY_AGENT",
@@ -502,6 +502,32 @@ def direct(command: str) -> str | None:
             f"Si. El archivo {local_path.name} existe."
             if local_path.exists()
             else f"No. El archivo {local_path.name} no existe."
+        )
+
+    if any(
+        phrase in n
+        for phrase in (
+            "verifica el directorio actual",
+            "verificar el directorio actual",
+            "directorio actual",
+            "ruta actual del proyecto",
+        )
+    ):
+        repo = _repo_root()
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        path = proc.stdout.strip()
+        return (
+            f"Directorio actual verificado: {path}."
+            if proc.returncode == 0 and path
+            else f"Directorio actual: {repo}."
         )
 
     if "estado git" in n or "git status" in n:
