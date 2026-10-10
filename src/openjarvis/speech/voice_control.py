@@ -504,6 +504,32 @@ def direct(command: str) -> str | None:
             else f"No. El archivo {local_path.name} no existe."
         )
 
+    if any(
+        phrase in n
+        for phrase in (
+            "verifica el directorio actual",
+            "verificar el directorio actual",
+            "directorio actual",
+            "ruta actual del proyecto",
+        )
+    ):
+        repo = _repo_root()
+        proc = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        path = proc.stdout.strip()
+        return (
+            f"Directorio actual verificado: {path}."
+            if proc.returncode == 0 and path
+            else f"Directorio actual: {repo}."
+        )
+
     if "estado git" in n or "git status" in n:
         repo = _repo_root()
         proc = subprocess.run(
