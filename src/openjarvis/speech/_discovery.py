@@ -58,8 +58,9 @@ def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
     If ``config.speech.backend`` is ``"auto"``, tries backends in
     priority order and returns the first healthy one.
     """
-    # Trigger registration of built-in backends
-    import openjarvis.speech  # noqa: F401
+    from openjarvis.speech import load_builtin_backends
+
+    load_builtin_backends()
 
     backend_key = config.speech.backend
 
