@@ -1501,8 +1501,8 @@ def capture_command(backend) -> str:
     audio = record_voice_audio(
         silence_threshold=THRESHOLD,
         silence_seconds=0.9,
-        startup_silence_seconds=6.0,
-        max_seconds=20.0,
+        startup_silence_seconds=3.0,
+        max_seconds=10.0,
     )
     amplitude = wav_rms(audio)
     if amplitude < max(20.0, THRESHOLD * 0.35):
