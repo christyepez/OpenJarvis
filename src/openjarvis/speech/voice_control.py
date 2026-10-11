@@ -1154,6 +1154,66 @@ def _wait_for_autonomy_idle(agent_id: str, timeout_seconds: float = 20.0) -> Non
     )
 
 
+def _wait_for_verified_autonomy_reply(
+    agent_id: str,
+    sent_at: float,
+    tool_name: str,
+    timeout_seconds: float = 6.0,
+) -> str | None:
+    """Return a post-objective reply only after verified tool evidence appears."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        messages = api(
+            f"/v1/managed-agents/{agent_id}/messages",
+            timeout=10,
+        ).get("messages", [])
+        candidates = sorted(
+            (
+                message
+                for message in messages
+                if message.get("direction") == "agent_to_user"
+                and float(message.get("created_at") or 0.0) >= sent_at
+            ),
+            key=lambda message: float(message.get("created_at") or 0.0),
+            reverse=True,
+        )
+        for message in candidates:
+            tool_calls = message.get("tool_calls") or []
+            verified = any(
+                isinstance(call, dict)
+                and str(call.get("tool") or call.get("name") or "") == tool_name
+                and call.get("success") is True
+                for call in tool_calls
+            )
+            if verified:
+                content = str(message.get("content") or "").strip()
+                if content:
+                    return content
+
+        agent = api(f"/v1/managed-agents/{agent_id}", timeout=10)
+        if str(agent.get("status") or "") in {
+            "error",
+            "needs_attention",
+            "budget_exceeded",
+        }:
+            return None
+        time.sleep(0.2)
+    return None
+
+
+def _summarize_list_directory_result(content: str) -> str:
+    """Create a concise voice response from a verified directory listing."""
+    lines = [line.strip() for line in str(content or "").splitlines()]
+    directories = sum(line.startswith("[DIR]") for line in lines)
+    files = sum(line.startswith("[FILE]") for line in lines)
+    if directories or files:
+        return (
+            "Verifiqué el workspace. "
+            f"Encontré {directories} carpetas y {files} archivos."
+        )
+    return "Verifiqué el workspace correctamente."
+
+
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     _prepare_autonomy_models()
@@ -1195,7 +1255,7 @@ def autonomous(command: str) -> str:
         api(f"/v1/managed-agents/{agent_id}/recover", {}, timeout=10)
         status = "idle"
 
-    api(
+    sent = api(
         f"/v1/managed-agents/{agent_id}/messages",
         {
             "content": (
@@ -1207,8 +1267,19 @@ def autonomous(command: str) -> str:
         },
         timeout=15,
     )
+    sent_at = float(sent.get("created_at") or time.time())
     if status != "running":
         api(f"/v1/managed-agents/{agent_id}/run", {}, timeout=15)
+
+    if tool_allowlist == ["list_directory"]:
+        verified = _wait_for_verified_autonomy_reply(
+            agent_id,
+            sent_at,
+            "list_directory",
+            timeout_seconds=6.0,
+        )
+        if verified:
+            return _summarize_list_directory_result(verified)
 
     return (
         "Entendido. Inicie el trabajo autonomo. Continuare por etapas, "

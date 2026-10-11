@@ -10,7 +10,9 @@ from openjarvis.speech.voice_control import (
     _is_autonomous_objective,
     _prepare_autonomy_models,
     _requires_tool_evidence,
+    _summarize_list_directory_result,
     _wait_for_autonomy_idle,
+    _wait_for_verified_autonomy_reply,
     audio_device_candidates,
     autonomous,
     direct,
@@ -469,6 +471,112 @@ def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
     from openjarvis.speech.voice_control import _agent_id_by_name
 
     assert _agent_id_by_name("Jarvis Autonomous Operator") == "new"
+
+
+def test_summarize_list_directory_result_counts_entries() -> None:
+    listing = (
+        "[DIR] src\n"
+        "[FILE] README.md\n"
+        "[DIR] tests\n"
+        "[FILE] pyproject.toml\n"
+    )
+
+    assert _summarize_list_directory_result(listing) == (
+        "Verifiqué el workspace. Encontré 2 carpetas y 2 archivos."
+    )
+
+
+def test_wait_for_verified_autonomy_reply_requires_success(monkeypatch) -> None:
+    calls = 0
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        nonlocal calls
+        if path.endswith("/messages"):
+            calls += 1
+            return {
+                "messages": [
+                    {
+                        "direction": "agent_to_user",
+                        "created_at": 20.0,
+                        "content": "[DIR] src\n[FILE] README.md",
+                        "tool_calls": [
+                            {
+                                "tool": "list_directory",
+                                "success": True,
+                            }
+                        ],
+                    }
+                ]
+            }
+        return {"status": "idle"}
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    content = _wait_for_verified_autonomy_reply(
+        "agent-1",
+        10.0,
+        "list_directory",
+        timeout_seconds=0.5,
+    )
+
+    assert content == "[DIR] src\n[FILE] README.md"
+    assert calls == 1
+
+
+def test_autonomous_returns_verified_list_directory_summary(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._prepare_autonomy_models",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_config",
+        lambda: {"instruction": "base"},
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ground_autonomous_command",
+        lambda command: command,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_allowlist",
+        lambda command: ["list_directory"],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_specs",
+        lambda names: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_completion_requirements",
+        lambda command: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._agent_id_by_name",
+        lambda name: None,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_agent_id",
+        lambda config: "agent-1",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._wait_for_verified_autonomy_reply",
+        lambda *args, **kwargs: "[DIR] src\n[FILE] README.md",
+    )
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        if path == "/v1/operations/machines/probe":
+            return {}
+        if path.endswith("/messages") and payload is not None:
+            return {"created_at": 10.0}
+        if path.endswith("/run"):
+            return {}
+        if path.endswith("/agent-1"):
+            return {"status": "idle"}
+        return {}
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    answer = autonomous("lista el contenido usando list_directory")
+
+    assert answer == "Verifiqué el workspace. Encontré 1 carpetas y 1 archivos."
 
 
 def test_autonomous_waits_before_reconciling_existing_agent(monkeypatch) -> None:
