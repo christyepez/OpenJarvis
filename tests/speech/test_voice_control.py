@@ -18,6 +18,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_pr_ready,
     _direct_explicit_pytest,
     _direct_prepare_branch_pr,
+    _direct_finalize_current_pr,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
     _ground_autonomous_command,
@@ -413,6 +414,73 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_finalize_current_pr_runs_ready_then_merge(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_ready(command: str) -> str:
+        calls.append("ready")
+        return (
+            "Pull request #55 listo para revision: "
+            "https://github.com/example/repo/pull/55"
+        )
+
+    def fake_merge(command: str) -> str:
+        calls.append("merge")
+        return (
+            "Pull request #55 fusionado con squash y verificado: "
+            "https://github.com/example/repo/pull/55. "
+            "Rama main activa y actualizada por fast-forward. HEAD abc1234."
+        )
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pr_ready",
+        fake_ready,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pr_merge",
+        fake_merge,
+    )
+
+    answer = _direct_finalize_current_pr("finaliza el pr actual")
+
+    assert calls == ["ready", "merge"]
+    assert answer is not None
+    assert answer.startswith("Pull request finalizado de forma segura.")
+    assert "HEAD abc1234" in answer
+
+
+def test_direct_finalize_current_pr_stops_before_merge(
+    monkeypatch,
+) -> None:
+    merged = {"called": False}
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pr_ready",
+        lambda command: "No encuentro un pull request abierto para la rama actual.",
+    )
+
+    def fake_merge(command: str) -> str:
+        merged["called"] = True
+        return "unexpected"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pr_merge",
+        fake_merge,
+    )
+
+    answer = _direct_finalize_current_pr(
+        "finaliza el pull request actual"
+    )
+
+    assert answer == (
+        "Detuve el flujo antes del merge. "
+        "No encuentro un pull request abierto para la rama actual."
+    )
+    assert merged["called"] is False
 
 
 def test_direct_prepare_branch_pr_orchestrates_safe_flow(
