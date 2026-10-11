@@ -8,6 +8,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_file_delete,
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
+    _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
     _ground_autonomous_command,
@@ -403,6 +404,96 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_pytest_runs_only_inside_tests(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    test_file = tmp_path / "tests" / "test_example.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("def test_ok(): assert True\n", encoding="utf-8")
+    python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    calls: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+        stdout = "1 passed in 0.01s\n"
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return Result()
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_pytest(
+        "ejecuta pytest tests/test_example.py -q"
+    )
+
+    assert answer == "Pruebas completadas correctamente. 1 passed in 0.01s."
+    assert calls == [
+        [str(python), "-m", "pytest", str(test_file.resolve()), "-q"]
+    ]
+
+
+def test_direct_explicit_pytest_rejects_target_outside_tests(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "src" / "app.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("print('x')\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_pytest(
+        "ejecuta pytest src/app.py"
+    )
+
+    assert answer == "Solo puedo ejecutar pytest sobre rutas dentro de tests."
+
+
+def test_direct_explicit_pytest_reports_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    test_file = tmp_path / "tests" / "test_bad.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("def test_bad(): assert False\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 1
+        stdout = "1 failed in 0.02s\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_pytest(
+        "ejecuta pytest tests/test_bad.py"
+    )
+
+    assert answer == "Las pruebas fallaron. 1 failed in 0.02s."
 
 
 def test_direct_explicit_file_delete_removes_untracked_file(
