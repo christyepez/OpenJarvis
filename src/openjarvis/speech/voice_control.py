@@ -1557,8 +1557,94 @@ def _direct_explicit_git_push(command: str) -> str | None:
     return f"Push completado y verificado para la rama {branch} en origin."
 
 
+def _direct_prepare_branch_pr(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "prepara la rama actual para pull request",
+            "prepara la rama actual para pr",
+            "finaliza la rama actual para pull request",
+            "finaliza la rama actual para pr",
+        )
+    ):
+        return None
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 20,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    branch_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+    if not branch or branch.lower() in {"main", "master"}:
+        return "Debes estar en una rama feature para preparar un pull request."
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes de preparar la rama."
+    if dirty.stdout.strip():
+        return (
+            "Hay cambios versionados sin commit. No prepare el pull request; "
+            "crea el commit primero."
+        )
+
+    tests = _direct_explicit_pytest("pytest tests/speech/test_voice_control.py")
+    if tests is None or not tests.startswith("Pruebas completadas correctamente."):
+        return f"Detuve el flujo porque las pruebas no pasaron. {tests or 'Sin resultado de pytest.'}"
+
+    push = _direct_explicit_git_push("haz push de la rama actual")
+    if push is None or not push.startswith("Push completado y verificado"):
+        return f"Detuve el flujo porque el push no se completo. {push or 'Sin resultado del push.'}"
+
+    subject = subprocess.run(
+        ["git", "log", "-1", "--pretty=%s"],
+        **common,
+    )
+    title = subject.stdout.strip() if subject.returncode == 0 else ""
+    if not title:
+        title = f"Update {branch}"
+    title = " ".join(title.split())[:180]
+
+    body = (
+        "Preparado por Jarvis despues de ejecutar la suite de voz "
+        "y verificar que la rama esta sincronizada con origin."
+    )
+    pr = _direct_explicit_pr_create(
+        f"crea un pull request con titulo {title} y descripcion {body}"
+    )
+    if pr is None:
+        return "No pude iniciar la creacion del pull request."
+    if not (
+        pr.startswith("Pull request draft creado y verificado:")
+        or pr.startswith("Ya existe un pull request abierto")
+    ):
+        return f"Detuve el flujo porque el pull request no quedo verificado. {pr}"
+
+    return (
+        f"Rama {branch} preparada para revision. "
+        f"{tests} {push} {pr}"
+    )
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
+    workflow_answer = _direct_prepare_branch_pr(command)
+    if workflow_answer is not None:
+        return workflow_answer
     pytest_answer = _direct_explicit_pytest(command)
     if pytest_answer is not None:
         return pytest_answer
