@@ -547,8 +547,53 @@ def _open_windows_app(command: str) -> str | None:
     return None
 
 
+def _direct_explicit_file_write(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\bcrea(?:r)?\s+el\s+archivo\s+(.+?)\s+con\s+el\s+texto\s+(.+)$",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    raw_path = match.group(1).strip().strip("\"'")
+    content = match.group(2).strip()
+    content = re.sub(
+        r"(?is)\s+y\s+no\s+cambies\s+ningun\s+otro\s+archivo\s*$",
+        "",
+        content,
+    ).strip()
+    content = content.strip("\"'")
+
+    if not raw_path or not content:
+        return "Necesito una ruta y un texto explicitos para crear el archivo."
+
+    repo = _repo_root().resolve()
+    candidate = Path(raw_path)
+    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+
+    try:
+        relative = target.relative_to(repo)
+    except ValueError:
+        return "No puedo crear archivos fuera del workspace de OpenJarvis."
+
+    if target.exists():
+        return f"El archivo {relative.as_posix()} ya existe. No lo sobrescribi."
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    verified = target.read_text(encoding="utf-8")
+    if verified != content:
+        target.unlink(missing_ok=True)
+        return "No pude verificar el contenido escrito; reverti el archivo temporal."
+
+    return f"Archivo creado y verificado: {relative.as_posix()}."
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
+    write_answer = _direct_explicit_file_write(command)
+    if write_answer is not None:
+        return write_answer
     app_answer = _open_windows_app(command)
     if app_answer is not None:
         return app_answer
