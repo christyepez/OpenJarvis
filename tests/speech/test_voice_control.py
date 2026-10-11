@@ -5,6 +5,7 @@ from pathlib import Path
 from openjarvis.speech.voice_control import (
     AUTONOMY_MODEL,
     _autonomy_completion_requirements,
+    _direct_explicit_file_delete,
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
     _autonomy_tool_allowlist,
@@ -402,6 +403,87 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_file_delete_removes_untracked_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / ".openjarvis-smoke" / "autonomy-write.txt"
+    target.parent.mkdir(parents=True)
+    target.write_text("temporary", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_file_delete(
+        "elimina el archivo .openjarvis-smoke/autonomy-write.txt "
+        "y no cambies ningun otro archivo"
+    )
+
+    assert answer == "Archivo eliminado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert not target.exists()
+
+
+def test_direct_explicit_file_delete_refuses_tracked_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "README.md"
+    target.write_text("tracked", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = "README.md\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_file_delete(
+        "borra el archivo README.md"
+    )
+
+    assert answer == "El archivo README.md esta versionado por Git. No lo elimine."
+    assert target.read_text(encoding="utf-8") == "tracked"
+
+
+def test_direct_explicit_file_delete_rejects_workspace_escape(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-delete.txt"
+    outside.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    try:
+        answer = _direct_explicit_file_delete(
+            f"elimina el archivo ../{outside.name}"
+        )
+        assert answer == "No puedo eliminar archivos fuera del workspace de OpenJarvis."
+        assert outside.read_text(encoding="utf-8") == "keep"
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_direct_explicit_file_edit_updates_existing_file(
