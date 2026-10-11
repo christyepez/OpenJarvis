@@ -12,6 +12,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_git_commit,
     _direct_explicit_git_push,
     _direct_explicit_main_sync,
+    _direct_explicit_pr_create,
     _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -408,6 +409,135 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_pr_create_creates_draft_for_synced_branch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    responses = iter(
+        [
+            Result(0, "feature/test\n"),
+            Result(0, ""),
+            Result(0, "origin/feature/test\n"),
+            Result(0, ""),
+            Result(0, "0\t0\n"),
+            Result(0, ""),
+            Result(0, "[]\n"),
+            Result(0, "https://github.com/example/repo/pull/42\n"),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_pr_create(
+        "crea un pull request con titulo Mejora segura "
+        "y descripcion Validacion determinista"
+    )
+
+    assert answer == (
+        "Pull request draft creado y verificado: "
+        "https://github.com/example/repo/pull/42"
+    )
+    assert calls[-1] == [
+        "gh",
+        "pr",
+        "create",
+        "--draft",
+        "--base",
+        "main",
+        "--head",
+        "feature/test",
+        "--title",
+        "Mejora segura",
+        "--body",
+        "Validacion determinista",
+    ]
+
+
+def test_direct_explicit_pr_create_refuses_main(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = "main\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_pr_create(
+        "crea pr con titulo No directo y descripcion Debe fallar"
+    )
+
+    assert answer == "No creo pull requests directamente desde la rama protegida main."
+
+
+def test_direct_explicit_pr_create_refuses_unsynced_branch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result("feature/test\n"),
+            Result(""),
+            Result("origin/feature/test\n"),
+            Result(""),
+            Result("0\t1\n"),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_pr_create(
+        "crear pull request con titulo Pendiente "
+        "y descripcion Falta push"
+    )
+
+    assert answer == (
+        "La rama no esta sincronizada con su upstream: "
+        "1 commits por enviar y 0 por recibir."
+    )
 
 
 def test_direct_explicit_main_sync_switches_and_fast_forwards(
