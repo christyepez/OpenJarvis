@@ -1640,8 +1640,46 @@ def _direct_prepare_branch_pr(command: str) -> str | None:
     )
 
 
+def _direct_finalize_current_pr(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "finaliza el pr actual",
+            "finaliza el pull request actual",
+            "completa el pr actual",
+            "completa el pull request actual",
+        )
+    ):
+        return None
+
+    ready = _direct_explicit_pr_ready(
+        "marca el pr actual listo para revision"
+    )
+    if ready is None:
+        return "No pude iniciar la preparacion final del pull request."
+    if not (
+        ready.startswith("Pull request #")
+        or ready.startswith("El pull request #")
+    ):
+        return f"Detuve el flujo antes del merge. {ready}"
+
+    merged = _direct_explicit_pr_merge(
+        "fusiona el pr actual con squash"
+    )
+    if merged is None:
+        return "No pude iniciar el merge seguro del pull request."
+    if not merged.startswith("Pull request #"):
+        return f"Detuve el flujo antes de completar el merge. {merged}"
+
+    return f"Pull request finalizado de forma segura. {ready} {merged}"
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
+    finalize_pr_answer = _direct_finalize_current_pr(command)
+    if finalize_pr_answer is not None:
+        return finalize_pr_answer
     workflow_answer = _direct_prepare_branch_pr(command)
     if workflow_answer is not None:
         return workflow_answer
