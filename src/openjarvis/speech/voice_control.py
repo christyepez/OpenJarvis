@@ -954,6 +954,174 @@ def _direct_explicit_git_branch(command: str) -> str | None:
     return f"Rama creada y verificada: {branch}."
 
 
+def _direct_explicit_pr_create(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\b(?:crea|crear)\s+(?:un\s+)?(?:pull request|pr)\s+"
+        r"con\s+titulo\s+(.+?)\s+y\s+descripcion\s+(.+)$",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    title = " ".join(match.group(1).strip().strip("\"'").split())
+    body = match.group(2).strip().strip("\"'")
+    if not title or not body:
+        return "Necesito titulo y descripcion explicitos para crear el pull request."
+    if len(title) > 200:
+        return "El titulo del pull request es demasiado largo; usa hasta 200 caracteres."
+    if len(body) > 2000:
+        return "La descripcion del pull request es demasiado larga; usa hasta 2000 caracteres."
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 40,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    branch_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+    if not branch:
+        return "No puedo crear el pull request porque Git no esta en una rama."
+    if branch.lower() in {"main", "master"}:
+        return f"No creo pull requests directamente desde la rama protegida {branch}."
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes de crear el pull request."
+    if dirty.stdout.strip():
+        return (
+            "Hay cambios versionados sin commit. No cree el pull request "
+            "porque la rama no esta limpia."
+        )
+
+    upstream_proc = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        **common,
+    )
+    upstream = (
+        upstream_proc.stdout.strip()
+        if upstream_proc.returncode == 0
+        else ""
+    )
+    if not upstream:
+        return "La rama no tiene upstream. Haz push de la rama antes de crear el pull request."
+
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", branch],
+        **common,
+    )
+    if fetch.returncode != 0:
+        return "No pude actualizar la referencia remota antes de crear el pull request."
+
+    sync = subprocess.run(
+        ["git", "rev-list", "--left-right", "--count", f"{upstream}...HEAD"],
+        **common,
+    )
+    if sync.returncode != 0:
+        return "No pude verificar si la rama local esta sincronizada con su upstream."
+    counts = sync.stdout.strip().replace("\t", " ").split()
+    if len(counts) != 2:
+        return "No pude interpretar el estado de sincronizacion de la rama."
+    try:
+        behind, ahead = (int(counts[0]), int(counts[1]))
+    except ValueError:
+        return "No pude interpretar el estado de sincronizacion de la rama."
+    if ahead or behind:
+        return (
+            f"La rama no esta sincronizada con su upstream: "
+            f"{ahead} commits por enviar y {behind} por recibir."
+        )
+
+    main_check = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/main"],
+        **common,
+    )
+    base = "main"
+    if main_check.returncode == 1:
+        master_check = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/master"],
+            **common,
+        )
+        if master_check.returncode == 0:
+            base = "master"
+        else:
+            return "No encuentro una rama base local main o master."
+    elif main_check.returncode != 0:
+        return "No pude verificar la rama base del pull request."
+
+    existing = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--head",
+            branch,
+            "--state",
+            "open",
+            "--json",
+            "number,url",
+            "--limit",
+            "1",
+        ],
+        **common,
+    )
+    if existing.returncode != 0:
+        return "No pude verificar si ya existe un pull request abierto."
+    try:
+        existing_prs = json.loads(existing.stdout or "[]")
+    except json.JSONDecodeError:
+        return "No pude interpretar la respuesta de GitHub al revisar pull requests."
+    if existing_prs:
+        url = str(existing_prs[0].get("url", "")).strip()
+        number = existing_prs[0].get("number")
+        suffix = f" #{number}" if number is not None else ""
+        return f"Ya existe un pull request abierto{suffix}: {url}".strip()
+
+    try:
+        create = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--draft",
+                "--base",
+                base,
+                "--head",
+                branch,
+                "--title",
+                title,
+                "--body",
+                body,
+            ],
+            **common,
+        )
+    except OSError:
+        return "GitHub CLI no esta disponible; no cree el pull request."
+
+    if create.returncode != 0:
+        detail = (create.stderr or create.stdout).strip().splitlines()
+        reason = detail[-1] if detail else "GitHub rechazo la creacion del pull request."
+        return f"No pude crear el pull request. {reason}"
+
+    url = create.stdout.strip().splitlines()[-1] if create.stdout.strip() else ""
+    if not url:
+        return "El pull request se creo, pero no pude verificar su URL."
+
+    return f"Pull request draft creado y verificado: {url}"
+
+
 def _direct_explicit_main_sync(command: str) -> str | None:
     n = normalize(command)
     if not any(
@@ -1135,6 +1303,9 @@ def direct(command: str) -> str | None:
     branch_answer = _direct_explicit_git_branch(command)
     if branch_answer is not None:
         return branch_answer
+    pr_answer = _direct_explicit_pr_create(command)
+    if pr_answer is not None:
+        return pr_answer
     main_sync_answer = _direct_explicit_main_sync(command)
     if main_sync_answer is not None:
         return main_sync_answer
