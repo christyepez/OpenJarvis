@@ -853,6 +853,107 @@ def _direct_explicit_git_commit(command: str) -> str | None:
     )
 
 
+def _direct_explicit_git_branch(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\b(?:crea|crear|nueva)\s+(?:una\s+)?rama\s+"
+        r"([a-z0-9][a-z0-9._/-]*)"
+        r"(?:\s+desde\s+(?:la\s+rama\s+)?(?:main|master))?\s*$",
+        normalize(command),
+    )
+    if match is None:
+        return None
+
+    branch = match.group(1).strip()
+    allowed_prefixes = (
+        "feature/",
+        "fix/",
+        "perf/",
+        "refactor/",
+        "chore/",
+        "docs/",
+        "test/",
+    )
+    if not branch.startswith(allowed_prefixes):
+        return (
+            "La rama debe usar un prefijo permitido: feature, fix, perf, "
+            "refactor, chore, docs o test."
+        )
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 20,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    current_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    current = (
+        current_proc.stdout.strip()
+        if current_proc.returncode == 0
+        else ""
+    )
+    if current.lower() not in {"main", "master"}:
+        return (
+            "Solo creo ramas nuevas desde main o master. "
+            f"La rama actual es {current or 'desconocida'}."
+        )
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes de crear la rama."
+    if dirty.stdout.strip():
+        return (
+            "Hay cambios versionados pendientes. No cree la rama para evitar "
+            "mezclar trabajo sin commit."
+        )
+
+    valid = subprocess.run(
+        ["git", "check-ref-format", "--branch", branch],
+        **common,
+    )
+    if valid.returncode != 0:
+        return "El nombre solicitado no es una rama Git valida."
+
+    exists = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"],
+        **common,
+    )
+    if exists.returncode == 0:
+        return f"La rama {branch} ya existe localmente."
+    if exists.returncode not in {0, 1}:
+        return "No pude verificar si la rama ya existe."
+
+    create = subprocess.run(
+        ["git", "switch", "-c", branch],
+        **common,
+    )
+    if create.returncode != 0:
+        return f"No pude crear la rama {branch}."
+
+    verify = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    created = verify.stdout.strip() if verify.returncode == 0 else ""
+    if created != branch:
+        return (
+            f"Git intento crear {branch}, pero no pude verificar la rama activa."
+        )
+
+    return f"Rama creada y verificada: {branch}."
+
+
 def _direct_explicit_git_push(command: str) -> str | None:
     n = normalize(command)
     if not any(
@@ -928,6 +1029,9 @@ def direct(command: str) -> str | None:
     commit_answer = _direct_explicit_git_commit(command)
     if commit_answer is not None:
         return commit_answer
+    branch_answer = _direct_explicit_git_branch(command)
+    if branch_answer is not None:
+        return branch_answer
     push_answer = _direct_explicit_git_push(command)
     if push_answer is not None:
         return push_answer

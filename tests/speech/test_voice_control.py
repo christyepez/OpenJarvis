@@ -8,6 +8,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_file_delete,
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
+    _direct_explicit_git_branch,
     _direct_explicit_git_commit,
     _direct_explicit_git_push,
     _direct_explicit_pytest,
@@ -406,6 +407,110 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_git_branch_creates_feature_from_main(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result(0, "main\n"),
+            Result(0, ""),
+            Result(0, ""),
+            Result(1, ""),
+            Result(0, ""),
+            Result(0, "feature/smoke\n"),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_git_branch(
+        "crea una rama feature/smoke desde main"
+    )
+
+    assert answer == "Rama creada y verificada: feature/smoke."
+    assert ["git", "switch", "-c", "feature/smoke"] in calls
+
+
+def test_direct_explicit_git_branch_refuses_non_main_base(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = "feature/existing\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_git_branch(
+        "crea rama feature/new-one"
+    )
+
+    assert answer == (
+        "Solo creo ramas nuevas desde main o master. "
+        "La rama actual es feature/existing."
+    )
+
+
+def test_direct_explicit_git_branch_refuses_dirty_tracked_worktree(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout=""):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter([Result("main\n"), Result(" M src/app.py\n")])
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_git_branch(
+        "crear rama fix/safe-branch"
+    )
+
+    assert answer == (
+        "Hay cambios versionados pendientes. No cree la rama para evitar "
+        "mezclar trabajo sin commit."
+    )
 
 
 def test_direct_explicit_git_push_pushes_current_feature_branch(
