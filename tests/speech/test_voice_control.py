@@ -41,6 +41,41 @@ def test_wake_command_ignores_unrelated_speech() -> None:
     assert wake_command("esto es una conversación normal") == (False, "")
 
 
+def test_capture_command_uses_short_followup_window(monkeypatch) -> None:
+    recorded: dict[str, float] = {}
+
+    class Transcript:
+        text = "estado git"
+
+    class Backend:
+        def transcribe(self, audio, format, language):
+            return Transcript()
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.speak",
+        lambda text: None,
+    )
+
+    def fake_record_voice_audio(**kwargs):
+        recorded.update(kwargs)
+        return b"wav"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.record_voice_audio",
+        fake_record_voice_audio,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.wav_rms",
+        lambda audio: 500.0,
+    )
+
+    from openjarvis.speech.voice_control import capture_command
+
+    assert capture_command(Backend()) == "estado git"
+    assert recorded["startup_silence_seconds"] == 3.0
+    assert recorded["max_seconds"] == 10.0
+
+
 def test_fallback_command_ignores_unrelated_speech(monkeypatch) -> None:
     class Transcript:
         text = "esto es una conversación ambiental sin palabra de activación"
