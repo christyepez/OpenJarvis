@@ -564,7 +564,16 @@ def direct(command: str) -> str | None:
         changes = [line for line in proc.stdout.splitlines() if line.strip()]
         if not changes:
             return "Git esta limpio. No hay cambios locales."
-        return f"Git tiene {len(changes)} cambios locales."
+        untracked = [line for line in changes if line.startswith("??")]
+        tracked = [line for line in changes if not line.startswith("??")]
+        if tracked and untracked:
+            return (
+                f"Git tiene {len(tracked)} cambios versionados y "
+                f"{len(untracked)} archivos no rastreados."
+            )
+        if tracked:
+            return f"Git tiene {len(tracked)} cambios versionados."
+        return f"Git tiene {len(untracked)} archivos no rastreados."
 
     if any(
         phrase in n

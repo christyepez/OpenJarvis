@@ -454,6 +454,21 @@ def test_direct_lists_project_for_natural_directory_phrase(
     assert answer == "Archivos y carpetas principales: README.md, src."
 
 
+def test_direct_git_status_separates_tracked_and_untracked(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = " M src/app.py\n?? scratch.txt\n?? notes.md\n"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = direct("revisa el estado git del proyecto")
+
+    assert answer == "Git tiene 1 cambios versionados y 2 archivos no rastreados."
+
+
 def test_direct_voice_help_lists_capabilities() -> None:
     answer = direct("que puedes hacer")
 
