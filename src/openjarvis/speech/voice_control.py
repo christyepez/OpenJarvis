@@ -1130,6 +1130,8 @@ def _prepare_autonomy_models() -> None:
                 ["ollama", "stop", model],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 check=False,
             )
