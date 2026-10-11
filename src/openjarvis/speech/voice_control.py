@@ -846,8 +846,9 @@ def _direct_explicit_git_commit(command: str) -> str | None:
     )
     sha = head.stdout.strip() if head.returncode == 0 else ""
     suffix = f" Commit {sha}." if sha else ""
+    noun = "archivo versionado" if len(paths) == 1 else "archivos versionados"
     return (
-        f"Commit creado con {len(paths)} archivos versionados. "
+        f"Commit creado con {len(paths)} {noun}. "
         f"No agregue archivos no rastreados.{suffix}"
     )
 
