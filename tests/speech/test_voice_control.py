@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from openjarvis.speech.voice_control import (
@@ -32,6 +33,7 @@ from openjarvis.speech.voice_control import (
     audio_device_candidates,
     autonomous,
     direct,
+    execute,
     fallback_command,
     record_voice_audio,
     resolve_audio_device,
@@ -1629,6 +1631,46 @@ def test_direct_explicit_file_write_creates_inside_workspace(
     target = tmp_path / ".openjarvis-smoke" / "autonomy-write.txt"
     assert answer == "Archivo creado y verificado: .openjarvis-smoke/autonomy-write.txt."
     assert target.read_text(encoding="utf-8") == "JARVIS_WRITE_OK"
+
+
+def test_wake_to_execute_can_create_and_delete_safe_untracked_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    subprocess.run(
+        ["git", "init", "-q"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    woke, create_command = wake_command(
+        "Jarvis crea el archivo jarvis-e2e-voice.txt con el texto prueba de voz jarvis"
+    )
+    assert woke is True
+    assert create_command == (
+        "crea el archivo jarvis-e2e-voice.txt con el texto prueba de voz jarvis"
+    )
+    assert execute(create_command) == (
+        "Archivo creado y verificado: jarvis-e2e-voice.txt."
+    )
+
+    target = tmp_path / "jarvis-e2e-voice.txt"
+    assert target.read_text(encoding="utf-8") == "prueba de voz jarvis"
+
+    woke, delete_command = wake_command(
+        "Jarvis elimina el archivo jarvis-e2e-voice.txt"
+    )
+    assert woke is True
+    assert delete_command == "elimina el archivo jarvis-e2e-voice.txt"
+    assert execute(delete_command) == (
+        "Archivo eliminado y verificado: jarvis-e2e-voice.txt."
+    )
+    assert not target.exists()
 
 
 def test_direct_explicit_file_write_rejects_workspace_escape(
