@@ -454,6 +454,28 @@ def test_direct_lists_project_for_natural_directory_phrase(
     assert answer == "Archivos y carpetas principales: README.md, src."
 
 
+def test_direct_reviews_repository_without_modifying_files(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = " M src/app.py\n?? scratch.txt\n?? notes.md\n"
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = direct(
+        "revisa el estado del repositorio, identifica archivos modificados "
+        "y resume si hay algo pendiente sin cambiar archivos"
+    )
+
+    assert answer == (
+        "Repositorio revisado sin modificar archivos. Hay "
+        "1 archivo versionado modificado y 2 archivos no rastreados. "
+        "Pendientes: src/app.py, scratch.txt, notes.md."
+    )
+
+
 def test_direct_git_status_separates_tracked_and_untracked(monkeypatch) -> None:
     class Result:
         returncode = 0
