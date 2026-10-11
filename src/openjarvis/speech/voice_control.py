@@ -374,6 +374,77 @@ def api(
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _api_healthy(timeout: float = 2.0) -> bool:
+    try:
+        with urllib.request.urlopen(API_BASE + "/health", timeout=timeout) as resp:
+            return 200 <= int(getattr(resp, "status", 200)) < 500
+    except Exception:
+        return False
+
+
+def _ensure_api_available(timeout_seconds: float = 25.0) -> bool:
+    """Recover the local OpenJarvis API once before autonomous work starts."""
+    if _api_healthy():
+        return True
+
+    repo = _repo_root()
+    python = repo / ".venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        python = Path(sys.executable)
+
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+    try:
+        subprocess.run(
+            [str(python), "-m", "openjarvis.cli", "stop"],
+            timeout=20,
+            **common,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("Could not stop unhealthy OpenJarvis API cleanly: %s", exc)
+
+    try:
+        subprocess.Popen(
+            [
+                str(python),
+                "-m",
+                "openjarvis.cli",
+                "start",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+                "--engine",
+                "ollama",
+                "--model",
+                MODEL,
+                "--agent",
+                "orchestrator",
+            ],
+            cwd=repo,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        log.warning("Could not restart OpenJarvis API: %s", exc)
+        return False
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if _api_healthy():
+            return True
+        time.sleep(0.25)
+    return False
+
+
 def speak(text: str) -> None:
     text = re.sub(r"[`*_#>]+", "", text)
     text = re.sub(r"\s+", " ", text).strip()[:700]
@@ -1304,6 +1375,11 @@ def _summarize_list_directory_result(content: str) -> str:
 
 def autonomous(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
+    if not _ensure_api_available():
+        return (
+            "No pude recuperar el backend local de Jarvis. "
+            "La tarea autonoma no se inicio."
+        )
     _prepare_autonomy_models()
 
     config = _autonomy_config()
