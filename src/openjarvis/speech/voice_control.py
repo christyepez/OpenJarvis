@@ -1963,9 +1963,11 @@ def direct(command: str) -> str | None:
         )
     ):
         return (
-            "Puedo abrir el panel, chat, agentes, Visual Studio Code, Explorador, "
-            "PowerShell, Docker Desktop y Chrome; consultar Git, archivos, Docker "
-            "y el estado del sistema; y enviar preguntas libres al operador Jarvis."
+            "Puedo abrir aplicaciones y consultar Git, archivos, Docker y el sistema. "
+            "Tambien puedo crear ramas seguras, ejecutar pruebas, hacer commits y push, "
+            "preparar una rama para pull request y finalizar el pull request con squash "
+            "y sincronizacion automatica a main. Para el flujo completo di: "
+            "prepara la rama actual para pull request; y despues: finaliza el pr actual."
         )
     if "ultimo commit" in n or "ultimo cambio git" in n or "git log" in n:
         repo = _repo_root()
