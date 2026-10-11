@@ -243,6 +243,26 @@ def test_forced_explicit_readonly_list_directory_uses_workspace() -> None:
     )
 
 
+def test_forced_explicit_readonly_accepts_natural_voice_phrase() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "list_directory"},
+        }
+    ]
+    prompt = (
+        r"NEW AUTONOMOUS OBJECTIVE. EXACT WINDOWS WORKSPACE: "
+        r"C:\Users\chris\source\repos\OpenJarvis. "
+        "Use exact absolute Windows paths from this instruction. "
+        "verifica el workspace y lista el contenido"
+    )
+
+    call = _forced_explicit_readonly_start_call(prompt, tools)
+
+    assert call is not None
+    assert call["name"] == "list_directory"
+
+
 def test_explicit_readonly_tool_finishes_without_model(monkeypatch) -> None:
     agent = OperativeAgent(
         object(),

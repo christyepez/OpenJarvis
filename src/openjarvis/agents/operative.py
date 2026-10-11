@@ -423,7 +423,13 @@ def _forced_explicit_readonly_start_call(
     ]
     if available != ["list_directory"]:
         return None
-    if re.search(r"\blist_directory\b", input_text, re.IGNORECASE) is None:
+    explicit_list_request = re.search(
+        r"\b(?:list_directory|list[ _]directory|lista(?:r)?\s+el\s+contenido|"
+        r"lista(?:r)?\s+(?:el\s+)?directorio)\b",
+        input_text,
+        re.IGNORECASE,
+    )
+    if explicit_list_request is None:
         return None
 
     workspace = re.search(
