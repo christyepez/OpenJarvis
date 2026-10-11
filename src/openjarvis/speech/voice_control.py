@@ -546,6 +546,59 @@ def direct(command: str) -> str | None:
             else f"Directorio actual: {repo}."
         )
 
+    if any(
+        phrase in n
+        for phrase in (
+            "revisa el estado del repositorio",
+            "revisar el estado del repositorio",
+            "identifica archivos modificados",
+            "resume si hay algo pendiente",
+        )
+    ):
+        repo = _repo_root()
+        proc = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if proc.returncode != 0:
+            return "No pude revisar el repositorio."
+        changes = [line for line in proc.stdout.splitlines() if line.strip()]
+        if not changes:
+            return (
+                "Repositorio revisado sin modificar archivos. "
+                "No hay cambios pendientes."
+            )
+
+        tracked = [line for line in changes if not line.startswith("??")]
+        untracked = [line for line in changes if line.startswith("??")]
+        pending_names = [
+            line[3:].strip() if len(line) > 3 else line.strip()
+            for line in changes
+        ]
+        preview = ", ".join(pending_names[:6])
+        suffix = "" if len(pending_names) <= 6 else f", y {len(pending_names) - 6} mas"
+
+        parts: list[str] = []
+        if tracked:
+            noun = "archivo versionado modificado" if len(tracked) == 1 else "archivos versionados modificados"
+            parts.append(f"{len(tracked)} {noun}")
+        if untracked:
+            noun = "archivo no rastreado" if len(untracked) == 1 else "archivos no rastreados"
+            parts.append(f"{len(untracked)} {noun}")
+
+        return (
+            "Repositorio revisado sin modificar archivos. Hay "
+            + " y ".join(parts)
+            + f". Pendientes: {preview}{suffix}."
+        )
+
     if "estado git" in n or "git status" in n:
         repo = _repo_root()
         proc = subprocess.run(
