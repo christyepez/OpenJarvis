@@ -802,6 +802,41 @@ def test_direct_reviews_repository_without_modifying_files(monkeypatch) -> None:
     )
 
 
+def test_direct_git_diff_summary_reports_tracked_changes(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = "M\tsrc/app.py\nA\ttests/test_new.py\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = direct("revisa el diff")
+
+    assert answer == (
+        "Git tiene diferencias en 2 archivos versionados: "
+        "src/app.py (modificado), tests/test_new.py (agregado)."
+    )
+
+
+def test_direct_git_diff_summary_reports_clean(monkeypatch) -> None:
+    class Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = direct("resume los cambios git")
+
+    assert answer == "No hay diferencias versionadas pendientes en Git."
+
+
 def test_direct_git_status_separates_tracked_and_untracked(monkeypatch) -> None:
     class Result:
         returncode = 0
