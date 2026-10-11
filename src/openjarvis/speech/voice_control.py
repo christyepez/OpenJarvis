@@ -1122,6 +1122,265 @@ def _direct_explicit_pr_create(command: str) -> str | None:
     return f"Pull request draft creado y verificado: {url}"
 
 
+def _direct_explicit_pr_ready(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "marca el pr actual listo para revision",
+            "marca el pull request actual listo para revision",
+            "poner el pr actual listo para revision",
+            "pon el pr actual listo para revision",
+        )
+    ):
+        return None
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 40,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    branch_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+    if not branch or branch.lower() in {"main", "master"}:
+        return "Debes estar en una rama feature para preparar su pull request."
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes de preparar el pull request."
+    if dirty.stdout.strip():
+        return "Hay cambios versionados sin commit. No marque el pull request como listo."
+
+    view = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            "--json",
+            "number,url,isDraft,state,baseRefName,headRefName",
+        ],
+        **common,
+    )
+    if view.returncode != 0:
+        return "No encuentro un pull request abierto para la rama actual."
+    try:
+        pr = json.loads(view.stdout or "{}")
+    except json.JSONDecodeError:
+        return "No pude interpretar los datos del pull request actual."
+
+    if str(pr.get("state", "")).upper() != "OPEN":
+        return "El pull request actual no esta abierto."
+    if str(pr.get("headRefName", "")) != branch:
+        return "El pull request encontrado no corresponde a la rama actual."
+    if str(pr.get("baseRefName", "")).lower() not in {"main", "master"}:
+        return "El pull request no apunta a una rama base protegida main o master."
+
+    number = pr.get("number")
+    url = str(pr.get("url", "")).strip()
+    if not pr.get("isDraft", False):
+        suffix = f" #{number}" if number is not None else ""
+        return f"El pull request{suffix} ya esta listo para revision: {url}".strip()
+    if number is None:
+        return "No pude identificar el numero del pull request actual."
+
+    ready = subprocess.run(
+        ["gh", "pr", "ready", str(number)],
+        **common,
+    )
+    if ready.returncode != 0:
+        detail = (ready.stderr or ready.stdout).strip().splitlines()
+        reason = detail[-1] if detail else "GitHub rechazo el cambio."
+        return f"No pude marcar el pull request como listo. {reason}"
+
+    verify = subprocess.run(
+        ["gh", "pr", "view", str(number), "--json", "isDraft,url"],
+        **common,
+    )
+    if verify.returncode != 0:
+        return "GitHub acepto la operacion, pero no pude verificar el pull request."
+    try:
+        updated = json.loads(verify.stdout or "{}")
+    except json.JSONDecodeError:
+        return "No pude verificar el estado actualizado del pull request."
+    if updated.get("isDraft", True):
+        return "El pull request sigue en draft; no lo marque como listo."
+
+    verified_url = str(updated.get("url", "")).strip() or url
+    return f"Pull request #{number} listo para revision: {verified_url}"
+
+
+def _direct_explicit_pr_merge(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "fusiona el pr actual con squash",
+            "fusiona el pull request actual con squash",
+            "mergea el pr actual con squash",
+            "haz merge del pr actual con squash",
+        )
+    ):
+        return None
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 60,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    branch_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+    if not branch or branch.lower() in {"main", "master"}:
+        return "Debes estar en la rama feature del pull request que deseas fusionar."
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes del merge."
+    if dirty.stdout.strip():
+        return "Hay cambios versionados sin commit. No fusione el pull request."
+
+    head_proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        **common,
+    )
+    head_sha = head_proc.stdout.strip() if head_proc.returncode == 0 else ""
+    if not head_sha:
+        return "No pude identificar el commit HEAD de la rama actual."
+
+    view = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            "--json",
+            (
+                "number,url,isDraft,state,baseRefName,headRefName,"
+                "mergeStateStatus,statusCheckRollup"
+            ),
+        ],
+        **common,
+    )
+    if view.returncode != 0:
+        return "No encuentro un pull request abierto para la rama actual."
+    try:
+        pr = json.loads(view.stdout or "{}")
+    except json.JSONDecodeError:
+        return "No pude interpretar los datos del pull request actual."
+
+    if str(pr.get("state", "")).upper() != "OPEN":
+        return "El pull request actual no esta abierto."
+    if str(pr.get("headRefName", "")) != branch:
+        return "El pull request encontrado no corresponde a la rama actual."
+    if str(pr.get("baseRefName", "")).lower() not in {"main", "master"}:
+        return "El pull request no apunta a main o master."
+    if pr.get("isDraft", False):
+        return "El pull request sigue en draft. Marcalo listo para revision primero."
+    if str(pr.get("mergeStateStatus", "")).upper() != "CLEAN":
+        state = str(pr.get("mergeStateStatus", "UNKNOWN")).upper()
+        return f"El pull request no esta listo para merge: estado {state}."
+
+    checks = pr.get("statusCheckRollup") or []
+    pending: list[str] = []
+    failed: list[str] = []
+    for check in checks:
+        name = str(
+            check.get("name")
+            or check.get("context")
+            or check.get("workflowName")
+            or "check"
+        )
+        status = str(check.get("status", "")).upper()
+        conclusion = str(check.get("conclusion", "")).upper()
+        state = str(check.get("state", "")).upper()
+        if status and status != "COMPLETED":
+            pending.append(name)
+            continue
+        if state in {"PENDING", "EXPECTED"}:
+            pending.append(name)
+            continue
+        final = conclusion or state
+        if final and final not in {"SUCCESS", "NEUTRAL", "SKIPPED"}:
+            failed.append(name)
+
+    if pending:
+        return (
+            "El pull request tiene checks pendientes: "
+            + ", ".join(sorted(set(pending)))
+            + "."
+        )
+    if failed:
+        return (
+            "El pull request tiene checks fallidos: "
+            + ", ".join(sorted(set(failed)))
+            + "."
+        )
+
+    number = pr.get("number")
+    if number is None:
+        return "No pude identificar el numero del pull request actual."
+
+    merge = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "merge",
+            str(number),
+            "--squash",
+            "--match-head-commit",
+            head_sha,
+        ],
+        **common,
+    )
+    if merge.returncode != 0:
+        detail = (merge.stderr or merge.stdout).strip().splitlines()
+        reason = detail[-1] if detail else "GitHub rechazo el merge."
+        return f"No pude fusionar el pull request. {reason}"
+
+    verify = subprocess.run(
+        ["gh", "pr", "view", str(number), "--json", "state,mergedAt,url"],
+        **common,
+    )
+    if verify.returncode != 0:
+        return "GitHub acepto el merge, pero no pude verificar el resultado."
+    try:
+        merged = json.loads(verify.stdout or "{}")
+    except json.JSONDecodeError:
+        return "No pude verificar el resultado final del merge."
+
+    state = str(merged.get("state", "")).upper()
+    merged_at = merged.get("mergedAt")
+    if state != "MERGED" and not merged_at:
+        return "El pull request no aparece como fusionado despues de la operacion."
+
+    url = str(merged.get("url", "")).strip() or str(pr.get("url", "")).strip()
+    return f"Pull request #{number} fusionado con squash y verificado: {url}"
+
+
 def _direct_explicit_main_sync(command: str) -> str | None:
     n = normalize(command)
     if not any(
@@ -1306,6 +1565,12 @@ def direct(command: str) -> str | None:
     pr_answer = _direct_explicit_pr_create(command)
     if pr_answer is not None:
         return pr_answer
+    pr_ready_answer = _direct_explicit_pr_ready(command)
+    if pr_ready_answer is not None:
+        return pr_ready_answer
+    pr_merge_answer = _direct_explicit_pr_merge(command)
+    if pr_merge_answer is not None:
+        return pr_merge_answer
     main_sync_answer = _direct_explicit_main_sync(command)
     if main_sync_answer is not None:
         return main_sync_answer

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from openjarvis.speech.voice_control import (
@@ -13,6 +14,8 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_git_push,
     _direct_explicit_main_sync,
     _direct_explicit_pr_create,
+    _direct_explicit_pr_merge,
+    _direct_explicit_pr_ready,
     _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -409,6 +412,253 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_pr_ready_marks_draft_ready(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    responses = iter(
+        [
+            Result(0, "feature/test\n"),
+            Result(0, ""),
+            Result(
+                0,
+                json.dumps(
+                    {
+                        "number": 42,
+                        "url": "https://github.com/example/repo/pull/42",
+                        "isDraft": True,
+                        "state": "OPEN",
+                        "baseRefName": "main",
+                        "headRefName": "feature/test",
+                    }
+                ),
+            ),
+            Result(0, ""),
+            Result(
+                0,
+                json.dumps(
+                    {
+                        "isDraft": False,
+                        "url": "https://github.com/example/repo/pull/42",
+                    }
+                ),
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_pr_ready(
+        "marca el pr actual listo para revision"
+    )
+
+    assert answer == (
+        "Pull request #42 listo para revision: "
+        "https://github.com/example/repo/pull/42"
+    )
+
+
+def test_direct_explicit_pr_merge_requires_clean_checks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    responses = iter(
+        [
+            Result(0, "feature/test\n"),
+            Result(0, ""),
+            Result(0, "deadbeefcafebabe\n"),
+            Result(
+                0,
+                json.dumps(
+                    {
+                        "number": 42,
+                        "url": "https://github.com/example/repo/pull/42",
+                        "isDraft": False,
+                        "state": "OPEN",
+                        "baseRefName": "main",
+                        "headRefName": "feature/test",
+                        "mergeStateStatus": "CLEAN",
+                        "statusCheckRollup": [
+                            {
+                                "name": "tests",
+                                "status": "COMPLETED",
+                                "conclusion": "SUCCESS",
+                            }
+                        ],
+                    }
+                ),
+            ),
+            Result(0, ""),
+            Result(
+                0,
+                json.dumps(
+                    {
+                        "state": "MERGED",
+                        "mergedAt": "2026-10-11T00:00:00Z",
+                        "url": "https://github.com/example/repo/pull/42",
+                    }
+                ),
+            ),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_pr_merge(
+        "fusiona el pr actual con squash"
+    )
+
+    assert answer == (
+        "Pull request #42 fusionado con squash y verificado: "
+        "https://github.com/example/repo/pull/42"
+    )
+    assert calls[-2] == [
+        "gh",
+        "pr",
+        "merge",
+        "42",
+        "--squash",
+        "--match-head-commit",
+        "deadbeefcafebabe",
+    ]
+
+
+def test_direct_explicit_pr_merge_refuses_pending_checks(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result("feature/test\n"),
+            Result(""),
+            Result("deadbeef\n"),
+            Result(
+                json.dumps(
+                    {
+                        "number": 42,
+                        "url": "https://github.com/example/repo/pull/42",
+                        "isDraft": False,
+                        "state": "OPEN",
+                        "baseRefName": "main",
+                        "headRefName": "feature/test",
+                        "mergeStateStatus": "CLEAN",
+                        "statusCheckRollup": [
+                            {
+                                "name": "tests",
+                                "status": "IN_PROGRESS",
+                                "conclusion": "",
+                            }
+                        ],
+                    }
+                )
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_pr_merge(
+        "fusiona el pull request actual con squash"
+    )
+
+    assert answer == "El pull request tiene checks pendientes: tests."
+
+
+def test_direct_explicit_pr_merge_refuses_draft(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result("feature/test\n"),
+            Result(""),
+            Result("deadbeef\n"),
+            Result(
+                json.dumps(
+                    {
+                        "number": 42,
+                        "url": "https://github.com/example/repo/pull/42",
+                        "isDraft": True,
+                        "state": "OPEN",
+                        "baseRefName": "main",
+                        "headRefName": "feature/test",
+                        "mergeStateStatus": "CLEAN",
+                        "statusCheckRollup": [],
+                    }
+                )
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_pr_merge(
+        "fusiona el pr actual con squash"
+    )
+
+    assert answer == (
+        "El pull request sigue en draft. Marcalo listo para revision primero."
+    )
 
 
 def test_direct_explicit_pr_create_creates_draft_for_synced_branch(
