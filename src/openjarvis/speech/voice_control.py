@@ -93,6 +93,8 @@ def _requires_tool_evidence(command: str) -> bool:
         "verificar ",
         "consulta ",
         "consultar ",
+        "lista ",
+        "listar ",
         "cambia ",
         "cambiar ",
         "crea ",
@@ -181,6 +183,8 @@ def _is_autonomous_objective(command: str) -> bool:
         "ejecutar ",
         "verifica ",
         "verificar ",
+        "lista ",
+        "listar ",
         "crea ",
         "crear ",
         "actualiza ",
@@ -1179,13 +1183,16 @@ def _wait_for_verified_autonomy_reply(
         )
         for message in candidates:
             tool_calls = message.get("tool_calls") or []
-            verified = any(
-                isinstance(call, dict)
-                and str(call.get("tool") or call.get("name") or "") == tool_name
-                and call.get("success") is True
-                for call in tool_calls
-            )
-            if verified:
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                if str(call.get("tool") or call.get("name") or "") != tool_name:
+                    continue
+                if call.get("success") is not True:
+                    continue
+                result = str(call.get("result") or "").strip()
+                if result:
+                    return result
                 content = str(message.get("content") or "").strip()
                 if content:
                     return content

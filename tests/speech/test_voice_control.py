@@ -64,12 +64,14 @@ def test_fallback_command_ignores_unrelated_speech(monkeypatch) -> None:
 def test_action_commands_require_real_tool_evidence() -> None:
     assert _requires_tool_evidence("verifica el directorio actual") is True
     assert _requires_tool_evidence("abre docker desktop") is True
+    assert _requires_tool_evidence("lista el contenido del directorio") is True
     assert _requires_tool_evidence("cuanto es dos mas dos") is False
 
 
 def test_autonomous_objective_requires_explicit_action() -> None:
     assert _is_autonomous_objective("implementa el ajuste completo del panel") is True
     assert _is_autonomous_objective("continua con la implementacion de Jarvis") is True
+    assert _is_autonomous_objective("lista el contenido del directorio del proyecto") is True
     assert _is_autonomous_objective("que va a hacer una cosa") is False
     assert _is_autonomous_objective("estado autonomo") is False
 
@@ -498,10 +500,11 @@ def test_wait_for_verified_autonomy_reply_requires_success(monkeypatch) -> None:
                     {
                         "direction": "agent_to_user",
                         "created_at": 20.0,
-                        "content": "[DIR] src\n[FILE] README.md",
+                        "content": "Directorio revisado correctamente.",
                         "tool_calls": [
                             {
                                 "tool": "list_directory",
+                                "result": "[DIR] src\n[FILE] README.md",
                                 "success": True,
                             }
                         ],
