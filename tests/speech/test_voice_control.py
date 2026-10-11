@@ -8,6 +8,7 @@ from openjarvis.speech.voice_control import (
     _autonomy_tool_specs,
     _ground_autonomous_command,
     _is_autonomous_objective,
+    _ensure_api_available,
     _prepare_autonomy_models,
     _requires_tool_evidence,
     _summarize_list_directory_result,
@@ -247,6 +248,40 @@ def test_autonomy_tool_specs_compact_start_process_schema() -> None:
     params = start["function"]["parameters"]
     assert params["required"] == ["command", "timeout_ms"]
     assert set(params["properties"]) == {"command", "timeout_ms", "shell"}
+
+
+def test_ensure_api_available_restarts_unhealthy_backend(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+
+    health = iter([False, True])
+    runs: list[list[str]] = []
+    launches: list[list[str]] = []
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._api_healthy",
+        lambda timeout=2.0: next(health),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda args, **kwargs: runs.append(args),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.Popen",
+        lambda args, **kwargs: launches.append(args),
+    )
+
+    assert _ensure_api_available(timeout_seconds=1.0) is True
+    assert runs == [[str(python), "-m", "openjarvis.cli", "stop"]]
+    assert launches[0][:4] == [str(python), "-m", "openjarvis.cli", "start"]
 
 
 def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:
