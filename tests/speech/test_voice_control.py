@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from openjarvis.speech.voice_control import (
+    AUTONOMY_MODEL,
     _autonomy_completion_requirements,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -788,7 +789,7 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["summary_memory"] == ""
     assert calls[0][1]["config"]["schedule_type"] == "interval"
     assert calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
-    assert calls[0][1]["config"]["model"] == "llama3.2:1b"
+    assert calls[0][1]["config"]["model"] == AUTONOMY_MODEL
     assert calls[0][1]["config"]["max_output_tokens"] == 256
     assert "max_tokens" not in calls[0][1]["config"]
     assert calls[0][1]["config"]["num_ctx"] == 4096
