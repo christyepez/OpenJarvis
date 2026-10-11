@@ -853,6 +853,73 @@ def _direct_explicit_git_commit(command: str) -> str | None:
     )
 
 
+def _direct_explicit_git_push(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "haz push de la rama actual",
+            "hacer push de la rama actual",
+            "haz push al remoto origin",
+            "hacer push al remoto origin",
+            "push de la rama actual",
+        )
+    ):
+        return None
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 30,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    branch_proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else ""
+    if not branch:
+        return "No puedo hacer push porque Git no esta en una rama."
+    if branch.lower() in {"main", "master"}:
+        return f"No hago push directo desde la rama protegida {branch}."
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes del push."
+    if dirty.stdout.strip():
+        return (
+            "Hay cambios versionados sin commit. No hice push para evitar "
+            "publicar una rama incompleta."
+        )
+
+    remote = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        **common,
+    )
+    if remote.returncode != 0 or not remote.stdout.strip():
+        return "No encuentro el remoto origin; no hice push."
+
+    push = subprocess.run(
+        ["git", "push", "-u", "origin", branch],
+        **common,
+    )
+    if push.returncode != 0:
+        detail = (push.stderr or push.stdout).strip().splitlines()
+        reason = detail[-1] if detail else "Git rechazo el push."
+        return f"No pude hacer push de {branch}. {reason}"
+
+    return f"Push completado y verificado para la rama {branch} en origin."
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
     pytest_answer = _direct_explicit_pytest(command)
@@ -861,6 +928,9 @@ def direct(command: str) -> str | None:
     commit_answer = _direct_explicit_git_commit(command)
     if commit_answer is not None:
         return commit_answer
+    push_answer = _direct_explicit_git_push(command)
+    if push_answer is not None:
+        return push_answer
     write_answer = _direct_explicit_file_write(command)
     if write_answer is not None:
         return write_answer

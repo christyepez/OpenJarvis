@@ -9,6 +9,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
     _direct_explicit_git_commit,
+    _direct_explicit_git_push,
     _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -405,6 +406,101 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_git_push_pushes_current_feature_branch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    responses = iter(
+        [
+            Result(0, "feature/test\n"),
+            Result(0, ""),
+            Result(0, "https://example.invalid/repo.git\n"),
+            Result(0, "", ""),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_git_push("haz push de la rama actual")
+
+    assert answer == (
+        "Push completado y verificado para la rama feature/test en origin."
+    )
+    assert calls[-1] == ["git", "push", "-u", "origin", "feature/test"]
+
+
+def test_direct_explicit_git_push_refuses_main(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = "main\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_git_push("haz push de la rama actual")
+
+    assert answer == "No hago push directo desde la rama protegida main."
+
+
+def test_direct_explicit_git_push_refuses_dirty_tracked_worktree(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout=""):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter([Result("feature/test\n"), Result(" M src/app.py\n")])
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_git_push("haz push al remoto origin")
+
+    assert answer == (
+        "Hay cambios versionados sin commit. No hice push para evitar "
+        "publicar una rama incompleta."
+    )
 
 
 def test_direct_explicit_git_commit_stages_only_tracked_changes(
