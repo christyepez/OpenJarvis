@@ -589,11 +589,63 @@ def _direct_explicit_file_write(command: str) -> str | None:
     return f"Archivo creado y verificado: {relative.as_posix()}."
 
 
+def _direct_explicit_file_edit(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\b(?:edita|editar|modifica|modificar)\s+el\s+archivo\s+(.+?)\s+"
+        r"(?:y\s+)?(?:reemplaza|reemplazar|cambia|cambiar)\s+"
+        r"(?:el\s+)?contenido\s+(?:por|con)\s+(.+)$",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    raw_path = match.group(1).strip().strip("\"'")
+    content = match.group(2).strip()
+    content = re.sub(
+        r"(?is)\s+y\s+no\s+cambies\s+ningun\s+otro\s+archivo\s*$",
+        "",
+        content,
+    ).strip()
+    content = content.strip("\"'")
+
+    if not raw_path or not content:
+        return "Necesito una ruta y un contenido explicitos para editar el archivo."
+
+    repo = _repo_root().resolve()
+    candidate = Path(raw_path)
+    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+
+    try:
+        relative = target.relative_to(repo)
+    except ValueError:
+        return "No puedo editar archivos fuera del workspace de OpenJarvis."
+
+    if not target.exists() or not target.is_file():
+        return f"No encuentro el archivo {relative.as_posix()} para editar."
+
+    original = target.read_text(encoding="utf-8")
+    try:
+        target.write_text(content, encoding="utf-8")
+        verified = target.read_text(encoding="utf-8")
+    except Exception:
+        target.write_text(original, encoding="utf-8")
+        raise
+
+    if verified != content:
+        target.write_text(original, encoding="utf-8")
+        return "No pude verificar la edicion; restaure el contenido original."
+
+    return f"Archivo editado y verificado: {relative.as_posix()}."
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
     write_answer = _direct_explicit_file_write(command)
     if write_answer is not None:
         return write_answer
+    edit_answer = _direct_explicit_file_edit(command)
+    if edit_answer is not None:
+        return edit_answer
     app_answer = _open_windows_app(command)
     if app_answer is not None:
         return app_answer

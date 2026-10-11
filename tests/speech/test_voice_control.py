@@ -5,6 +5,7 @@ from pathlib import Path
 from openjarvis.speech.voice_control import (
     AUTONOMY_MODEL,
     _autonomy_completion_requirements,
+    _direct_explicit_file_edit,
     _direct_explicit_file_write,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -401,6 +402,66 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_file_edit_updates_existing_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / ".openjarvis-smoke" / "autonomy-write.txt"
+    target.parent.mkdir(parents=True)
+    target.write_text("JARVIS_WRITE_OK", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_file_edit(
+        "edita el archivo .openjarvis-smoke/autonomy-write.txt "
+        "y reemplaza el contenido por JARVIS_EDIT_OK "
+        "y no cambies ningun otro archivo"
+    )
+
+    assert answer == "Archivo editado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert target.read_text(encoding="utf-8") == "JARVIS_EDIT_OK"
+
+
+def test_direct_explicit_file_edit_rejects_workspace_escape(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-edit.txt"
+    outside.write_text("original", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    try:
+        answer = _direct_explicit_file_edit(
+            f"edita el archivo ../{outside.name} y reemplaza el contenido por NOPE"
+        )
+
+        assert answer == "No puedo editar archivos fuera del workspace de OpenJarvis."
+        assert outside.read_text(encoding="utf-8") == "original"
+    finally:
+        outside.unlink(missing_ok=True)
+
+
+def test_direct_explicit_file_edit_requires_existing_file(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_file_edit(
+        "edita el archivo missing.txt y reemplaza el contenido por NOPE"
+    )
+
+    assert answer == "No encuentro el archivo missing.txt para editar."
 
 
 def test_direct_explicit_file_write_creates_inside_workspace(
