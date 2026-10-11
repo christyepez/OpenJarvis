@@ -698,8 +698,77 @@ def _direct_explicit_file_delete(command: str) -> str | None:
     return f"Archivo eliminado y verificado: {relative.as_posix()}."
 
 
+def _direct_explicit_pytest(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\bpytest\s+(\"[^\"]+\"|'[^']+'|\S+)",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    raw_target = match.group(1).strip().strip("\"'")
+    if not raw_target:
+        return "Necesito una ruta de pruebas explicita."
+
+    repo = _repo_root().resolve()
+    node_parts = raw_target.split("::")
+    target_path = Path(node_parts[0])
+    resolved = (
+        target_path.resolve()
+        if target_path.is_absolute()
+        else (repo / target_path).resolve()
+    )
+    tests_root = (repo / "tests").resolve()
+
+    try:
+        relative = resolved.relative_to(tests_root)
+    except ValueError:
+        return "Solo puedo ejecutar pytest sobre rutas dentro de tests."
+
+    if not resolved.exists():
+        return f"No encuentro la prueba tests/{relative.as_posix()}."
+
+    target_arg = str(resolved)
+    if len(node_parts) > 1:
+        target_arg += "::" + "::".join(node_parts[1:])
+
+    python = repo / ".venv" / "Scripts" / "python.exe"
+    if not python.exists():
+        python = Path(sys.executable)
+
+    try:
+        proc = subprocess.run(
+            [str(python), "-m", "pytest", target_arg, "-q"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return "Pytest excedio el tiempo maximo de ejecucion."
+
+    output = "\n".join(
+        part.strip()
+        for part in (proc.stdout, proc.stderr)
+        if part and part.strip()
+    )
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    summary = lines[-1] if lines else "sin resumen disponible"
+
+    if proc.returncode == 0:
+        return f"Pruebas completadas correctamente. {summary}."
+    return f"Las pruebas fallaron. {summary}."
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
+    pytest_answer = _direct_explicit_pytest(command)
+    if pytest_answer is not None:
+        return pytest_answer
     write_answer = _direct_explicit_file_write(command)
     if write_answer is not None:
         return write_answer
