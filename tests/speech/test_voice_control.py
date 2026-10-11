@@ -5,6 +5,7 @@ from pathlib import Path
 from openjarvis.speech.voice_control import (
     AUTONOMY_MODEL,
     _autonomy_completion_requirements,
+    _direct_explicit_file_write,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
     _ground_autonomous_command,
@@ -400,6 +401,61 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_file_write_creates_inside_workspace(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_file_write(
+        "crea el archivo .openjarvis-smoke/autonomy-write.txt "
+        "con el texto JARVIS_WRITE_OK y no cambies ningun otro archivo"
+    )
+
+    target = tmp_path / ".openjarvis-smoke" / "autonomy-write.txt"
+    assert answer == "Archivo creado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert target.read_text(encoding="utf-8") == "JARVIS_WRITE_OK"
+
+
+def test_direct_explicit_file_write_rejects_workspace_escape(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_file_write(
+        "crea el archivo ../outside.txt con el texto NOPE"
+    )
+
+    assert answer == "No puedo crear archivos fuera del workspace de OpenJarvis."
+    assert not (tmp_path.parent / "outside.txt").exists()
+
+
+def test_direct_explicit_file_write_does_not_overwrite(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "existing.txt"
+    target.write_text("original", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = _direct_explicit_file_write(
+        "crea el archivo existing.txt con el texto reemplazo"
+    )
+
+    assert answer == "El archivo existing.txt ya existe. No lo sobrescribi."
+    assert target.read_text(encoding="utf-8") == "original"
 
 
 def test_direct_file_size_uses_real_local_file(
