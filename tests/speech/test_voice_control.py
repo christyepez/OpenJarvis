@@ -403,6 +403,22 @@ def test_direct_verifies_current_repository_directory(monkeypatch, tmp_path: Pat
     assert calls == [(["git", "rev-parse", "--show-toplevel"], tmp_path)]
 
 
+def test_direct_lists_project_for_natural_directory_phrase(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "README.md").write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    answer = direct("lista el contenido del directorio del proyecto")
+
+    assert answer == "Archivos y carpetas principales: README.md, src."
+
+
 def test_direct_voice_help_lists_capabilities() -> None:
     answer = direct("que puedes hacer")
 

@@ -568,7 +568,14 @@ def direct(command: str) -> str | None:
 
     if any(
         phrase in n
-        for phrase in ("lista archivos del proyecto", "lista los archivos del proyecto")
+        for phrase in (
+            "lista archivos del proyecto",
+            "lista los archivos del proyecto",
+            "lista el contenido del directorio del proyecto",
+            "listar el contenido del directorio del proyecto",
+            "lista el contenido del directorio",
+            "listar el contenido del directorio",
+        )
     ):
         repo = _repo_root()
         names = sorted(
