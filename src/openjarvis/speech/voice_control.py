@@ -638,6 +638,66 @@ def _direct_explicit_file_edit(command: str) -> str | None:
     return f"Archivo editado y verificado: {relative.as_posix()}."
 
 
+def _direct_explicit_file_delete(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\b(?:elimina|eliminar|borra|borrar)\s+el\s+archivo\s+(.+)$",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    raw_path = match.group(1).strip()
+    raw_path = re.sub(
+        r"(?is)\s+y\s+no\s+cambies\s+ningun\s+otro\s+archivo\s*$",
+        "",
+        raw_path,
+    ).strip().strip("\"'")
+
+    if not raw_path:
+        return "Necesito una ruta explicita para eliminar el archivo."
+
+    repo = _repo_root().resolve()
+    candidate = Path(raw_path)
+    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+
+    try:
+        relative = target.relative_to(repo)
+    except ValueError:
+        return "No puedo eliminar archivos fuera del workspace de OpenJarvis."
+
+    if not target.exists():
+        return f"No encuentro el archivo {relative.as_posix()} para eliminar."
+    if not target.is_file():
+        return f"{relative.as_posix()} no es un archivo; no lo elimine."
+
+    proc = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", relative.as_posix()],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if proc.returncode == 0:
+        return (
+            f"El archivo {relative.as_posix()} esta versionado por Git. "
+            "No lo elimine."
+        )
+    if proc.returncode != 1:
+        return (
+            "No pude verificar de forma segura si el archivo esta versionado; "
+            "no lo elimine."
+        )
+
+    target.unlink()
+    if target.exists():
+        return "No pude verificar la eliminacion del archivo."
+    return f"Archivo eliminado y verificado: {relative.as_posix()}."
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
     write_answer = _direct_explicit_file_write(command)
@@ -646,6 +706,9 @@ def direct(command: str) -> str | None:
     edit_answer = _direct_explicit_file_edit(command)
     if edit_answer is not None:
         return edit_answer
+    delete_answer = _direct_explicit_file_delete(command)
+    if delete_answer is not None:
+        return delete_answer
     app_answer = _open_windows_app(command)
     if app_answer is not None:
         return app_answer
