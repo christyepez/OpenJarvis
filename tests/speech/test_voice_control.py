@@ -1831,8 +1831,9 @@ def test_direct_voice_help_lists_capabilities() -> None:
     answer = direct("que puedes hacer")
 
     assert answer is not None
-    assert "Docker Desktop" in answer
-    assert "estado del sistema" in answer
+    assert "Docker" in answer
+    assert "prepara la rama actual para pull request" in answer
+    assert "finaliza el pr actual" in answer
 
 
 def test_direct_docker_status_uses_real_command_result(monkeypatch) -> None:
