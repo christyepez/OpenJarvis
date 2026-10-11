@@ -17,6 +17,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_pr_merge,
     _direct_explicit_pr_ready,
     _direct_explicit_pytest,
+    _direct_prepare_branch_pr,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
     _ground_autonomous_command,
@@ -412,6 +413,138 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_prepare_branch_pr_orchestrates_safe_flow(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result("feature/workflow\n"),
+            Result(""),
+            Result("feat: workflow orchestration\n"),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pytest",
+        lambda command: "Pruebas completadas correctamente. 72 passed in 1.00s.",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_git_push",
+        lambda command: (
+            "Push completado y verificado para la rama feature/workflow en origin."
+        ),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pr_create",
+        lambda command: (
+            "Pull request draft creado y verificado: "
+            "https://github.com/example/repo/pull/50"
+        ),
+    )
+
+    answer = _direct_prepare_branch_pr(
+        "prepara la rama actual para pull request"
+    )
+
+    assert answer is not None
+    assert answer.startswith("Rama feature/workflow preparada para revision.")
+    assert "72 passed" in answer
+    assert "pull/50" in answer
+
+
+def test_direct_prepare_branch_pr_stops_on_failed_tests(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter([Result("feature/workflow\n"), Result("")])
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_pytest",
+        lambda command: "Las pruebas fallaron. 1 failed in 0.02s.",
+    )
+
+    pushed = {"value": False}
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_git_push",
+        lambda command: pushed.__setitem__("value", True),
+    )
+
+    answer = _direct_prepare_branch_pr(
+        "finaliza la rama actual para pr"
+    )
+
+    assert answer == (
+        "Detuve el flujo porque las pruebas no pasaron. "
+        "Las pruebas fallaron. 1 failed in 0.02s."
+    )
+    assert pushed["value"] is False
+
+
+def test_direct_prepare_branch_pr_refuses_dirty_tracked_changes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result("feature/workflow\n"),
+            Result(" M src/app.py\n"),
+        ]
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_prepare_branch_pr(
+        "prepara la rama actual para pr"
+    )
+
+    assert answer == (
+        "Hay cambios versionados sin commit. No prepare el pull request; "
+        "crea el commit primero."
+    )
 
 
 def test_direct_explicit_pr_ready_marks_draft_ready(
