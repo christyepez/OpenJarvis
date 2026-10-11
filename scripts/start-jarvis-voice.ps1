@@ -7,12 +7,13 @@ if (-not (Test-Path $python)) {
 }
 
 $env:OPENJARVIS_WAKE_MODE = 'whisper-fallback'
-$env:OPENJARVIS_AUDIO_DEVICE = 'default'
-$env:OPENJARVIS_VOICE_THRESHOLD = '100'
-$env:OPENJARVIS_WAKE_THRESHOLD = '0.05'
-$env:OPENJARVIS_VOICE_MODEL = 'jarvis-voice'
+$env:OPENJARVIS_WAKE_THRESHOLD = '0.14'
+$env:OPENJARVIS_VOICE_THRESHOLD = '450'
+$env:OPENJARVIS_AUDIO_DEVICE = 'wasapi-default'
+$env:OPENJARVIS_VOICE_AGENT = 'Jarvis Voice Operator V2'
 $env:OPENJARVIS_SPEECH_HOTWORDS = 'Jarvis'
 $env:OPENJARVIS_VOICE_REPO = $repo
+$env:JARVIS_NUM_CTX = '2048'
 
 $listenerPattern = 'openjarvis\.speech\.voice_control'
 $listenerRunning = $false
