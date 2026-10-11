@@ -1378,7 +1378,13 @@ def _direct_explicit_pr_merge(command: str) -> str | None:
         return "El pull request no aparece como fusionado despues de la operacion."
 
     url = str(merged.get("url", "")).strip() or str(pr.get("url", "")).strip()
-    return f"Pull request #{number} fusionado con squash y verificado: {url}"
+    sync = _direct_explicit_main_sync("vuelve a main y actualiza")
+    if sync is None:
+        sync = "No pude iniciar la sincronizacion local a main."
+    return (
+        f"Pull request #{number} fusionado con squash y verificado: {url}. "
+        f"{sync}"
+    )
 
 
 def _direct_explicit_main_sync(command: str) -> str | None:
