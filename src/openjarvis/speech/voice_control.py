@@ -954,6 +954,109 @@ def _direct_explicit_git_branch(command: str) -> str | None:
     return f"Rama creada y verificada: {branch}."
 
 
+def _direct_explicit_main_sync(command: str) -> str | None:
+    n = normalize(command)
+    if not any(
+        phrase in n
+        for phrase in (
+            "vuelve a main y actualiza",
+            "volver a main y actualizar",
+            "regresa a main y actualiza",
+            "regresar a main y actualizar",
+            "cambia a main y actualiza",
+        )
+    ):
+        return None
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 30,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=no"],
+        **common,
+    )
+    if dirty.returncode != 0:
+        return "No pude verificar el estado de Git antes de volver a main."
+    if dirty.stdout.strip():
+        return (
+            "Hay cambios versionados pendientes. No cambie de rama para evitar "
+            "perder contexto de trabajo."
+        )
+
+    branch_check = subprocess.run(
+        ["git", "show-ref", "--verify", "--quiet", "refs/heads/main"],
+        **common,
+    )
+    target = "main"
+    if branch_check.returncode == 1:
+        master_check = subprocess.run(
+            ["git", "show-ref", "--verify", "--quiet", "refs/heads/master"],
+            **common,
+        )
+        if master_check.returncode == 0:
+            target = "master"
+        else:
+            return "No encuentro una rama local main o master."
+    elif branch_check.returncode != 0:
+        return "No pude verificar la rama principal local."
+
+    switch = subprocess.run(
+        ["git", "switch", target],
+        **common,
+    )
+    if switch.returncode != 0:
+        return f"No pude cambiar a la rama {target}."
+
+    remote = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        **common,
+    )
+    if remote.returncode != 0 or not remote.stdout.strip():
+        return f"Volvi a {target}, pero no encuentro el remoto origin para actualizar."
+
+    fetch = subprocess.run(
+        ["git", "fetch", "origin", target],
+        **common,
+    )
+    if fetch.returncode != 0:
+        return f"Volvi a {target}, pero no pude actualizar desde origin."
+
+    merge = subprocess.run(
+        ["git", "merge", "--ff-only", f"origin/{target}"],
+        **common,
+    )
+    if merge.returncode != 0:
+        return (
+            f"Volvi a {target}, pero la actualizacion no fue fast-forward. "
+            "No hice merge automatico."
+        )
+
+    verify = subprocess.run(
+        ["git", "branch", "--show-current"],
+        **common,
+    )
+    current = verify.stdout.strip() if verify.returncode == 0 else ""
+    if current != target:
+        return f"No pude verificar que la rama activa sea {target}."
+
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        **common,
+    )
+    sha = head.stdout.strip() if head.returncode == 0 else ""
+    suffix = f" HEAD {sha}." if sha else ""
+    return f"Rama {target} activa y actualizada por fast-forward.{suffix}"
+
+
 def _direct_explicit_git_push(command: str) -> str | None:
     n = normalize(command)
     if not any(
@@ -1032,6 +1135,9 @@ def direct(command: str) -> str | None:
     branch_answer = _direct_explicit_git_branch(command)
     if branch_answer is not None:
         return branch_answer
+    main_sync_answer = _direct_explicit_main_sync(command)
+    if main_sync_answer is not None:
+        return main_sync_answer
     push_answer = _direct_explicit_git_push(command)
     if push_answer is not None:
         return push_answer

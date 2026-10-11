@@ -11,6 +11,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_git_branch,
     _direct_explicit_git_commit,
     _direct_explicit_git_push,
+    _direct_explicit_main_sync,
     _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -407,6 +408,80 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_main_sync_switches_and_fast_forwards(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result(0, ""),
+            Result(0, ""),
+            Result(0, ""),
+            Result(0, "origin-url\n"),
+            Result(0, ""),
+            Result(0, ""),
+            Result(0, "main\n"),
+            Result(0, "abc1234\n"),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_main_sync("vuelve a main y actualiza")
+
+    assert answer == (
+        "Rama main activa y actualizada por fast-forward. HEAD abc1234."
+    )
+    assert ["git", "switch", "main"] in calls
+    assert ["git", "merge", "--ff-only", "origin/main"] in calls
+
+
+def test_direct_explicit_main_sync_refuses_dirty_tracked_worktree(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = " M src/app.py\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_main_sync("regresa a main y actualiza")
+
+    assert answer == (
+        "Hay cambios versionados pendientes. No cambie de rama para evitar "
+        "perder contexto de trabajo."
+    )
 
 
 def test_direct_explicit_git_branch_creates_feature_from_main(
