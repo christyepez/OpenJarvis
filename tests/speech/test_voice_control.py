@@ -537,6 +537,10 @@ def test_direct_explicit_pr_merge_requires_clean_checks(
         "openjarvis.speech.voice_control.subprocess.run",
         fake_run,
     )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._direct_explicit_main_sync",
+        lambda command: "Rama main activa y actualizada por fast-forward. HEAD cafefeed.",
+    )
 
     answer = _direct_explicit_pr_merge(
         "fusiona el pr actual con squash"
@@ -544,7 +548,8 @@ def test_direct_explicit_pr_merge_requires_clean_checks(
 
     assert answer == (
         "Pull request #42 fusionado con squash y verificado: "
-        "https://github.com/example/repo/pull/42"
+        "https://github.com/example/repo/pull/42. "
+        "Rama main activa y actualizada por fast-forward. HEAD cafefeed."
     )
     assert calls[-2] == [
         "gh",
