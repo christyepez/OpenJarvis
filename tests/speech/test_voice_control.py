@@ -215,11 +215,11 @@ def test_autonomy_tool_specs_compact_start_process_schema() -> None:
 
 
 def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], dict]] = []
 
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.subprocess.run",
-        lambda args, **kwargs: calls.append(args),
+        lambda args, **kwargs: calls.append((args, kwargs)),
     )
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.MODEL",
@@ -232,10 +232,13 @@ def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:
 
     _prepare_autonomy_models()
 
-    assert ["ollama", "stop", "jarvis-voice:latest"] in calls
-    assert ["ollama", "stop", "granite-code:3b"] in calls
-    assert ["ollama", "stop", "llama3.2:1b"] not in calls
-    assert ["ollama", "stop", "qwen3.5:4b"] not in calls
+    commands = [args for args, _ in calls]
+    assert ["ollama", "stop", "jarvis-voice:latest"] in commands
+    assert ["ollama", "stop", "granite-code:3b"] in commands
+    assert ["ollama", "stop", "llama3.2:1b"] not in commands
+    assert ["ollama", "stop", "qwen3.5:4b"] not in commands
+    assert all(kwargs["encoding"] == "utf-8" for _, kwargs in calls)
+    assert all(kwargs["errors"] == "replace" for _, kwargs in calls)
 
 
 def test_resolve_audio_device_uses_system_default(monkeypatch) -> None:
