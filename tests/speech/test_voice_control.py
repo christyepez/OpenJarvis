@@ -430,19 +430,22 @@ def test_direct_explicit_file_edit_rejects_workspace_escape(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    outside = tmp_path.parent / "outside.txt"
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-edit.txt"
     outside.write_text("original", encoding="utf-8")
     monkeypatch.setattr(
         "openjarvis.speech.voice_control._repo_root",
         lambda: tmp_path,
     )
 
-    answer = _direct_explicit_file_edit(
-        "edita el archivo ../outside.txt y reemplaza el contenido por NOPE"
-    )
+    try:
+        answer = _direct_explicit_file_edit(
+            f"edita el archivo ../{outside.name} y reemplaza el contenido por NOPE"
+        )
 
-    assert answer == "No puedo editar archivos fuera del workspace de OpenJarvis."
-    assert outside.read_text(encoding="utf-8") == "original"
+        assert answer == "No puedo editar archivos fuera del workspace de OpenJarvis."
+        assert outside.read_text(encoding="utf-8") == "original"
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 def test_direct_explicit_file_edit_requires_existing_file(
