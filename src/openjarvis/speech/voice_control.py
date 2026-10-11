@@ -40,7 +40,7 @@ STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
 API_BASE = os.environ.get("OPENJARVIS_VOICE_API", "http://127.0.0.1:8000")
 MODEL = os.environ.get("OPENJARVIS_VOICE_MODEL", "qwen3.5:4b")
-AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", MODEL)
+AUTONOMY_MODEL = os.environ.get("OPENJARVIS_AUTONOMY_MODEL", "llama3.2:1b")
 VOICE_AGENT_NAME = os.environ.get("OPENJARVIS_VOICE_AGENT", "Jarvis Voice Operator V2")
 AUTONOMY_AGENT_NAME = os.environ.get(
     "OPENJARVIS_AUTONOMY_AGENT",
@@ -1102,12 +1102,12 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
 
 def _prepare_autonomy_models() -> None:
     """Free CPU/RAM from non-autonomy LLMs before a durable objective starts."""
+    protected_models = {AUTONOMY_MODEL, MODEL}
     other_models = {
-        MODEL,
         "jarvis-voice:latest",
         "llama3.2:1b",
         "granite-code:3b",
-    } - {AUTONOMY_MODEL}
+    } - protected_models
     for model in sorted(other_models):
         if not model:
             continue

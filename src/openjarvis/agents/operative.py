@@ -411,6 +411,40 @@ def _forced_continuation_start_call(
     }
 
 
+def _forced_explicit_readonly_start_call(
+    input_text: str,
+    openai_tools: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Force an explicitly named single read-only tool without LLM latency."""
+    available = [
+        str((tool.get("function") or {}).get("name") or "").strip()
+        for tool in openai_tools
+        if isinstance(tool, dict)
+    ]
+    if available != ["list_directory"]:
+        return None
+    if re.search(r"\blist_directory\b", input_text, re.IGNORECASE) is None:
+        return None
+
+    workspace = re.search(
+        r"EXACT WINDOWS WORKSPACE:\s*(.+?)\.\s+"
+        r"Use exact absolute Windows paths",
+        input_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if workspace is None:
+        return None
+    path = workspace.group(1).strip()
+    if not re.match(r"^[A-Za-z]:\\", path):
+        return None
+
+    return {
+        "id": "forced_explicit_readonly_start",
+        "name": "list_directory",
+        "arguments": json.dumps({"path": path}),
+    }
+
+
 def _uses_placeholder_path(arguments: str) -> bool:
     """Reject obvious example paths before an autonomous tool can execute them."""
     try:
@@ -559,12 +593,21 @@ class OperativeAgent(ToolUsingAgent):
         openai_tools = self._executor.get_openai_tools() if self._tools else []
         openai_tools = _continuation_tools(input, openai_tools)
         forced_start_call = _forced_continuation_start_call(input, openai_tools)
+        forced_readonly_start = False
+        if forced_start_call is None:
+            forced_start_call = _forced_explicit_readonly_start_call(
+                input,
+                openai_tools,
+            )
+            forced_readonly_start = forced_start_call is not None
+
         all_tool_results: list[ToolResult] = []
         turns = 0
         content = ""
         state_stored_by_tool = False
         missing_tool_retries = 0
         objective_superseded = False
+        deterministic_readonly_complete = False
         total_usage: dict[str, int] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -831,8 +874,16 @@ class OperativeAgent(ToolUsingAgent):
                         name=tc.name,
                     )
                 )
+                if (
+                    forced_readonly_start
+                    and tc.id == "forced_explicit_readonly_start"
+                    and tool_result.success
+                ):
+                    content = str(tool_result.content or "").strip()
+                    deterministic_readonly_complete = True
+                    break
 
-            if objective_superseded:
+            if objective_superseded or deterministic_readonly_complete:
                 break
         else:
             # Max turns exceeded

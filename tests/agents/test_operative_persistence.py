@@ -8,6 +8,7 @@ from openjarvis.agents.operative import (
     OperativeAgent,
     _continuation_tools,
     _forced_continuation_start_call,
+    _forced_explicit_readonly_start_call,
     _missing_parent_directory_call,
     _process_output_followup_call,
     _recover_text_tool_calls,
@@ -20,6 +21,30 @@ from openjarvis.agents.operative import (
 from openjarvis.sessions.session import SessionStore
 from openjarvis.tools._stubs import BaseTool, ToolSpec
 from openjarvis.core.types import ToolCall, ToolResult
+
+
+class _ListDirectoryTool(BaseTool):
+    tool_id = "list_directory"
+
+    @property
+    def spec(self) -> ToolSpec:
+        return ToolSpec(
+            name="list_directory",
+            description="List a directory.",
+            parameters={
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        )
+
+    def execute(self, **params) -> ToolResult:
+        path = str(params.get("path") or "")
+        return ToolResult(
+            tool_name="list_directory",
+            content=f"listed:{path}",
+            success=True,
+        )
 
 
 class _ProbeTool(BaseTool):
@@ -193,6 +218,60 @@ def test_forced_continuation_start_call_uses_explicit_command() -> None:
     args = json.loads(call["arguments"])
     assert args["command"] == "Set-Location 'C:\\repo'; pytest -q"
     assert args["timeout_ms"] == 120000
+
+
+def test_forced_explicit_readonly_list_directory_uses_workspace() -> None:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "list_directory"},
+        }
+    ]
+    prompt = (
+        r"NEW AUTONOMOUS OBJECTIVE. EXACT WINDOWS WORKSPACE: "
+        r"C:\Users\chris\source\repos\OpenJarvis. "
+        "Use exact absolute Windows paths from this instruction. "
+        "lista el contenido del workspace usando list_directory"
+    )
+
+    call = _forced_explicit_readonly_start_call(prompt, tools)
+
+    assert call is not None
+    assert call["name"] == "list_directory"
+    assert json.loads(call["arguments"])["path"] == (
+        r"C:\Users\chris\source\repos\OpenJarvis"
+    )
+
+
+def test_explicit_readonly_tool_finishes_without_model(monkeypatch) -> None:
+    agent = OperativeAgent(
+        object(),
+        "test-model",
+        tools=[_ListDirectoryTool()],
+        max_turns=2,
+    )
+    monkeypatch.setattr(
+        agent,
+        "_generate",
+        lambda messages, **kwargs: pytest.fail(
+            "explicit read-only tool should not call the model"
+        ),
+    )
+    prompt = (
+        r"NEW AUTONOMOUS OBJECTIVE. EXACT WINDOWS WORKSPACE: "
+        r"C:\Users\chris\source\repos\OpenJarvis. "
+        "Use exact absolute Windows paths from this instruction. "
+        "lista el contenido del workspace usando list_directory"
+    )
+
+    result = agent.run(prompt)
+
+    assert result.content == (
+        r"listed:C:\Users\chris\source\repos\OpenJarvis"
+    )
+    assert len(result.tool_results) == 1
+    assert result.tool_results[0].tool_name == "list_directory"
+    assert result.tool_results[0].success is True
 
 
 def test_protected_objective_path_blocks_explicit_target() -> None:

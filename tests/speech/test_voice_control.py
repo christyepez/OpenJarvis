@@ -223,14 +223,14 @@ def test_prepare_autonomy_models_unloads_competing_llms(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "openjarvis.speech.voice_control.AUTONOMY_MODEL",
-        "qwen3.5:4b",
+        "llama3.2:1b",
     )
 
     _prepare_autonomy_models()
 
     assert ["ollama", "stop", "jarvis-voice:latest"] in calls
-    assert ["ollama", "stop", "llama3.2:1b"] in calls
     assert ["ollama", "stop", "granite-code:3b"] in calls
+    assert ["ollama", "stop", "llama3.2:1b"] not in calls
     assert ["ollama", "stop", "qwen3.5:4b"] not in calls
 
 
@@ -551,7 +551,7 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["summary_memory"] == ""
     assert calls[0][1]["config"]["schedule_type"] == "interval"
     assert calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
-    assert calls[0][1]["config"]["model"] == "qwen3.5:4b"
+    assert calls[0][1]["config"]["model"] == "llama3.2:1b"
     assert calls[0][1]["config"]["max_output_tokens"] == 256
     assert "max_tokens" not in calls[0][1]["config"]
     assert calls[0][1]["config"]["num_ctx"] == 4096
