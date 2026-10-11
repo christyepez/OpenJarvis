@@ -764,11 +764,103 @@ def _direct_explicit_pytest(command: str) -> str | None:
     return f"Las pruebas fallaron. {summary}."
 
 
+def _direct_explicit_git_commit(command: str) -> str | None:
+    match = re.search(
+        r"(?is)\b(?:haz|hacer|crea|crear)?\s*(?:un\s+)?commit(?:\s+git)?"
+        r"(?:\s+de\s+los\s+cambios\s+versionados)?\s+"
+        r"con\s+(?:el\s+)?mensaje\s+(.+)$",
+        command.strip(),
+    )
+    if match is None:
+        return None
+
+    message = " ".join(match.group(1).strip().strip("\"'").split())
+    message = re.sub(
+        r"(?is)\s+y\s+no\s+(?:incluyas|agregues)\s+"
+        r"(?:archivos\s+)?no\s+rastre(?:ados|es)\s*$",
+        "",
+        message,
+    ).strip()
+
+    if not message:
+        return "Necesito un mensaje explicito para crear el commit."
+    if len(message) > 200:
+        return "El mensaje del commit es demasiado largo; usa hasta 200 caracteres."
+
+    repo = _repo_root().resolve()
+    common = {
+        "cwd": repo,
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 20,
+        "check": False,
+        "creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    }
+
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        **common,
+    )
+    if staged.returncode != 0:
+        return "No pude verificar el area staged de Git."
+    if staged.stdout.strip():
+        return (
+            "Hay cambios staged previos. No cree el commit para evitar "
+            "mezclar cambios existentes."
+        )
+
+    changed = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=ACDMRTUXB"],
+        **common,
+    )
+    if changed.returncode != 0:
+        return "No pude identificar los cambios versionados de Git."
+
+    paths = [line.strip() for line in changed.stdout.splitlines() if line.strip()]
+    if not paths:
+        return "No hay cambios versionados pendientes para crear un commit."
+
+    add = subprocess.run(
+        ["git", "add", "-u", "--", *paths],
+        **common,
+    )
+    if add.returncode != 0:
+        return "No pude preparar los cambios versionados para el commit."
+
+    commit = subprocess.run(
+        ["git", "commit", "-m", message],
+        **common,
+    )
+    if commit.returncode != 0:
+        subprocess.run(
+            ["git", "restore", "--staged", "--", *paths],
+            **common,
+        )
+        return "No pude crear el commit; restaure el area staged."
+
+    head = subprocess.run(
+        ["git", "rev-parse", "--short", "HEAD"],
+        **common,
+    )
+    sha = head.stdout.strip() if head.returncode == 0 else ""
+    suffix = f" Commit {sha}." if sha else ""
+    noun = "archivo versionado" if len(paths) == 1 else "archivos versionados"
+    return (
+        f"Commit creado con {len(paths)} {noun}. "
+        f"No agregue archivos no rastreados.{suffix}"
+    )
+
+
 def direct(command: str) -> str | None:
     n = normalize(command)
     pytest_answer = _direct_explicit_pytest(command)
     if pytest_answer is not None:
         return pytest_answer
+    commit_answer = _direct_explicit_git_commit(command)
+    if commit_answer is not None:
+        return commit_answer
     write_answer = _direct_explicit_file_write(command)
     if write_answer is not None:
         return write_answer

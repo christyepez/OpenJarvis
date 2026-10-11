@@ -8,6 +8,7 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_file_delete,
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
+    _direct_explicit_git_commit,
     _direct_explicit_pytest,
     _autonomy_tool_allowlist,
     _autonomy_tool_specs,
@@ -404,6 +405,118 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert wait_for_wake(Detector()) == 0.25
     assert attempts == [3, 0]
 
+
+
+def test_direct_explicit_git_commit_stages_only_tracked_changes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+    calls: list[list[str]] = []
+
+    class Result:
+        def __init__(self, returncode=0, stdout=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter(
+        [
+            Result(0, ""),
+            Result(0, "src/app.py\ntests/test_app.py\n"),
+            Result(0, ""),
+            Result(0, ""),
+            Result(0, "abc1234\n"),
+        ]
+    )
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return next(responses)
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        fake_run,
+    )
+
+    answer = _direct_explicit_git_commit(
+        "haz un commit de los cambios versionados con mensaje mejora segura "
+        "y no incluyas archivos no rastreados"
+    )
+
+    assert answer == (
+        "Commit creado con 2 archivos versionados. "
+        "No agregue archivos no rastreados. Commit abc1234."
+    )
+    assert calls[0] == ["git", "diff", "--cached", "--name-only"]
+    assert calls[1] == [
+        "git", "diff", "--name-only", "--diff-filter=ACDMRTUXB"
+    ]
+    assert calls[2] == [
+        "git", "add", "-u", "--", "src/app.py", "tests/test_app.py"
+    ]
+    assert calls[3] == ["git", "commit", "-m", "mejora segura"]
+    assert calls[4] == ["git", "rev-parse", "--short", "HEAD"]
+
+
+def test_direct_explicit_git_commit_refuses_existing_staged_changes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        returncode = 0
+        stdout = "src/already_staged.py\n"
+        stderr = ""
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: Result(),
+    )
+
+    answer = _direct_explicit_git_commit(
+        "crea un commit con mensaje no mezclar"
+    )
+
+    assert answer == (
+        "Hay cambios staged previos. No cree el commit para evitar "
+        "mezclar cambios existentes."
+    )
+
+
+def test_direct_explicit_git_commit_ignores_untracked_only_repo(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: tmp_path,
+    )
+
+    class Result:
+        def __init__(self, stdout=""):
+            self.returncode = 0
+            self.stdout = stdout
+            self.stderr = ""
+
+    responses = iter([Result(""), Result("")])
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.subprocess.run",
+        lambda *args, **kwargs: next(responses),
+    )
+
+    answer = _direct_explicit_git_commit(
+        "haz commit con mensaje solo untracked"
+    )
+
+    assert answer == "No hay cambios versionados pendientes para crear un commit."
 
 
 def test_direct_explicit_pytest_runs_only_inside_tests(
