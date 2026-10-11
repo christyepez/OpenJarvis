@@ -899,6 +899,56 @@ def direct(command: str) -> str | None:
             + f". Pendientes: {preview}{suffix}."
         )
 
+    if any(
+        phrase in n
+        for phrase in (
+            "resume los cambios git",
+            "resumir los cambios git",
+            "revisa el diff",
+            "revisar el diff",
+            "git diff",
+            "que cambio en git",
+        )
+    ):
+        repo = _repo_root()
+        proc = subprocess.run(
+            ["git", "diff", "--name-status", "HEAD"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if proc.returncode != 0:
+            return "No pude revisar el diff de Git."
+        lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+        if not lines:
+            return "No hay diferencias versionadas pendientes en Git."
+
+        changes: list[str] = []
+        for line in lines[:8]:
+            parts = line.split("\t", 1)
+            status = parts[0].strip()
+            path = parts[1].strip() if len(parts) > 1 else ""
+            label = {
+                "M": "modificado",
+                "A": "agregado",
+                "D": "eliminado",
+                "R": "renombrado",
+            }.get(status[:1], status)
+            changes.append(f"{path} ({label})" if path else label)
+
+        suffix = "" if len(lines) <= 8 else f", y {len(lines) - 8} mas"
+        return (
+            f"Git tiene diferencias en {len(lines)} archivos versionados: "
+            + ", ".join(changes)
+            + suffix
+            + "."
+        )
+
     if "estado git" in n or "git status" in n:
         repo = _repo_root()
         proc = subprocess.run(
