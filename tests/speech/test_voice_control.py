@@ -2174,7 +2174,9 @@ def test_queue_autonomy_v2_dispatches_persistent_voice_task(monkeypatch) -> None
     def fake_api(path, payload=None, timeout=120, method=None):
         if path == "/v1/autonomy/status":
             return {
+                "ready": True,
                 "n8nConfigured": True,
+                "n8nResultCallbackConfigured": True,
                 "managedRuntimeAvailable": True,
             }
         captured["path"] = path
@@ -2285,7 +2287,10 @@ def test_queue_autonomy_v2_skips_dispatch_when_n8n_not_ready(monkeypatch) -> Non
     def fake_api(path, payload=None, timeout=120, method=None):
         calls.append(path)
         return {
-            "n8nConfigured": False,
+            "ready": False,
+            "blockers": ["n8n-result-not-configured"],
+            "n8nConfigured": True,
+            "n8nResultCallbackConfigured": False,
             "managedRuntimeAvailable": True,
         }
 
