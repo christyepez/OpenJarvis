@@ -30,7 +30,7 @@ $health = Invoke-JarvisRequest -Method GET -Uri "$OpenJarvisBaseUrl/health"
 if ($health.status -ne 'ok') { throw 'OpenJarvis health is not ok.' }
 
 Write-Host '[smoke] n8n reachability'
-$n8n = Invoke-WebRequest -Uri "$N8nBaseUrl/" -UseBasicParsing -TimeoutSec 10
+$n8n = Invoke-WebRequest -Uri "$N8nBaseUrl/healthz" -UseBasicParsing -TimeoutSec 10
 if ($n8n.StatusCode -lt 200 -or $n8n.StatusCode -ge 500) {
     throw "n8n returned status $($n8n.StatusCode)."
 }
