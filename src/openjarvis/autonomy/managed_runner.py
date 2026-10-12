@@ -201,12 +201,28 @@ class ManagedAutonomyRunner:
             workspace=workspace,
             runtime_device_id=runtime_device_id,
         )
+        context_allowlist = record.context.get("mcpToolAllowlist")
+        if isinstance(context_allowlist, list) and context_allowlist:
+            config["mcp_tool_allowlist"] = [
+                str(name) for name in context_allowlist if str(name).strip()
+            ]
+
+        evidence_requirements = record.context.get(
+            "completionEvidenceRequirements"
+        )
+        if not isinstance(evidence_requirements, list):
+            evidence_requirements = []
+
         config.update(
             {
                 "active_objective": record.goal,
                 "objective_token": uuid4().hex,
                 "external_task_id": record.task_id,
-                "completion_evidence_requirements": [],
+                "completion_evidence_requirements": [
+                    str(item)
+                    for item in evidence_requirements
+                    if str(item).strip()
+                ],
                 "completion_evidence_observed": [],
                 "completion_tool_evidence_seen": False,
                 "completion_followup_count": 0,
