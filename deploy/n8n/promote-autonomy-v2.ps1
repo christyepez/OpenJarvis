@@ -37,12 +37,12 @@ if (-not $SkipBootstrap) {
 Write-Host '[promote] Running focused Autonomy V2 test suite'
 Push-Location $RepoRoot
 try {
-    uv run pytest tests/autonomy tests/server/test_autonomy_routes.py -q --tb=short
+    uv run pytest tests/autonomy tests/server/test_autonomy_routes.py tests/speech/test_voice_control.py -q --tb=short
     if ($LASTEXITCODE -ne 0) {
         throw 'Autonomy V2 focused tests failed.'
     }
 
-    uv run ruff check src/openjarvis/autonomy src/openjarvis/server/autonomy_routes.py tests/autonomy tests/server/test_autonomy_routes.py
+    uv run ruff check src/openjarvis/autonomy src/openjarvis/server/autonomy_routes.py src/openjarvis/speech/voice_control.py tests/autonomy tests/server/test_autonomy_routes.py tests/speech/test_voice_control.py
     if ($LASTEXITCODE -ne 0) {
         throw 'Autonomy V2 lint gate failed.'
     }
