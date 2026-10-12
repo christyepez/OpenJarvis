@@ -1345,7 +1345,10 @@ def include_all_routes(app) -> None:
         router as approval_router,  # noqa: PLC0415
     )
 
+    from openjarvis.server.autonomy_routes import create_autonomy_router  # noqa: PLC0415
+
     app.include_router(approval_router)
+    app.include_router(create_autonomy_router())
     app.include_router(agents_router)
     app.include_router(memory_router)
     app.include_router(traces_router)
