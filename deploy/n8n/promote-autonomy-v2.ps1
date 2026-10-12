@@ -1,0 +1,76 @@
+param(
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+    [switch]$SkipBootstrap,
+    [switch]$CreateCommit
+)
+
+$ErrorActionPreference = 'Stop'
+$versionFile = Join-Path $RepoRoot 'src\openjarvis\autonomy\version.py'
+$bootstrap = Join-Path $PSScriptRoot 'bootstrap-autonomy-v2.ps1'
+
+function Assert-CleanPromotionScope {
+    $dirty = git -C $RepoRoot status --porcelain
+    if ($LASTEXITCODE -ne 0) { throw 'git status failed.' }
+    if ($dirty) {
+        throw 'Stable promotion requires a clean working tree.'
+    }
+}
+
+function Assert-ReleaseCandidate {
+    $content = Get-Content $versionFile -Raw
+    if ($content -notmatch 'AUTONOMY_V2_VERSION\s*=\s*"2\.0\.0-rc[0-9]+"') {
+        throw 'Current Autonomy V2 version is not a 2.0.0 release candidate.'
+    }
+}
+
+Assert-CleanPromotionScope
+Assert-ReleaseCandidate
+
+if (-not $SkipBootstrap) {
+    Write-Host '[promote] Running real Autonomy V2 bootstrap + smoke gate'
+    & $bootstrap
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Autonomy V2 bootstrap gate failed.'
+    }
+}
+
+Write-Host '[promote] Running focused Autonomy V2 test suite'
+Push-Location $RepoRoot
+try {
+    uv run pytest tests/autonomy tests/server/test_autonomy_routes.py -q --tb=short
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Autonomy V2 focused tests failed.'
+    }
+
+    uv run ruff check src/openjarvis/autonomy src/openjarvis/server/autonomy_routes.py tests/autonomy tests/server/test_autonomy_routes.py
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Autonomy V2 lint gate failed.'
+    }
+
+    docker compose -f deploy/n8n/docker-compose.yml config | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'n8n compose validation failed.'
+    }
+
+    Write-Host '[promote] All stable gates passed; updating version to 2.0.0'
+    Set-Content -Path $versionFile -Value 'AUTONOMY_V2_VERSION = "2.0.0"' -Encoding UTF8
+
+    git diff --check
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git diff --check failed after version promotion.'
+    }
+
+    if ($CreateCommit) {
+        git add -- $versionFile
+        git commit -m 'release: promote Autonomy V2 to 2.0.0'
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Stable promotion commit failed.'
+        }
+        Write-Host '[promote] AUTONOMY_V2_STABLE_COMMIT=PASS'
+    }
+}
+finally {
+    Pop-Location
+}
+
+Write-Host '[promote] AUTONOMY_V2_STABLE=PASS'
