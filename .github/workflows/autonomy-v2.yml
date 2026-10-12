@@ -1,6 +1,7 @@
 name: Autonomy V2
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:

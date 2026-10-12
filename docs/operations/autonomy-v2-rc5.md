@@ -29,3 +29,10 @@ AUTONOMY_V2_BOOTSTRAP=PASS
 ```
 
 The smoke must use real tools and must not modify files.
+
+
+## CI fallback
+
+The focused workflow `.github/workflows/autonomy-v2.yml` also supports
+`workflow_dispatch`. If push/PR-triggered Actions are disabled in the fork,
+run **Autonomy V2** manually from the repository Actions tab before stable promotion.
