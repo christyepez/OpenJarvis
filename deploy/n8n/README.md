@@ -83,3 +83,23 @@ Example task:
   "approval": "risk_based"
 }
 ```
+
+
+## End-to-end smoke
+
+After n8n is running, the workflow is active, and OpenJarvis was started with
+`OPENJARVIS_N8N_WEBHOOK_URL`, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\smoke-autonomy.ps1 `
+  -RuntimeDeviceId "<desktop-commander-device-id>"
+```
+
+The smoke objective is read-only. It requests a real directory verification and
+fails unless the persisted Autonomy V2 task reaches `completed`.
+
+Expected final marker:
+
+```text
+AUTONOMY_V2_SMOKE=PASS
+```
