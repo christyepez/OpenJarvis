@@ -42,7 +42,7 @@ try {
         throw 'Autonomy V2 focused tests failed.'
     }
 
-    uv run ruff check src/openjarvis/autonomy src/openjarvis/server/autonomy_routes.py tests/autonomy tests/server/test_autonomy_routes.py
+    uv run ruff check src/openjarvis/autonomy src/openjarvis/server/autonomy_routes.py src/openjarvis/speech/voice_control.py tests/autonomy tests/server/test_autonomy_routes.py tests/speech/test_voice_control.py
     if ($LASTEXITCODE -ne 0) {
         throw 'Autonomy V2 lint gate failed.'
     }
