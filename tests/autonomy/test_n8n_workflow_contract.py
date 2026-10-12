@@ -20,6 +20,8 @@ def test_n8n_workflow_contains_required_autonomy_nodes() -> None:
         "Accept Task",
         "Callback OpenJarvis",
         "Start Managed Execution",
+        "Jarvis Result Webhook",
+        "Acknowledge Jarvis Result",
     }.issubset(names)
 
 
@@ -72,3 +74,22 @@ def test_n8n_workflow_uses_explicit_normalized_task_references() -> None:
     assert "$('Normalize Jarvis Task').item.json.callbackUrl" in callback["parameters"]["url"]
     assert "$('Normalize Jarvis Task').item.json.taskId" in callback["parameters"]["body"]
     assert "$('Normalize Jarvis Task').item.json.taskId" in execute["parameters"]["url"]
+
+
+def test_n8n_workflow_exposes_result_webhook() -> None:
+    workflow = _workflow()
+    result_node = next(
+        node
+        for node in workflow["nodes"]
+        if node["name"] == "Jarvis Result Webhook"
+    )
+    assert result_node["parameters"]["path"] == "jarvis/result"
+
+    targets = workflow["connections"]["Jarvis Result Webhook"]["main"][0]
+    assert targets == [
+        {
+            "node": "Acknowledge Jarvis Result",
+            "type": "main",
+            "index": 0,
+        }
+    ]
