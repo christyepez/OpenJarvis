@@ -73,6 +73,30 @@
         720,
         0
       ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OPENJARVIS_BASE_URL + '/v1/autonomy/tasks/' + $json.taskId + '/execute' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.OPENJARVIS_API_KEY ? 'Bearer ' + $env.OPENJARVIS_API_KEY : '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5",
+      "name": "Start Managed Execution",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ]
     }
   ],
   "pinData": {},
@@ -109,13 +133,24 @@
           }
         ]
       ]
+    },
+    "Callback OpenJarvis": {
+      "main": [
+        [
+          {
+            "node": "Start Managed Execution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "00000000-0000-4000-8000-000000000001",
+  "versionId": "00000000-0000-4000-8000-000000000002",
   "meta": {
     "templateCredsSetupCompleted": true
   },
