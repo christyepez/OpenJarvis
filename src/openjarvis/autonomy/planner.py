@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Any
 
 
@@ -26,6 +27,7 @@ class AutonomyPlan:
 
 _CODE_MARKERS = {
     "repo",
+    "openjarvis",
     "repository",
     "repositorio",
     "codigo",
@@ -176,4 +178,14 @@ def _classify(normalized: str) -> str:
 
 
 def _contains_any(text: str, markers: set[str]) -> bool:
-    return any(marker in text for marker in markers)
+    words = set(re.findall(r"[a-z0-9áéíóúüñ]+", text, flags=re.IGNORECASE))
+    for marker in markers:
+        normalized = marker.strip().lower()
+        if not normalized:
+            continue
+        if " " in normalized:
+            if normalized in text:
+                return True
+        elif normalized in words:
+            return True
+    return False
