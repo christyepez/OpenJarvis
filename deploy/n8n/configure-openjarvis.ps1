@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
     'User'
 )
 $env:OPENJARVIS_N8N_WEBHOOK_URL = $WebhookUrl
+
 [Environment]::SetEnvironmentVariable(
     'OPENJARVIS_N8N_RESULT_WEBHOOK_URL',
     $ResultWebhookUrl,
@@ -21,43 +22,43 @@ $env:OPENJARVIS_N8N_RESULT_WEBHOOK_URL = $ResultWebhookUrl
 
 if (Test-Path $RuntimeCmd) {
     $content = Get-Content $RuntimeCmd -Raw
-    $line = "set `"OPENJARVIS_N8N_WEBHOOK_URL=$WebhookUrl`""
+    $taskLine = "set `"OPENJARVIS_N8N_WEBHOOK_URL=$WebhookUrl`""
     $resultLine = "set `"OPENJARVIS_N8N_RESULT_WEBHOOK_URL=$ResultWebhookUrl`""
-    if ($content -match '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"\r?$') {
+
+    if ($content -match '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"?$') {
         $content = [regex]::Replace(
             $content,
-            '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"\r?$',
-            $line
+            '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"?$',
+            $taskLine
         )
-    } elseif ($content -match '(?m)^set "JARVIS_NUM_CTX=.*"\r?$') {
+    } elseif ($content -match '(?m)^set "JARVIS_NUM_CTX=.*"?$') {
         $content = [regex]::Replace(
             $content,
-            '(?m)^(set "JARVIS_NUM_CTX=.*"\r?$)',
-            "`$1`r`n$line",
+            '(?m)^(set "JARVIS_NUM_CTX=.*"?$)',
+            "`$1`r`n$taskLine",
             1
         )
     } else {
-        $content = $content.TrimEnd() + "`r`n$line`r`n"
+        $content = $content.TrimEnd() + "`r`n$taskLine`r`n"
     }
-    if ($content -match '(?m)^set "OPENJARVIS_N8N_RESULT_WEBHOOK_URL=.*"\r?Write-Host '[n8n] OpenJarvis runtime environment configured.'
-) {
+
+    if ($content -match '(?m)^set "OPENJARVIS_N8N_RESULT_WEBHOOK_URL=.*"?$') {
         $content = [regex]::Replace(
             $content,
-            '(?m)^set "OPENJARVIS_N8N_RESULT_WEBHOOK_URL=.*"\r?Write-Host '[n8n] OpenJarvis runtime environment configured.'
-,
+            '(?m)^set "OPENJARVIS_N8N_RESULT_WEBHOOK_URL=.*"?$',
             $resultLine
         )
-    } elseif ($content -match '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"\r?Write-Host '[n8n] OpenJarvis runtime environment configured.'
-) {
+    } elseif ($content -match '(?m)^set "OPENJARVIS_N8N_WEBHOOK_URL=.*"?$') {
         $content = [regex]::Replace(
             $content,
-            '(?m)^(set "OPENJARVIS_N8N_WEBHOOK_URL=.*"\r?$)',
+            '(?m)^(set "OPENJARVIS_N8N_WEBHOOK_URL=.*"?$)',
             "`$1`r`n$resultLine",
             1
         )
     } else {
         $content = $content.TrimEnd() + "`r`n$resultLine`r`n"
     }
+
     Set-Content -Path $RuntimeCmd -Value $content -Encoding ASCII
 }
 
