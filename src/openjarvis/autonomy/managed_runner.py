@@ -91,6 +91,66 @@ class ManagedAutonomyRunner:
             message_id=str(message["id"]),
         )
 
+    def resume(self, record: TaskRecord) -> ManagedRunHandle:
+        """Resume a previously started task without duplicating its objective."""
+        context = dict(record.context)
+        agent_id = str(context.get("managedAgentId") or "").strip()
+        managed_task_id = str(context.get("managedTaskId") or "").strip()
+        message_id = str(context.get("managedMessageId") or "").strip()
+
+        if not agent_id or self.manager.get_agent(agent_id) is None:
+            return self.start(record)
+
+        agent = self.manager.get_agent(agent_id) or {}
+        status = str(agent.get("status") or "idle")
+        if status == "paused":
+            messages = self.manager.list_messages(agent_id, limit=20)
+            latest = next(
+                (
+                    message
+                    for message in messages
+                    if message.get("direction") == "agent_to_user"
+                ),
+                None,
+            )
+            if latest and "AUTONOMY_DONE" in str(latest.get("content") or ""):
+                self._mark_completed(
+                    record.task_id,
+                    agent_id,
+                    int(context.get("managedCycle") or 0),
+                )
+                return ManagedRunHandle(
+                    task_id=record.task_id,
+                    agent_id=agent_id,
+                    managed_task_id=managed_task_id,
+                    message_id=message_id,
+                )
+            self.manager.resume_agent(agent_id)
+        elif status in TERMINAL_AGENT_FAILURES:
+            self.manager.recover_agent(agent_id)
+
+        self.store.update(
+            record.task_id,
+            status="running",
+            checkpoint="managed-agent-resuming",
+            context=context,
+            error="",
+        )
+
+        from openjarvis.server.agent_manager_routes import _start_managed_worker
+
+        _start_managed_worker(
+            self.app_state,
+            lambda: self._run_until_terminal(record.task_id, agent_id),
+            name=f"autonomy-v2-resume:{record.task_id}:{agent_id}",
+        )
+        return ManagedRunHandle(
+            task_id=record.task_id,
+            agent_id=agent_id,
+            managed_task_id=managed_task_id,
+            message_id=message_id,
+        )
+
     def _ensure_agent(self, record: TaskRecord) -> dict[str, Any]:
         compact = record.task_id.replace("-", "")[:16]
         agent_id = f"autv2-{compact}"
