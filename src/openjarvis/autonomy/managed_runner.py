@@ -49,13 +49,29 @@ class ManagedAutonomyRunner:
             description=f"[AutonomyV2:{record.task_id}] {record.goal}",
             status="pending",
         )
+        plan = record.context.get("autonomyPlan")
+        plan_text = ""
+        if isinstance(plan, dict):
+            raw_steps = plan.get("steps")
+            if isinstance(raw_steps, list):
+                titles = [
+                    str(step.get("title") or "").strip()
+                    for step in raw_steps
+                    if isinstance(step, dict) and str(step.get("title") or "").strip()
+                ]
+                if titles:
+                    plan_text = " Planned stages: " + " -> ".join(titles) + "."
+
         message = self.manager.send_message(
             agent_id,
             (
                 "NEW AUTONOMOUS OBJECTIVE. "
                 f"External task id: {record.task_id}. "
                 "Execute this objective to verified completion: "
-                f"{record.goal}"
+                f"{record.goal}."
+                f"{plan_text} "
+                "Use checkpoints between stages and do not emit AUTONOMY_DONE "
+                "until verification is complete."
             ),
             mode="queued",
         )

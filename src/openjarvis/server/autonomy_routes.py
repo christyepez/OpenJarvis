@@ -13,6 +13,7 @@ from openjarvis.autonomy import (
     TaskStore,
     apply_n8n_callback,
 )
+from openjarvis.autonomy.planner import build_autonomy_plan
 from openjarvis.autonomy.task_store import default_task_store_path
 
 
@@ -58,6 +59,10 @@ def create_autonomy_router() -> APIRouter:
             context = {}
         if not isinstance(context, dict):
             raise HTTPException(status_code=400, detail="context must be an object")
+
+        plan = build_autonomy_plan(goal)
+        context = dict(context)
+        context.setdefault("autonomyPlan", plan.as_dict())
 
         task = N8nTaskRequest(
             goal=goal,
