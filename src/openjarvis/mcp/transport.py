@@ -100,6 +100,8 @@ class StdioTransport(MCPTransport):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         self._reader_thread = threading.Thread(
             target=self._read_stdout,
