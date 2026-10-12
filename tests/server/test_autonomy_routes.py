@@ -238,3 +238,93 @@ def test_autonomy_status_reports_runtime_readiness(
         "managedRuntimeAvailable": True,
         "resumableTasks": 0,
     }
+
+
+def test_high_risk_task_waits_for_approval_before_dispatch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    class CountingDispatcher(FakeDispatcher):
+        def dispatch(self, request):
+            calls.append(request.task_id)
+            return super().dispatch(request)
+
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "openjarvis.server.autonomy_routes.N8nDispatcher",
+        CountingDispatcher,
+    )
+
+    response = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "Despliega esta version a produccion"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "blocked"
+    assert body["checkpoint"] == "approval-required"
+    assert body["context"]["autonomyApproval"]["required"] is True
+    assert body["context"]["autonomyApproval"]["state"] == "required"
+    assert calls == []
+
+
+def test_approve_releases_high_risk_task_to_n8n(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "Haz merge a main"},
+    ).json()
+
+    response = client.post(
+        f"/v1/autonomy/tasks/{created['taskId']}/approve"
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["context"]["autonomyApproval"]["state"] == "approved"
+    assert body["context"]["n8nExecutionId"] == "exec-1"
+
+
+def test_execute_cannot_bypass_pending_approval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "Elimina los archivos temporales"},
+    ).json()
+
+    response = client.post(
+        f"/v1/autonomy/tasks/{created['taskId']}/execute"
+    )
+
+    assert response.status_code == 409
+    assert "requires approval" in response.json()["detail"]
+
+
+def test_never_policy_allows_sensitive_goal_without_gate(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/v1/autonomy/tasks",
+        json={
+            "goal": "Despliega esta version a produccion",
+            "approval": "never",
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["context"]["autonomyApproval"]["required"] is False
