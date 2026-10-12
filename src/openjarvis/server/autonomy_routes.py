@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from openjarvis.autonomy import (
+    ManagedAutonomyRunner,
     N8nCallbackError,
     N8nDispatcher,
     N8nDispatchError,
@@ -126,6 +127,57 @@ def create_autonomy_router() -> APIRouter:
             context=merged_context,
         )
         return _record_to_dict(record)
+
+    @router.post("/tasks/{task_id}/execute", status_code=202)
+    async def execute_task(task_id: str, request: Request) -> dict[str, Any]:
+        store = _get_store(request)
+        record = store.get(task_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        if record.status in {"completed", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"task is already terminal: {record.status}",
+            )
+        if (
+            record.status == "running"
+            and record.context.get("managedAgentId")
+            and record.checkpoint != "managed-max-cycles-reached"
+        ):
+            raise HTTPException(status_code=409, detail="task is already running")
+
+        manager = getattr(request.app.state, "agent_manager", None)
+        if manager is None:
+            raise HTTPException(
+                status_code=503,
+                detail="managed-agent runtime is not available",
+            )
+
+        runner = ManagedAutonomyRunner(
+            manager=manager,
+            app_state=request.app.state,
+            store=store,
+        )
+        try:
+            handle = runner.start(record)
+        except Exception as exc:
+            store.update(
+                task_id,
+                status="failed",
+                checkpoint="managed-runner-start-failed",
+                error=str(exc),
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        current = store.get(task_id)
+        assert current is not None
+        body = _record_to_dict(current)
+        body["managed"] = {
+            "agentId": handle.agent_id,
+            "taskId": handle.managed_task_id,
+            "messageId": handle.message_id,
+        }
+        return body
 
     @router.post("/callback")
     async def n8n_callback(request: Request) -> dict[str, Any]:
