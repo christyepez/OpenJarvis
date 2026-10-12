@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+def default_task_store_path() -> Path:
+    configured = os.getenv("OPENJARVIS_AUTONOMY_DB", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".openjarvis" / "autonomy.db"
+
 
 VALID_STATUSES = {
     "pending",
