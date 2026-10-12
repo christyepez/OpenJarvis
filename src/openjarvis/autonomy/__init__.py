@@ -11,6 +11,7 @@ from .n8n import N8nDispatcher, N8nDispatchError, N8nTaskRequest, N8nTaskRespons
 from .planner import AutonomyPlan, PlanStep, build_autonomy_plan
 from .recovery import RecoverySummary, recover_autonomy_tasks
 from .task_store import TaskRecord, TaskStore
+from .version import AUTONOMY_V2_VERSION
 
 __all__ = [
     "ManagedAutonomyRunner",
@@ -21,6 +22,7 @@ __all__ = [
     "N8nDispatchError",
     "N8nTaskRequest",
     "N8nTaskResponse",
+    "AUTONOMY_V2_VERSION",
     "AutonomyPlan",
     "PlanStep",
     "RecoverySummary",

@@ -221,3 +221,20 @@ def test_execute_task_requires_managed_runtime(tmp_path: Path, monkeypatch) -> N
     )
 
     assert response.status_code == 503
+
+
+def test_autonomy_status_reports_runtime_readiness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.get("/v1/autonomy/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "version": "2.0.0-rc1",
+        "n8nConfigured": True,
+        "managedRuntimeAvailable": True,
+        "resumableTasks": 0,
+    }
