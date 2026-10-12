@@ -10,6 +10,8 @@ def test_stable_promotion_requires_runtime_and_quality_gates() -> None:
     )
 
     assert "bootstrap-autonomy-v2.ps1" in script
+    assert "[string]$RuntimeDeviceId = ''" in script
+    assert "& $bootstrap -RuntimeDeviceId $RuntimeDeviceId" in script
     assert "tests/autonomy" in script
     assert "test_autonomy_routes.py" in script
     assert "ruff check" in script
@@ -25,8 +27,8 @@ def test_stable_promotion_requires_clean_tree_and_rc_source() -> None:
         encoding="utf-8"
     )
 
-    assert "git -C $RepoRoot status --porcelain" in script
-    assert "2\.0\.0-rc" in script
+    assert "git -C $RepoRoot status --porcelain --untracked-files=no" in script
+    assert "2\\.0\\.0-rc" in script
     assert "Stable promotion requires a clean working tree." in script
 
 
