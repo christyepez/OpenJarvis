@@ -1,5 +1,6 @@
 """Autonomy V2 integration primitives."""
 
+from .approval import ApprovalAssessment, assess_approval
 from .callback import (
     N8nCallbackError,
     N8nCallbackEvent,
@@ -23,12 +24,14 @@ __all__ = [
     "N8nTaskRequest",
     "N8nTaskResponse",
     "AUTONOMY_V2_VERSION",
+    "ApprovalAssessment",
     "AutonomyPlan",
     "PlanStep",
     "RecoverySummary",
     "TaskRecord",
     "TaskStore",
     "apply_n8n_callback",
+    "assess_approval",
     "build_autonomy_plan",
     "parse_n8n_callback",
     "recover_autonomy_tasks",
