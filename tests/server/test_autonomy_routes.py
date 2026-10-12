@@ -228,16 +228,22 @@ def test_autonomy_status_reports_runtime_readiness(
     monkeypatch,
 ) -> None:
     client = _client(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        "OPENJARVIS_N8N_RESULT_WEBHOOK_URL",
+        "http://127.0.0.1:5678/webhook/jarvis/result",
+    )
 
     response = client.get("/v1/autonomy/status")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "version": "2.0.0-rc1",
-        "n8nConfigured": True,
-        "managedRuntimeAvailable": True,
-        "resumableTasks": 0,
-    }
+    body = response.json()
+    assert body["version"].startswith("2.0.0-")
+    assert body["ready"] is True
+    assert body["blockers"] == []
+    assert body["n8nConfigured"] is True
+    assert body["n8nResultCallbackConfigured"] is True
+    assert body["managedRuntimeAvailable"] is True
+    assert body["resumableTasks"] == 0
 
 
 def test_high_risk_task_waits_for_approval_before_dispatch(
@@ -364,6 +370,7 @@ def test_autonomy_status_lists_runtime_blockers(
     monkeypatch,
 ) -> None:
     client = _client(tmp_path, monkeypatch)
+    monkeypatch.delenv("OPENJARVIS_N8N_RESULT_WEBHOOK_URL", raising=False)
     client.app.state.agent_manager = None
 
     class DisabledDispatcher:
