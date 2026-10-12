@@ -14,6 +14,7 @@ services:
       WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
       OPENJARVIS_BASE_URL: ${OPENJARVIS_BASE_URL:-http://host.docker.internal:8000}
       OPENJARVIS_API_KEY: ${OPENJARVIS_API_KEY:-}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: ${N8N_BLOCK_ENV_ACCESS_IN_NODE:-false}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
