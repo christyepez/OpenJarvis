@@ -2172,6 +2172,11 @@ def test_queue_autonomy_v2_dispatches_persistent_voice_task(monkeypatch) -> None
     )
 
     def fake_api(path, payload=None, timeout=120, method=None):
+        if path == "/v1/autonomy/status":
+            return {
+                "n8nConfigured": True,
+                "managedRuntimeAvailable": True,
+            }
         captured["path"] = path
         captured["payload"] = payload
         return {
@@ -2212,9 +2217,13 @@ def test_queue_autonomy_v2_reports_approval_required(monkeypatch) -> None:
         "openjarvis.speech.voice_control._runtime_device_id",
         lambda: "",
     )
-    monkeypatch.setattr(
-        "openjarvis.speech.voice_control.api",
-        lambda *args, **kwargs: {
+    def fake_api(path, payload=None, timeout=120, method=None):
+        if path == "/v1/autonomy/status":
+            return {
+                "n8nConfigured": True,
+                "managedRuntimeAvailable": True,
+            }
+        return {
             "taskId": "abcdef12-aaaa-bbbb-cccc-1234567890ab",
             "status": "blocked",
             "context": {
@@ -2223,7 +2232,11 @@ def test_queue_autonomy_v2_reports_approval_required(monkeypatch) -> None:
                     "state": "required",
                 }
             },
-        },
+        }
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        fake_api,
     )
 
     answer = _queue_autonomy_v2("despliega a produccion")
@@ -2264,3 +2277,19 @@ def test_autonomous_falls_back_when_v2_unavailable(monkeypatch) -> None:
     )
 
     assert autonomous("continua con la implementacion") == "legacy queued"
+
+
+def test_queue_autonomy_v2_skips_dispatch_when_n8n_not_ready(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        calls.append(path)
+        return {
+            "n8nConfigured": False,
+            "managedRuntimeAvailable": True,
+        }
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    assert _queue_autonomy_v2("continua con el trabajo") is None
+    assert calls == ["/v1/autonomy/status"]
