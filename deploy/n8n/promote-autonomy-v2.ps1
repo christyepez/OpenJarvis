@@ -1,5 +1,6 @@
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+    [string]$RuntimeDeviceId = '',
     [switch]$SkipBootstrap,
     [switch]$CreateCommit
 )
@@ -9,7 +10,7 @@ $versionFile = Join-Path $RepoRoot 'src\openjarvis\autonomy\version.py'
 $bootstrap = Join-Path $PSScriptRoot 'bootstrap-autonomy-v2.ps1'
 
 function Assert-CleanPromotionScope {
-    $dirty = git -C $RepoRoot status --porcelain
+    $dirty = git -C $RepoRoot status --porcelain --untracked-files=no
     if ($LASTEXITCODE -ne 0) { throw 'git status failed.' }
     if ($dirty) {
         throw 'Stable promotion requires a clean working tree.'
@@ -28,7 +29,7 @@ Assert-ReleaseCandidate
 
 if (-not $SkipBootstrap) {
     Write-Host '[promote] Running real Autonomy V2 bootstrap + smoke gate'
-    & $bootstrap
+    & $bootstrap -RuntimeDeviceId $RuntimeDeviceId
     if ($LASTEXITCODE -ne 0) {
         throw 'Autonomy V2 bootstrap gate failed.'
     }
