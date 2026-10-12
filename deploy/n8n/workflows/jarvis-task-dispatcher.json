@@ -1,4 +1,5 @@
 {
+  "id": "jarvis-task-dispatcher",
   "name": "Jarvis Task Dispatcher",
   "nodes": [
     {
