@@ -15,6 +15,7 @@ from openjarvis.autonomy import (
 )
 from openjarvis.autonomy.planner import build_autonomy_plan
 from openjarvis.autonomy.task_store import default_task_store_path
+from openjarvis.autonomy.version import AUTONOMY_V2_VERSION
 
 
 def _get_store(request: Request) -> TaskStore:
@@ -43,6 +44,19 @@ def _record_to_dict(record) -> dict[str, Any]:
 
 def create_autonomy_router() -> APIRouter:
     router = APIRouter(prefix="/v1/autonomy", tags=["autonomy"])
+
+    @router.get("/status")
+    async def autonomy_status(request: Request) -> dict[str, Any]:
+        store = _get_store(request)
+        dispatcher = N8nDispatcher()
+        return {
+            "version": AUTONOMY_V2_VERSION,
+            "n8nConfigured": dispatcher.enabled,
+            "managedRuntimeAvailable": (
+                getattr(request.app.state, "agent_manager", None) is not None
+            ),
+            "resumableTasks": len(store.list_resumable()),
+        }
 
     @router.post("/tasks", status_code=202)
     async def create_task(request: Request) -> dict[str, Any]:
