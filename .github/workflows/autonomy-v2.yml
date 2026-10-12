@@ -8,9 +8,11 @@ on:
       - "src/openjarvis/autonomy/**"
       - "src/openjarvis/server/autonomy_routes.py"
       - "src/openjarvis/server/app.py"
+      - "src/openjarvis/speech/voice_control.py"
       - "deploy/n8n/**"
       - "tests/autonomy/**"
       - "tests/server/test_autonomy_routes.py"
+      - "tests/speech/test_voice_control.py"
       - ".github/workflows/autonomy-v2.yml"
   pull_request:
     branches: [main]
@@ -18,9 +20,11 @@ on:
       - "src/openjarvis/autonomy/**"
       - "src/openjarvis/server/autonomy_routes.py"
       - "src/openjarvis/server/app.py"
+      - "src/openjarvis/speech/voice_control.py"
       - "deploy/n8n/**"
       - "tests/autonomy/**"
       - "tests/server/test_autonomy_routes.py"
+      - "tests/speech/test_voice_control.py"
       - ".github/workflows/autonomy-v2.yml"
 
 concurrency:
@@ -48,11 +52,11 @@ jobs:
 
       - name: Ruff autonomy modules
         run: |
-          uv run ruff check             src/openjarvis/autonomy             src/openjarvis/server/autonomy_routes.py             tests/autonomy             tests/server/test_autonomy_routes.py
+          uv run ruff check             src/openjarvis/autonomy             src/openjarvis/server/autonomy_routes.py             src/openjarvis/speech/voice_control.py             tests/autonomy             tests/server/test_autonomy_routes.py             tests/speech/test_voice_control.py
 
       - name: Run Autonomy V2 tests
         run: |
-          uv run pytest             tests/autonomy             tests/server/test_autonomy_routes.py             -q --tb=short
+          uv run pytest             tests/autonomy             tests/server/test_autonomy_routes.py             tests/speech/test_voice_control.py             -q --tb=short
 
       - name: Validate n8n workflow JSON
         run: |
