@@ -16,6 +16,7 @@ from openjarvis.autonomy import (
 from openjarvis.autonomy.approval import assess_approval
 from openjarvis.autonomy.planner import build_autonomy_plan
 from openjarvis.autonomy.task_store import default_task_store_path
+from openjarvis.autonomy.result_callback import ResultCallbackError, notify_result
 from openjarvis.autonomy.version import AUTONOMY_V2_VERSION
 
 
@@ -177,6 +178,10 @@ def create_autonomy_router() -> APIRouter:
         context = dict(context)
         context.setdefault("autonomyPlan", plan.as_dict())
         context["autonomyCallbackUrl"] = callback_url
+        if payload.get("resultCallbackUrl"):
+            context["autonomyResultCallbackUrl"] = str(
+                payload.get("resultCallbackUrl")
+            )
         context["autonomyApproval"] = {
             **assessment.as_dict(),
             "policy": approval_policy,
@@ -268,6 +273,12 @@ def create_autonomy_router() -> APIRouter:
             context=context,
             error="",
         )
+        try:
+            notify_result(updated)
+        except ResultCallbackError as exc:
+            context = dict(updated.context)
+            context["resultCallbackError"] = str(exc)
+            updated = store.update(task_id, context=context)
         return _record_to_dict(updated)
 
     @router.post("/tasks/{task_id}/resume", status_code=202)

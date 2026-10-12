@@ -97,6 +97,38 @@
         960,
         0
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis/result",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Jarvis Result Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "jarvis-result-listener"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { taskId: ($json.body ?? $json).taskId, status: ($json.body ?? $json).status, acknowledged: true } }}",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Acknowledge Jarvis Result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        300
+      ]
     }
   ],
   "pinData": {},
@@ -144,13 +176,24 @@
           }
         ]
       ]
+    },
+    "Jarvis Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Jarvis Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "00000000-0000-4000-8000-000000000003",
+  "versionId": "00000000-0000-4000-8000-000000000004",
   "meta": {
     "templateCredsSetupCompleted": true
   },
