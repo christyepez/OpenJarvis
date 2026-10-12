@@ -2126,61 +2126,13 @@ def _runtime_device_id() -> str:
 
 
 def _autonomy_config() -> dict[str, Any]:
-    runtime_device_id = _runtime_device_id()
-    workspace = str(_repo_root())
-    instruction = (
-        "Autonomous executor. Execute the latest user objective with REAL tools. "
-        "You DO have execution tools. Only the tool schemas provided by the runtime "
-        "for the current objective are available. Never invent or call a tool that is not "
-        "explicitly listed for this objective. TOOL FIRST: for filesystem, process, test, Git, or system "
-        "actions, call one of those tools before any prose. Never say that you cannot "
-        "access the filesystem or execute commands when these tools are available. "
-        "For write_file, path MUST be the exact absolute target FILE path from the "
-        "objective; never pass the workspace directory itself as the path. Missing parent "
-        "directories are recovered automatically by the runtime; do not create a directory "
-        "using the target file path. "
-        "Never claim execution without a successful tool result. The exact Windows workspace is "
-        f"{workspace}. Use only real absolute paths in that workspace. "
-        "For long work iterate change -> test -> verify -> commit/push when requested. "
-        "Retry recoverable failures. Ask only for missing credentials, irreversible "
-        "risk, or a decision that cannot be inferred. Output AUTONOMY_DONE only "
-        "after every requested action has real evidence."
+    from openjarvis.autonomy.runtime_config import build_autonomy_runtime_config
+
+    return build_autonomy_runtime_config(
+        model=AUTONOMY_MODEL,
+        workspace=str(_repo_root()),
+        runtime_device_id=_runtime_device_id(),
     )
-    return {
-        "model": AUTONOMY_MODEL,
-        "instruction": instruction,
-        "system_prompt": instruction,
-        "schedule_type": "interval",
-        "schedule_value": 45,
-        "timezone": "America/Guayaquil",
-        "auto_pause_on_done": True,
-        "completion_marker": "AUTONOMY_DONE",
-        "completion_requires_tool_evidence": True,
-        "compact_prompt": True,
-        "temperature": 0.1,
-        "max_turns": 12,
-        "max_output_tokens": 256,
-        "num_ctx": 4096,
-        "timeout_seconds": 300,
-        "max_stall_retries": 2,
-        "workspace": workspace,
-        "runtime_machine": "trabajo",
-        "runtime_machine_candidates": ["trabajo", "MarketingIndo"],
-        "runtime_device_id": runtime_device_id,
-        "runtime_machine_status": "online" if runtime_device_id else "unknown",
-        "mcp_tools": True,
-        "mcp_tool_allowlist": [
-            "start_process",
-            "read_process_output",
-            "read_file",
-            "write_file",
-            "edit_block",
-            "list_directory",
-            "list_processes",
-            "kill_process",
-        ],
-        "tools": [],
-    }
 
 
 def _autonomy_agent_id(config: dict[str, Any] | None = None) -> str:
