@@ -106,6 +106,35 @@ class TestStdioTransport:
         finally:
             transport.close()
 
+    def test_stdio_decodes_utf8_independent_of_windows_locale(self, tmp_path):
+        """Regression: UTF-8 MCP stdout must not be decoded as CP1252."""
+        script = tmp_path / "utf8_server.py"
+        script.write_text(
+            textwrap.dedent("""\
+            import json
+            import sys
+
+            for line in sys.stdin:
+                request = json.loads(line)
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {"text": "\\u03cf"},
+                }
+                payload = json.dumps(response, ensure_ascii=False) + "\\n"
+                sys.stdout.buffer.write(payload.encode("utf-8"))
+                sys.stdout.buffer.flush()
+        """),
+            encoding="utf-8",
+        )
+
+        transport = StdioTransport([sys.executable, str(script)])
+        try:
+            response = transport.send(MCPRequest(method="utf8/test", id=1))
+            assert response.result["text"] == "\u03cf"
+        finally:
+            transport.close()
+
     def test_multiple_requests(self, tmp_path):
         """Send multiple requests to the subprocess."""
         script = tmp_path / "echo_server.py"
