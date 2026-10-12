@@ -1,3 +1,15 @@
+# One-command bootstrap
+
+For the target Windows runtime, the full Autonomy V2 setup can be executed with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\bootstrap-autonomy-v2.ps1
+```
+
+The bootstrap configures both n8n webhooks, starts n8n, imports/publishes the workflow, restarts the OpenJarvis scheduled task when installed, validates `/v1/autonomy/status`, and runs the bundled smoke test.
+
+Use `-SkipServiceRestart` or `-SkipSmoke` only for troubleshooting.
+
 # OpenJarvis + n8n (Autonomy V2)
 
 This folder contains the local n8n runtime used by OpenJarvis for asynchronous workflows.
