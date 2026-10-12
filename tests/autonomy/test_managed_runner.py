@@ -127,6 +127,10 @@ def test_runner_starts_isolated_agent_and_completes(
         "openjarvis.server.agent_manager_routes._start_managed_worker",
         lambda app_state, target, name: target(),
     )
+    monkeypatch.setattr(
+        "openjarvis.autonomy.managed_runner.notify_result",
+        lambda record: True,
+    )
 
     handle = runner.start(record)
 
@@ -138,6 +142,7 @@ def test_runner_starts_isolated_agent_and_completes(
     assert persisted.context["managedTaskId"] == handle.managed_task_id
     assert persisted.context["managedMessageId"] == handle.message_id
     assert persisted.context["managedCycle"] == 1
+    assert persisted.context["resultCallbackDelivered"] is True
     assert persisted.result["message"] == "AUTONOMY_DONE task completed"
     assert persisted.result["toolCalls"][0]["tool"] == "list_directory"
 

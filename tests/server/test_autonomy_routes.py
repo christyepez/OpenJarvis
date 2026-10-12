@@ -335,6 +335,10 @@ def test_autonomy_status_reports_release_readiness(
     monkeypatch,
 ) -> None:
     client = _client(tmp_path, monkeypatch)
+    monkeypatch.setenv(
+        "OPENJARVIS_N8N_RESULT_WEBHOOK_URL",
+        "http://127.0.0.1:5678/webhook/jarvis/result",
+    )
 
     response = client.get("/v1/autonomy/status")
 
@@ -342,6 +346,7 @@ def test_autonomy_status_reports_release_readiness(
     body = response.json()
     assert body["version"]
     assert body["managedRuntimeAvailable"] is True
+    assert body["n8nResultCallbackConfigured"] is True
     assert body["ready"] is True
     assert body["blockers"] == []
     assert body["capabilities"] == {
@@ -379,6 +384,7 @@ def test_autonomy_status_lists_runtime_blockers(
     assert body["ready"] is False
     assert body["blockers"] == [
         "n8n-not-configured",
+        "n8n-result-not-configured",
         "managed-runtime-unavailable",
     ]
 

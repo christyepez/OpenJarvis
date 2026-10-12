@@ -1,0 +1,14 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_smoke_requires_verified_result_callback() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "deploy" / "n8n" / "smoke-autonomy.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "resultCallbackDelivered" in script
+    assert "AUTONOMY_V2_RESULT_CALLBACK=PASS" in script
+    assert "AUTONOMY_V2_SMOKE=PASS" in script
