@@ -885,7 +885,12 @@ class OperativeAgent(ToolUsingAgent):
                     and tc.id == "forced_explicit_readonly_start"
                     and tool_result.success
                 ):
-                    content = str(tool_result.content or "").strip()
+                    verified = str(tool_result.content or "").strip()
+                    content = (
+                        f"{verified}\nAUTONOMY_DONE"
+                        if verified
+                        else "AUTONOMY_DONE"
+                    )
                     deterministic_readonly_complete = True
                     break
 
