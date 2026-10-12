@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 from uuid import uuid4
 
+from .result_callback import ResultCallbackError, notify_result
 from .runtime_config import build_autonomy_runtime_config
 from .task_store import TaskRecord, TaskStore
 
@@ -274,6 +275,7 @@ class ManagedAutonomyRunner:
                         checkpoint=f"managed-cycle-{cycle}-failed",
                         error=str(exc),
                     )
+                    self._notify_terminal_best_effort(task_id)
                     return
 
                 agent = self.manager.get_agent(agent_id) or {}
@@ -288,6 +290,7 @@ class ManagedAutonomyRunner:
                         checkpoint=f"managed-cycle-{cycle}-{status}",
                         error=str(agent.get("summary_memory") or status),
                     )
+                    self._notify_terminal_best_effort(task_id)
                     return
 
                 self.store.update(
@@ -312,6 +315,7 @@ class ManagedAutonomyRunner:
                 checkpoint="managed-runner-failed",
                 error=str(exc),
             )
+            self._notify_terminal_best_effort(task_id)
 
     def _execute_tick(self, agent_id: str) -> None:
         if self._tick_executor is not None:
@@ -374,6 +378,7 @@ class ManagedAutonomyRunner:
             result=result,
             error="",
         )
+        self._notify_terminal_best_effort(task_id)
 
         managed_task_id = str(context.get("managedTaskId") or "")
         if managed_task_id:
@@ -386,3 +391,15 @@ class ManagedAutonomyRunner:
                 )
             except Exception:
                 pass
+
+
+    def _notify_terminal_best_effort(self, task_id: str) -> None:
+        record = self.store.get(task_id)
+        if record is None or record.status not in {"completed", "failed", "cancelled"}:
+            return
+        try:
+            notify_result(record)
+        except ResultCallbackError as exc:
+            context = dict(record.context)
+            context["resultCallbackError"] = str(exc)
+            self.store.update(task_id, context=context)
