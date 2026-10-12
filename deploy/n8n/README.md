@@ -114,3 +114,29 @@ Expected final marker:
 ```text
 AUTONOMY_V2_SMOKE=PASS
 ```
+
+
+## Result callback
+
+Autonomy terminal states can be returned to n8n through:
+
+```text
+http://127.0.0.1:5678/webhook/jarvis/result
+```
+
+Configure OpenJarvis with:
+
+```powershell
+$env:OPENJARVIS_N8N_RESULT_WEBHOOK_URL = "http://127.0.0.1:5678/webhook/jarvis/result"
+```
+
+The combined workflow now exposes two webhooks:
+
+```text
+POST /webhook/jarvis/task
+POST /webhook/jarvis/result
+```
+
+Terminal payloads include taskId, status, checkpoint, result, error and context.
+This gives n8n a stable handoff point for downstream notifications, approvals,
+follow-up workflows or external integrations.
