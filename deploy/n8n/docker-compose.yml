@@ -1,0 +1,23 @@
+services:
+  n8n:
+    image: ${N8N_IMAGE:-n8nio/n8n:latest}
+    container_name: openjarvis-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      TZ: ${TZ:-America/Guayaquil}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-America/Guayaquil}
+      N8N_HOST: ${N8N_HOST:-localhost}
+      N8N_PORT: 5678
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-http}
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      OPENJARVIS_BASE_URL: ${OPENJARVIS_BASE_URL:-http://host.docker.internal:8000}
+      OPENJARVIS_API_KEY: ${OPENJARVIS_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:

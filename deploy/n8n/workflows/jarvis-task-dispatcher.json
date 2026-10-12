@@ -1,0 +1,123 @@
+{
+  "name": "Jarvis Task Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis/task",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Jarvis Task Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "jarvis-task-dispatcher"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body ?? $json;\nif (!payload.taskId || !payload.goal) throw new Error('taskId and goal are required');\nreturn [{ json: { ...payload, status: 'accepted', executionId: $execution.id } }];"
+      },
+      "id": "2",
+      "name": "Normalize Jarvis Task",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { taskId: $json.taskId, status: 'accepted', executionId: $json.executionId } }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Accept Task",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $env.OPENJARVIS_API_KEY ? 'Bearer ' + $env.OPENJARVIS_API_KEY : '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ taskId: $json.taskId, status: 'waiting', checkpoint: 'n8n-dispatcher-ready', executionId: $json.executionId, context: { n8nDispatcher: true } }) }}",
+        "options": {}
+      },
+      "id": "4",
+      "name": "Callback OpenJarvis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jarvis Task Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Jarvis Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Jarvis Task": {
+      "main": [
+        [
+          {
+            "node": "Accept Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept Task": {
+      "main": [
+        [
+          {
+            "node": "Callback OpenJarvis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "00000000-0000-4000-8000-000000000001",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
