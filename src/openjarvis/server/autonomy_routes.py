@@ -119,13 +119,31 @@ def create_autonomy_router() -> APIRouter:
     async def autonomy_status(request: Request) -> dict[str, Any]:
         store = _get_store(request)
         dispatcher = N8nDispatcher()
+        managed_runtime_available = (
+            getattr(request.app.state, "agent_manager", None) is not None
+        )
+        n8n_configured = dispatcher.enabled
+        blockers: list[str] = []
+        if not n8n_configured:
+            blockers.append("n8n-not-configured")
+        if not managed_runtime_available:
+            blockers.append("managed-runtime-unavailable")
+
         return {
             "version": AUTONOMY_V2_VERSION,
-            "n8nConfigured": dispatcher.enabled,
-            "managedRuntimeAvailable": (
-                getattr(request.app.state, "agent_manager", None) is not None
-            ),
+            "ready": not blockers,
+            "blockers": blockers,
+            "n8nConfigured": n8n_configured,
+            "managedRuntimeAvailable": managed_runtime_available,
             "resumableTasks": len(store.list_resumable()),
+            "capabilities": {
+                "planner": True,
+                "taskStore": True,
+                "n8nDispatcher": True,
+                "managedExecution": True,
+                "startupRecovery": True,
+                "riskApproval": True,
+            },
         }
 
     @router.post("/tasks", status_code=202)

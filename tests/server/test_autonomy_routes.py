@@ -328,3 +328,56 @@ def test_never_policy_allows_sensitive_goal_without_gate(
     body = response.json()
     assert body["status"] == "pending"
     assert body["context"]["autonomyApproval"]["required"] is False
+
+
+def test_autonomy_status_reports_release_readiness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    response = client.get("/v1/autonomy/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"]
+    assert body["managedRuntimeAvailable"] is True
+    assert body["ready"] is True
+    assert body["blockers"] == []
+    assert body["capabilities"] == {
+        "planner": True,
+        "taskStore": True,
+        "n8nDispatcher": True,
+        "managedExecution": True,
+        "startupRecovery": True,
+        "riskApproval": True,
+    }
+
+
+def test_autonomy_status_lists_runtime_blockers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    client.app.state.agent_manager = None
+
+    class DisabledDispatcher:
+        enabled = False
+
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    monkeypatch.setattr(
+        "openjarvis.server.autonomy_routes.N8nDispatcher",
+        DisabledDispatcher,
+    )
+
+    response = client.get("/v1/autonomy/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ready"] is False
+    assert body["blockers"] == [
+        "n8n-not-configured",
+        "managed-runtime-unavailable",
+    ]
