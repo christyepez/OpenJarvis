@@ -16,7 +16,11 @@ from openjarvis.autonomy import (
 from openjarvis.autonomy.approval import assess_approval
 from openjarvis.autonomy.planner import build_autonomy_plan
 from openjarvis.autonomy.task_store import default_task_store_path
-from openjarvis.autonomy.result_callback import ResultCallbackError, notify_result
+from openjarvis.autonomy.result_callback import (
+    ResultCallbackError,
+    configured_result_callback_url,
+    notify_result,
+)
 from openjarvis.autonomy.version import AUTONOMY_V2_VERSION
 
 
@@ -124,9 +128,12 @@ def create_autonomy_router() -> APIRouter:
             getattr(request.app.state, "agent_manager", None) is not None
         )
         n8n_configured = dispatcher.enabled
+        result_callback_configured = bool(configured_result_callback_url())
         blockers: list[str] = []
         if not n8n_configured:
             blockers.append("n8n-not-configured")
+        if not result_callback_configured:
+            blockers.append("n8n-result-not-configured")
         if not managed_runtime_available:
             blockers.append("managed-runtime-unavailable")
 
@@ -135,6 +142,7 @@ def create_autonomy_router() -> APIRouter:
             "ready": not blockers,
             "blockers": blockers,
             "n8nConfigured": n8n_configured,
+            "n8nResultCallbackConfigured": result_callback_configured,
             "managedRuntimeAvailable": managed_runtime_available,
             "resumableTasks": len(store.list_resumable()),
             "capabilities": {
@@ -274,9 +282,15 @@ def create_autonomy_router() -> APIRouter:
             error="",
         )
         try:
-            notify_result(updated)
+            delivered = notify_result(updated)
+            if delivered:
+                context = dict(updated.context)
+                context["resultCallbackDelivered"] = True
+                context.pop("resultCallbackError", None)
+                updated = store.update(task_id, context=context)
         except ResultCallbackError as exc:
             context = dict(updated.context)
+            context["resultCallbackDelivered"] = False
             context["resultCallbackError"] = str(exc)
             updated = store.update(task_id, context=context)
         return _record_to_dict(updated)
