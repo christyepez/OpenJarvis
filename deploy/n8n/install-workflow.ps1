@@ -27,7 +27,7 @@ function Wait-N8nReady {
     do {
         Start-Sleep -Seconds 2
         try {
-            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5678/healthz' -UseBasicParsing -TimeoutSec 3
+            $response = Invoke-WebRequest -Uri 'http://127.0.0.1:5678/webhook/jarvis/health' -UseBasicParsing -TimeoutSec 3
             if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) { return }
         } catch {
         }

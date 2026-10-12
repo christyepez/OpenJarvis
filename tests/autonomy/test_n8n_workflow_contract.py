@@ -99,3 +99,23 @@ def test_n8n_workflow_exposes_result_webhook() -> None:
             "index": 0,
         }
     ]
+
+
+def test_n8n_workflow_exposes_health_webhook() -> None:
+    workflow = _workflow()
+    health_node = next(
+        node
+        for node in workflow["nodes"]
+        if node["name"] == "Jarvis Health Webhook"
+    )
+    assert health_node["parameters"]["httpMethod"] == "GET"
+    assert health_node["parameters"]["path"] == "jarvis/health"
+
+    targets = workflow["connections"]["Jarvis Health Webhook"]["main"][0]
+    assert targets == [
+        {
+            "node": "Acknowledge Jarvis Health",
+            "type": "main",
+            "index": 0,
+        }
+    ]

@@ -130,6 +130,38 @@
         240,
         300
       ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "jarvis/health",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8",
+      "name": "Jarvis Health Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        600
+      ],
+      "webhookId": "jarvis-health-listener"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: \"ok\", workflow: \"jarvis-task-dispatcher\" } }}",
+        "options": {}
+      },
+      "id": "9",
+      "name": "Acknowledge Jarvis Health",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        600
+      ]
     }
   ],
   "pinData": {},
@@ -188,13 +220,24 @@
           }
         ]
       ]
+    },
+    "Jarvis Health Webhook": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Jarvis Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "00000000-0000-4000-8000-000000000004",
+  "versionId": "00000000-0000-4000-8000-000000000005",
   "meta": {
     "templateCredsSetupCompleted": true
   },
