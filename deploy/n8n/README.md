@@ -2,6 +2,17 @@
 
 This folder contains the local n8n runtime used by OpenJarvis for asynchronous workflows.
 
+## Configure OpenJarvis runtime
+
+Persist the n8n webhook for the Windows runtime:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\configure-openjarvis.ps1
+```
+
+This writes `OPENJARVIS_N8N_WEBHOOK_URL` to the user environment and updates
+`%USERPROFILE%\.openjarvis\start-runtime.cmd` idempotently when it exists.
+
 ## Start n8n
 
 1. Copy `.env.example` to `.env`.
