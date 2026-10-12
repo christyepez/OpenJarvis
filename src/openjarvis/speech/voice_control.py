@@ -2544,8 +2544,8 @@ def _summarize_list_directory_result(content: str) -> str:
     return "Verifiqué el workspace correctamente."
 
 
-def autonomous(command: str) -> str:
-    """Queue a durable objective and let the scheduled worker continue it."""
+def _autonomous_legacy(command: str) -> str:
+    """Queue a durable objective through the proven legacy managed-agent path."""
     if not _ensure_api_available():
         return (
             "No pude recuperar el backend local de Jarvis. "
