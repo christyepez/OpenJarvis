@@ -4,6 +4,7 @@ param(
     [string]$Workspace = 'C:\Users\chris\source\repos\OpenJarvis',
     [string]$RuntimeDeviceId = '',
     [string]$ApiKey = '',
+    [string]$SmokeModel = 'llama3.2:1b',
     [int]$MaxPolls = 40
 )
 
@@ -39,6 +40,7 @@ $context = @{
     workspace = $Workspace
     branch = 'main'
     smoke = $true
+    model = $SmokeModel
 }
 if ($RuntimeDeviceId) { $context.runtimeDeviceId = $RuntimeDeviceId }
 
