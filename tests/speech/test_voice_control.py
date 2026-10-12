@@ -2222,7 +2222,9 @@ def test_queue_autonomy_v2_reports_approval_required(monkeypatch) -> None:
     def fake_api(path, payload=None, timeout=120, method=None):
         if path == "/v1/autonomy/status":
             return {
+                "ready": True,
                 "n8nConfigured": True,
+                "n8nResultCallbackConfigured": True,
                 "managedRuntimeAvailable": True,
             }
         return {
