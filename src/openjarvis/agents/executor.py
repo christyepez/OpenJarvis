@@ -194,7 +194,11 @@ def _completion_evidence_met(
                 )
                 for name, _, content in evidence
             )
-        return False
+        # A literal tool name is also a valid evidence contract. This keeps
+        # focused autonomy tasks (for example read_file-only verification)
+        # from repeating an already successful tool call just because the
+        # requirement is not one of the higher-level aliases above.
+        return any(name == requirement for name, _, _ in evidence)
 
     return {requirement for requirement in requirements if has(requirement)}
 

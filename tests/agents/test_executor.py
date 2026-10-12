@@ -441,7 +441,9 @@ def test_finalize_tick_accepts_complete_objective_evidence(tmp_path):
                 tool_name="start_process",
                 content="4 passed",
                 success=True,
-                metadata={"arguments": "pytest tests/agents/test_operative_persistence.py -q"},
+                metadata={
+                    "arguments": "pytest tests/agents/test_operative_persistence.py -q"
+                },
             ),
             ToolResult(
                 tool_name="start_process",
@@ -457,13 +459,19 @@ def test_finalize_tick_accepts_complete_objective_evidence(tmp_path):
             ),
             ToolResult(
                 tool_name="start_process",
-                content="[main abc1234] docs: record autonomous e2e validation\n1 file changed",
+                content=(
+                    "[main abc1234] docs: record autonomous e2e validation\n"
+                    "1 file changed"
+                ),
                 success=True,
                 metadata={"arguments": "git commit -m test"},
             ),
             ToolResult(
                 tool_name="start_process",
-                content="To https://github.com/christyepez/OpenJarvis.git\nabc1234..def5678 main -> main",
+                content=(
+                    "To https://github.com/christyepez/OpenJarvis.git\n"
+                    "abc1234..def5678 main -> main"
+                ),
                 success=True,
                 metadata={"arguments": "git push origin main"},
             ),
@@ -473,6 +481,23 @@ def test_finalize_tick_accepts_complete_objective_evidence(tmp_path):
 
     assert mgr.get_agent(agent["id"])["status"] == "paused"
     mgr.close()
+
+
+def test_literal_tool_name_satisfies_completion_evidence() -> None:
+    from openjarvis.agents.executor import _completion_evidence_met
+
+    result = AgentResult(
+        content="AUTONOMY_DONE",
+        tool_results=[
+            ToolResult(
+                tool_name="read_file",
+                content="[Reading 10 lines] pyproject.toml",
+                success=True,
+            )
+        ],
+    )
+
+    assert _completion_evidence_met(result, ["read_file"]) == {"read_file"}
 
 
 def test_failed_process_does_not_satisfy_autonomous_completion_evidence() -> None:
