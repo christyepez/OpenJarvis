@@ -1,0 +1,77 @@
+name: Autonomy V2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/openjarvis/autonomy/**"
+      - "src/openjarvis/server/autonomy_routes.py"
+      - "src/openjarvis/server/app.py"
+      - "deploy/n8n/**"
+      - "tests/autonomy/**"
+      - "tests/server/test_autonomy_routes.py"
+      - ".github/workflows/autonomy-v2.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/openjarvis/autonomy/**"
+      - "src/openjarvis/server/autonomy_routes.py"
+      - "src/openjarvis/server/app.py"
+      - "deploy/n8n/**"
+      - "tests/autonomy/**"
+      - "tests/server/test_autonomy_routes.py"
+      - ".github/workflows/autonomy-v2.yml"
+
+concurrency:
+  group: autonomy-v2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  autonomy-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+
+      - name: Install focused dependencies
+        run: uv sync --extra dev --extra server
+
+      - name: Ruff autonomy modules
+        run: |
+          uv run ruff check             src/openjarvis/autonomy             src/openjarvis/server/autonomy_routes.py             tests/autonomy             tests/server/test_autonomy_routes.py
+
+      - name: Run Autonomy V2 tests
+        run: |
+          uv run pytest             tests/autonomy             tests/server/test_autonomy_routes.py             -q --tb=short
+
+      - name: Validate n8n workflow JSON
+        run: |
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("deploy/n8n/workflows/jarvis-task-dispatcher.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          assert data["name"] == "Jarvis Task Dispatcher"
+          names = {node["name"] for node in data["nodes"]}
+          required = {
+              "Jarvis Task Webhook",
+              "Start Managed Execution",
+              "Jarvis Result Webhook",
+          }
+          missing = required - names
+          assert not missing, f"Missing n8n nodes: {sorted(missing)}"
+          print("N8N_WORKFLOW_CONTRACT=PASS")
+          PY
+
+      - name: Validate Compose rendering
+        run: docker compose -f deploy/n8n/docker-compose.yml config > /tmp/openjarvis-n8n-compose.yml
