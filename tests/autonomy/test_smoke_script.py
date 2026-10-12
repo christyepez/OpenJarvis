@@ -12,3 +12,8 @@ def test_smoke_requires_verified_result_callback() -> None:
     assert "resultCallbackDelivered" in script
     assert "AUTONOMY_V2_RESULT_CALLBACK=PASS" in script
     assert "AUTONOMY_V2_SMOKE=PASS" in script
+    assert "[string]$SmokeModel = 'llama3.2:1b'" in script
+    assert "model = $SmokeModel" in script
+    assert "mcpToolAllowlist = @('list_directory')" in script
+    assert "EXACT WINDOWS WORKSPACE" in script
+    assert "lista el contenido del workspace usando list_directory" in script

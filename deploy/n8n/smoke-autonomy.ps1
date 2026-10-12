@@ -4,6 +4,7 @@ param(
     [string]$Workspace = 'C:\Users\chris\source\repos\OpenJarvis',
     [string]$RuntimeDeviceId = '',
     [string]$ApiKey = '',
+    [string]$SmokeModel = 'llama3.2:1b',
     [int]$MaxPolls = 40
 )
 
@@ -39,11 +40,15 @@ $context = @{
     workspace = $Workspace
     branch = 'main'
     smoke = $true
+    model = $SmokeModel
+    mcpToolAllowlist = @('list_directory')
 }
 if ($RuntimeDeviceId) { $context.runtimeDeviceId = $RuntimeDeviceId }
 
 $payload = @{
-    goal = 'Verifica el directorio actual de OpenJarvis usando herramientas reales. No modifiques ningun archivo. Finaliza solo con evidencia verificada.'
+    goal = ("EXACT WINDOWS WORKSPACE: $Workspace. Use exact absolute Windows paths " +
+        "from this instruction. lista el contenido del workspace usando list_directory. " +
+        "No modifiques ningun archivo.")
     project = 'OpenJarvis'
     workflow = 'auto'
     approval = 'risk_based'

@@ -71,9 +71,15 @@ def test_n8n_workflow_uses_explicit_normalized_task_references() -> None:
         if node["name"] == "Start Managed Execution"
     )
 
-    assert "$('Normalize Jarvis Task').item.json.callbackUrl" in callback["parameters"]["url"]
-    assert "$('Normalize Jarvis Task').item.json.taskId" in callback["parameters"]["body"]
-    assert "$('Normalize Jarvis Task').item.json.taskId" in execute["parameters"]["url"]
+    callback_url = callback["parameters"]["url"]
+    callback_body = callback["parameters"]["body"]
+    execute_url = execute["parameters"]["url"]
+    task_ref = "$('Normalize Jarvis Task').item.json.taskId"
+
+    assert "OPENJARVIS_BASE_URL" in callback_url
+    assert "/v1/autonomy/callback" in callback_url
+    assert task_ref in callback_body
+    assert task_ref in execute_url
 
 
 def test_n8n_workflow_exposes_result_webhook() -> None:

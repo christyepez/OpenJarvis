@@ -1,4 +1,5 @@
 {
+  "id": "jarvis-task-dispatcher",
   "name": "Jarvis Task Dispatcher",
   "nodes": [
     {
@@ -49,7 +50,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('Normalize Jarvis Task').item.json.callbackUrl }}",
+        "url": "={{ $env.OPENJARVIS_BASE_URL + '/v1/autonomy/callback' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

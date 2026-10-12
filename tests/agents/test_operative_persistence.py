@@ -287,7 +287,8 @@ def test_explicit_readonly_tool_finishes_without_model(monkeypatch) -> None:
     result = agent.run(prompt)
 
     assert result.content == (
-        r"listed:C:\Users\chris\source\repos\OpenJarvis"
+        "listed:C:\\Users\\chris\\source\\repos\\OpenJarvis\n"
+        "AUTONOMY_DONE"
     )
     assert len(result.tool_results) == 1
     assert result.tool_results[0].tool_name == "list_directory"
