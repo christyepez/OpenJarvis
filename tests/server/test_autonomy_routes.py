@@ -83,10 +83,10 @@ def test_create_task_dispatches_and_persists(tmp_path: Path, monkeypatch) -> Non
     body = response.json()
     assert body["goal"] == "review OpenJarvis"
     assert body["status"] == "pending"
-    assert body["context"] == {
-        "branch": "main",
-        "n8nExecutionId": "exec-1",
-    }
+    assert body["context"]["branch"] == "main"
+    assert body["context"]["n8nExecutionId"] == "exec-1"
+    assert body["context"]["autonomyPlan"]["kind"] == "code"
+    assert body["context"]["autonomyPlan"]["steps"][0]["id"] == "inspect"
 
 
 def test_callback_updates_persisted_task(tmp_path: Path, monkeypatch) -> None:
