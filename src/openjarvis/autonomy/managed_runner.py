@@ -202,6 +202,14 @@ class ManagedAutonomyRunner:
             workspace=workspace,
             runtime_device_id=runtime_device_id,
         )
+        context_allowlist = record.context.get("mcpToolAllowlist")
+        if isinstance(context_allowlist, list) and context_allowlist:
+            config["mcp_tool_allowlist"] = [
+                str(name)
+                for name in context_allowlist
+                if str(name).strip()
+            ]
+
         config.update(
             {
                 "active_objective": record.goal,
