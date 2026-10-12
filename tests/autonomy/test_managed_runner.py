@@ -120,7 +120,11 @@ def test_runner_starts_isolated_agent_and_completes(
     record = store.create(
         task_id="12345678-aaaa-bbbb-cccc-1234567890ab",
         goal="review repository",
-        context={"runtimeDeviceId": "device-1"},
+        context={
+            "runtimeDeviceId": "device-1",
+            "mcpToolAllowlist": ["list_directory"],
+            "completionEvidenceRequirements": ["directory-listed"],
+        },
     )
 
     monkeypatch.setattr(
@@ -146,6 +150,10 @@ def test_runner_starts_isolated_agent_and_completes(
     assert agent["agent_type"] == "operative"
     assert agent["config"]["external_task_id"] == record.task_id
     assert agent["config"]["runtime_device_id"] == "device-1"
+    assert agent["config"]["mcp_tool_allowlist"] == ["list_directory"]
+    assert agent["config"]["completion_evidence_requirements"] == [
+        "directory-listed"
+    ]
     assert agent["config"]["schedule_type"] == "manual"
 
 
