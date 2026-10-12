@@ -24,6 +24,8 @@ from openjarvis.speech.voice_control import (
     _autonomy_tool_specs,
     _ground_autonomous_command,
     _is_autonomous_objective,
+    _autonomous_legacy,
+    _queue_autonomy_v2,
     _ensure_api_available,
     _prepare_autonomy_models,
     _requires_tool_evidence,
@@ -2047,7 +2049,7 @@ def test_autonomous_returns_verified_list_directory_summary(monkeypatch) -> None
 
     monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
 
-    answer = autonomous("lista el contenido usando list_directory")
+    answer = _autonomous_legacy("lista el contenido usando list_directory")
 
     assert answer == "Verifiqué el workspace. Encontré 1 carpetas y 1 archivos."
 
@@ -2099,7 +2101,7 @@ def test_autonomous_waits_before_reconciling_existing_agent(monkeypatch) -> None
 
     monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
 
-    answer = autonomous("verifica el directorio actual")
+    answer = _autonomous_legacy("verifica el directorio actual")
 
     assert order == ["wait", "reconcile"]
     assert "Inicie el trabajo autonomo" in answer
@@ -2144,3 +2146,150 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
     assert "real absolute paths" in calls[0][1]["config"]["instruction"]
     assert "Only the tool schemas provided by the runtime" in calls[0][1]["config"]["instruction"]
+
+
+def test_queue_autonomy_v2_dispatches_persistent_voice_task(monkeypatch) -> None:
+    captured: dict = {}
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ground_autonomous_command",
+        lambda command: "grounded objective",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_allowlist",
+        lambda command: ["list_directory"],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_completion_requirements",
+        lambda command: ["directory-listed"],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._runtime_device_id",
+        lambda: "device-1",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._repo_root",
+        lambda: Path(r"C:\repo\OpenJarvis"),
+    )
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        if path == "/v1/autonomy/status":
+            return {
+                "n8nConfigured": True,
+                "managedRuntimeAvailable": True,
+            }
+        captured["path"] = path
+        captured["payload"] = payload
+        return {
+            "taskId": "12345678-aaaa-bbbb-cccc-1234567890ab",
+            "status": "pending",
+            "context": {},
+        }
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    answer = _queue_autonomy_v2("hazlo de forma autonoma")
+
+    assert captured["path"] == "/v1/autonomy/tasks"
+    assert captured["payload"]["goal"] == "grounded objective"
+    assert captured["payload"]["approval"] == "risk_based"
+    assert captured["payload"]["context"]["runtimeDeviceId"] == "device-1"
+    assert captured["payload"]["context"]["mcpToolAllowlist"] == ["list_directory"]
+    assert captured["payload"]["context"]["completionEvidenceRequirements"] == [
+        "directory-listed"
+    ]
+    assert "12345678" in answer
+
+
+def test_queue_autonomy_v2_reports_approval_required(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ground_autonomous_command",
+        lambda command: command,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_tool_allowlist",
+        lambda command: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomy_completion_requirements",
+        lambda command: [],
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._runtime_device_id",
+        lambda: "",
+    )
+    def fake_api(path, payload=None, timeout=120, method=None):
+        if path == "/v1/autonomy/status":
+            return {
+                "n8nConfigured": True,
+                "managedRuntimeAvailable": True,
+            }
+        return {
+            "taskId": "abcdef12-aaaa-bbbb-cccc-1234567890ab",
+            "status": "blocked",
+            "context": {
+                "autonomyApproval": {
+                    "required": True,
+                    "state": "required",
+                }
+            },
+        }
+
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control.api",
+        fake_api,
+    )
+
+    answer = _queue_autonomy_v2("despliega a produccion")
+
+    assert "requiere tu aprobacion" in answer
+    assert "abcdef12" in answer
+
+
+def test_autonomous_uses_v2_before_legacy(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ensure_api_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._queue_autonomy_v2",
+        lambda command: "V2 queued",
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomous_legacy",
+        lambda command: (_ for _ in ()).throw(AssertionError("legacy called")),
+    )
+
+    assert autonomous("continua con la implementacion") == "V2 queued"
+
+
+def test_autonomous_falls_back_when_v2_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ensure_api_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._queue_autonomy_v2",
+        lambda command: None,
+    )
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._autonomous_legacy",
+        lambda command: "legacy queued",
+    )
+
+    assert autonomous("continua con la implementacion") == "legacy queued"
+
+
+def test_queue_autonomy_v2_skips_dispatch_when_n8n_not_ready(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_api(path, payload=None, timeout=120, method=None):
+        calls.append(path)
+        return {
+            "n8nConfigured": False,
+            "managedRuntimeAvailable": True,
+        }
+
+    monkeypatch.setattr("openjarvis.speech.voice_control.api", fake_api)
+
+    assert _queue_autonomy_v2("continua con el trabajo") is None
+    assert calls == ["/v1/autonomy/status"]

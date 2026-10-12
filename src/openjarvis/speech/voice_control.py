@@ -2544,7 +2544,7 @@ def _summarize_list_directory_result(content: str) -> str:
     return "Verifiqué el workspace correctamente."
 
 
-def autonomous(command: str) -> str:
+def _autonomous_legacy(command: str) -> str:
     """Queue a durable objective and let the scheduled worker continue it."""
     if not _ensure_api_available():
         return (
@@ -2620,6 +2620,92 @@ def autonomous(command: str) -> str:
         "Entendido. Inicie el trabajo autonomo. Continuare por etapas, "
         "validare cada cambio y me detendre automaticamente cuando termine."
     )
+
+
+def _queue_autonomy_v2(command: str) -> str | None:
+    """Queue the objective through the persistent Autonomy V2 plane."""
+    try:
+        readiness = api("/v1/autonomy/status", timeout=5)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+    if not readiness.get("n8nConfigured"):
+        return None
+    if not readiness.get("managedRuntimeAvailable"):
+        return None
+
+    grounded_command = _ground_autonomous_command(command)
+    tool_allowlist = _autonomy_tool_allowlist(command)
+    evidence_requirements = _autonomy_completion_requirements(command)
+    context: dict[str, Any] = {
+        "workspace": str(_repo_root()),
+        "mcpToolAllowlist": tool_allowlist,
+        "completionEvidenceRequirements": evidence_requirements,
+        "source": "voice",
+    }
+    runtime_device_id = _runtime_device_id()
+    if runtime_device_id:
+        context["runtimeDeviceId"] = runtime_device_id
+
+    try:
+        task = api(
+            "/v1/autonomy/tasks",
+            {
+                "goal": grounded_command,
+                "project": "OpenJarvis",
+                "workflow": "auto",
+                "approval": "risk_based",
+                "context": context,
+            },
+            timeout=20,
+        )
+    except urllib.error.HTTPError as exc:
+        # Older/local runtimes and an unconfigured n8n instance must not make
+        # voice autonomy unusable. Fall back to the proven managed-agent path.
+        if exc.code in {404, 503}:
+            log.warning("Autonomy V2 unavailable (%s); using legacy runner", exc.code)
+            return None
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log.warning("Autonomy V2 dispatch unavailable: %s", exc)
+        return None
+
+    task_id = str(task.get("taskId") or "").strip()
+    status = str(task.get("status") or "").strip().lower()
+    approval = (task.get("context") or {}).get("autonomyApproval") or {}
+    if status == "blocked" and approval.get("required") is True:
+        short_id = task_id[:8] if task_id else ""
+        suffix = f" Tarea {short_id}." if short_id else ""
+        return (
+            "La tarea requiere tu aprobacion antes de ejecutar una accion sensible."
+            + suffix
+        )
+
+    if not task_id:
+        return None
+    return (
+        "Entendido. Cree la tarea autonoma "
+        f"{task_id[:8]}. La ejecutare por etapas con checkpoints y "
+        "verificacion persistente."
+    )
+
+
+def autonomous(command: str) -> str:
+    """Queue a durable objective through Autonomy V2 with safe legacy fallback."""
+    if not _ensure_api_available():
+        return (
+            "No pude recuperar el backend local de Jarvis. "
+            "La tarea autonoma no se inicio."
+        )
+
+    answer = _queue_autonomy_v2(command)
+    if answer is not None:
+        return answer
+    return _autonomous_legacy(command)
 
 
 def managed(command: str) -> str:
