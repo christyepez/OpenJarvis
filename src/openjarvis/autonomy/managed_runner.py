@@ -242,6 +242,12 @@ class ManagedAutonomyRunner:
     def _run_until_terminal(self, task_id: str, agent_id: str) -> None:
         try:
             for cycle in range(1, self.max_cycles + 1):
+                current = self.store.get(task_id)
+                if current is None:
+                    return
+                if current.status == "cancelled":
+                    return
+
                 self.store.update(
                     task_id,
                     status="running",

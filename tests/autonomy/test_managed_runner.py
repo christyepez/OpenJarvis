@@ -301,3 +301,21 @@ def test_resume_reuses_existing_agent_without_duplicate_message(
     assert len(manager.tasks) == before_task_count
     assert len(manager.messages["autv2-resume"]) == before_message_count + 1
     assert store.get(record.task_id).status == "completed"
+
+
+def test_runner_stops_when_task_is_cancelled_before_next_cycle(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = FakeManager()
+    runner, store, _ = _runner(tmp_path, manager, lambda agent_id: None, max_cycles=3)
+    record = store.create(task_id="cancelled-task", goal="do not continue")
+    agent = runner._ensure_agent(record)
+    agent_id = agent["id"]
+    store.update(record.task_id, status="cancelled")
+
+    runner._run_until_terminal(record.task_id, agent_id)
+
+    persisted = store.get(record.task_id)
+    assert persisted is not None
+    assert persisted.status == "cancelled"

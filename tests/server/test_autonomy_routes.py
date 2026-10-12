@@ -381,3 +381,114 @@ def test_autonomy_status_lists_runtime_blockers(
         "n8n-not-configured",
         "managed-runtime-unavailable",
     ]
+
+
+def test_cancel_task_marks_terminal_and_pauses_managed_agent(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "cancel me"},
+    ).json()
+
+    store = client.app.state.autonomy_task_store
+    store.update(
+        created["taskId"],
+        status="running",
+        context={"managedAgentId": "agent-1"},
+    )
+
+    class PauseManager:
+        def __init__(self) -> None:
+            self.paused: list[str] = []
+
+        def get_agent(self, agent_id: str):
+            return {"id": agent_id, "status": "running"}
+
+        def pause_agent(self, agent_id: str) -> None:
+            self.paused.append(agent_id)
+
+    manager = PauseManager()
+    client.app.state.agent_manager = manager
+
+    response = client.post(
+        f"/v1/autonomy/tasks/{created['taskId']}/cancel"
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "cancelled"
+    assert body["checkpoint"] == "cancelled-by-user"
+    assert manager.paused == ["agent-1"]
+
+
+def test_resume_task_reuses_managed_runner(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "resume me"},
+    ).json()
+
+    store = client.app.state.autonomy_task_store
+    store.update(
+        created["taskId"],
+        status="waiting",
+        context={
+            "managedAgentId": "agent-existing",
+            "managedTaskId": "managed-existing",
+            "managedMessageId": "message-existing",
+        },
+    )
+
+    class ResumeRunner(FakeManagedRunner):
+        def resume(self, record):
+            self.store.update(
+                record.task_id,
+                status="running",
+                checkpoint="managed-agent-resuming",
+                context=record.context,
+            )
+            return SimpleNamespace(
+                agent_id="agent-existing",
+                managed_task_id="managed-existing",
+                message_id="message-existing",
+            )
+
+    monkeypatch.setattr(
+        "openjarvis.server.autonomy_routes.ManagedAutonomyRunner",
+        ResumeRunner,
+    )
+
+    response = client.post(
+        f"/v1/autonomy/tasks/{created['taskId']}/resume"
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "running"
+    assert body["checkpoint"] == "managed-agent-resuming"
+    assert body["managed"]["agentId"] == "agent-existing"
+
+
+def test_resume_task_rejects_cancelled_task(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    created = client.post(
+        "/v1/autonomy/tasks",
+        json={"goal": "cancel once"},
+    ).json()
+    store = client.app.state.autonomy_task_store
+    store.update(created["taskId"], status="cancelled")
+
+    response = client.post(
+        f"/v1/autonomy/tasks/{created['taskId']}/resume"
+    )
+
+    assert response.status_code == 409
