@@ -419,6 +419,20 @@ def create_app(
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
+        try:
+            from openjarvis.autonomy.recovery import recover_autonomy_tasks
+
+            recovery = recover_autonomy_tasks(_app.state)
+            if recovery.resumed or recovery.failed:
+                logger.info(
+                    "Autonomy recovery: resumed=%s skipped=%s failed=%s",
+                    recovery.resumed,
+                    recovery.skipped,
+                    recovery.failed,
+                )
+        except Exception:
+            logger.exception("Autonomy startup recovery failed")
+
         yield
         await _shutdown_managed_runtime()
 

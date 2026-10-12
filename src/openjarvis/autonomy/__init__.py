@@ -8,6 +8,7 @@ from .callback import (
 )
 from .managed_runner import ManagedAutonomyRunner, ManagedRunHandle
 from .n8n import N8nDispatcher, N8nDispatchError, N8nTaskRequest, N8nTaskResponse
+from .recovery import RecoverySummary, recover_autonomy_tasks
 from .task_store import TaskRecord, TaskStore
 
 __all__ = [
@@ -19,8 +20,10 @@ __all__ = [
     "N8nDispatchError",
     "N8nTaskRequest",
     "N8nTaskResponse",
+    "RecoverySummary",
     "TaskRecord",
     "TaskStore",
     "apply_n8n_callback",
     "parse_n8n_callback",
+    "recover_autonomy_tasks",
 ]

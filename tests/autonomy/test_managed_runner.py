@@ -240,3 +240,64 @@ def test_runner_recovers_existing_failed_agent(
 
     assert store.get(record.task_id).status == "completed"
     assert manager.agents[agent_id]["name"] == "Jarvis Autonomy abcdef12"
+
+
+def test_resume_reuses_existing_agent_without_duplicate_message(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = FakeManager()
+
+    def tick(agent_id: str) -> None:
+        manager.messages[agent_id].append(
+            {
+                "id": "answer-resumed",
+                "direction": "agent_to_user",
+                "content": "AUTONOMY_DONE resumed",
+                "tool_calls": [{"tool": "read_file", "success": True}],
+            }
+        )
+        manager.agents[agent_id]["status"] = "paused"
+
+    runner, store, _ = _runner(tmp_path, manager, tick)
+    record = store.create(
+        task_id="resume-task",
+        goal="resume objective",
+        status="waiting",
+        context={
+            "managedAgentId": "autv2-resume",
+            "managedTaskId": "internal-existing",
+            "managedMessageId": "message-existing",
+            "managedCycle": 2,
+        },
+    )
+    manager.agents["autv2-resume"] = {
+        "id": "autv2-resume",
+        "name": "Jarvis Autonomy resume",
+        "agent_type": "operative",
+        "config": {},
+        "status": "idle",
+    }
+    manager.messages["autv2-resume"] = [
+        {
+            "id": "message-existing",
+            "direction": "user_to_agent",
+            "content": "existing objective",
+        }
+    ]
+
+    monkeypatch.setattr(
+        "openjarvis.server.agent_manager_routes._start_managed_worker",
+        lambda app_state, target, name: target(),
+    )
+
+    before_message_count = len(manager.messages["autv2-resume"])
+    before_task_count = len(manager.tasks)
+    handle = runner.resume(record)
+
+    assert handle.agent_id == "autv2-resume"
+    assert handle.managed_task_id == "internal-existing"
+    assert handle.message_id == "message-existing"
+    assert len(manager.tasks) == before_task_count
+    assert len(manager.messages["autv2-resume"]) == before_message_count + 1
+    assert store.get(record.task_id).status == "completed"
