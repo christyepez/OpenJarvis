@@ -37,17 +37,17 @@ function Wait-JarvisHealth {
 
 Invoke-Step 'Configure OpenJarvis n8n environment' {
     & (Join-Path $root 'configure-openjarvis.ps1') -WebhookUrl $TaskWebhookUrl -ResultWebhookUrl $ResultWebhookUrl
-    if ($LASTEXITCODE -ne 0) { throw 'OpenJarvis n8n environment configuration failed.' }
+    if (-not $?) { throw 'OpenJarvis n8n environment configuration failed.' }
 }
 
 Invoke-Step 'Start n8n container' {
     & (Join-Path $root 'start-n8n.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'n8n startup failed.' }
+    if (-not $?) { throw 'n8n startup failed.' }
 }
 
 Invoke-Step 'Import and publish Jarvis n8n workflow' {
     & (Join-Path $root 'install-workflow.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'n8n workflow installation failed.' }
+    if (-not $?) { throw 'n8n workflow installation failed.' }
 }
 
 if (-not $SkipServiceRestart) {
@@ -78,7 +78,7 @@ Invoke-Step 'Validate Autonomy V2 readiness' {
 if (-not $SkipSmoke) {
     Invoke-Step 'Run Autonomy V2 smoke' {
         & (Join-Path $root 'smoke-autonomy.ps1') -OpenJarvisBaseUrl $OpenJarvisBaseUrl -N8nBaseUrl $N8nBaseUrl -Workspace $Workspace -RuntimeDeviceId $RuntimeDeviceId -ApiKey $ApiKey
-        if ($LASTEXITCODE -ne 0) { throw 'Autonomy V2 smoke failed.' }
+        if (-not $?) { throw 'Autonomy V2 smoke failed.' }
     }
 }
 
