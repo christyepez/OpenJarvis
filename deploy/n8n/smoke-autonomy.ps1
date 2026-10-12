@@ -61,6 +61,11 @@ for ($i = 1; $i -le $MaxPolls; $i++) {
     $current = Invoke-JarvisRequest -Method GET -Uri "$OpenJarvisBaseUrl/v1/autonomy/tasks/$taskId"
     Write-Host ("[smoke] poll=" + $i + " status=" + $current.status + " checkpoint=" + $current.checkpoint)
     if ($current.status -eq 'completed') {
+        if ($current.context.resultCallbackDelivered -ne $true) {
+            $current | ConvertTo-Json -Depth 20
+            throw 'Autonomy completed but the n8n result callback was not verified.'
+        }
+        Write-Host '[smoke] AUTONOMY_V2_RESULT_CALLBACK=PASS'
         Write-Host '[smoke] AUTONOMY_V2_SMOKE=PASS'
         $current | ConvertTo-Json -Depth 20
         exit 0
