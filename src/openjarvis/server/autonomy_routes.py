@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -15,19 +13,13 @@ from openjarvis.autonomy import (
     TaskStore,
     apply_n8n_callback,
 )
-
-
-def _default_db_path() -> Path:
-    configured = os.getenv("OPENJARVIS_AUTONOMY_DB", "").strip()
-    if configured:
-        return Path(configured).expanduser()
-    return Path.home() / ".openjarvis" / "autonomy.db"
+from openjarvis.autonomy.task_store import default_task_store_path
 
 
 def _get_store(request: Request) -> TaskStore:
     store = getattr(request.app.state, "autonomy_task_store", None)
     if store is None:
-        store = TaskStore(_default_db_path())
+        store = TaskStore(default_task_store_path())
         request.app.state.autonomy_task_store = store
     return store
 
