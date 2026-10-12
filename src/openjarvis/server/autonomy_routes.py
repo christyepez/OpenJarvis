@@ -238,6 +238,92 @@ def create_autonomy_router() -> APIRouter:
         )
         return _dispatch_task(request, store, record)
 
+    @router.post("/tasks/{task_id}/cancel")
+    async def cancel_task(task_id: str, request: Request) -> dict[str, Any]:
+        store = _get_store(request)
+        record = store.get(task_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        if record.status in {"completed", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"task is already terminal: {record.status}",
+            )
+
+        context = dict(record.context)
+        agent_id = str(context.get("managedAgentId") or "").strip()
+        manager = getattr(request.app.state, "agent_manager", None)
+        if agent_id and manager is not None:
+            try:
+                agent = manager.get_agent(agent_id)
+                if agent and str(agent.get("status") or "") != "paused":
+                    manager.pause_agent(agent_id)
+            except Exception:
+                pass
+
+        updated = store.update(
+            task_id,
+            status="cancelled",
+            checkpoint="cancelled-by-user",
+            context=context,
+            error="",
+        )
+        return _record_to_dict(updated)
+
+    @router.post("/tasks/{task_id}/resume", status_code=202)
+    async def resume_task(task_id: str, request: Request) -> dict[str, Any]:
+        store = _get_store(request)
+        record = store.get(task_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="task not found")
+        if record.status in {"completed", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"task is already terminal: {record.status}",
+            )
+        if _approval_is_pending(record):
+            raise HTTPException(
+                status_code=409,
+                detail="task requires approval before execution",
+            )
+
+        manager = getattr(request.app.state, "agent_manager", None)
+        if manager is None:
+            raise HTTPException(
+                status_code=503,
+                detail="managed-agent runtime is not available",
+            )
+
+        runner = ManagedAutonomyRunner(
+            manager=manager,
+            app_state=request.app.state,
+            store=store,
+        )
+        try:
+            handle = (
+                runner.resume(record)
+                if record.context.get("managedAgentId")
+                else runner.start(record)
+            )
+        except Exception as exc:
+            store.update(
+                task_id,
+                status="blocked",
+                checkpoint="managed-resume-failed",
+                error=str(exc),
+            )
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        current = store.get(task_id)
+        assert current is not None
+        body = _record_to_dict(current)
+        body["managed"] = {
+            "agentId": handle.agent_id,
+            "taskId": handle.managed_task_id,
+            "messageId": handle.message_id,
+        }
+        return body
+
     @router.post("/tasks/{task_id}/execute", status_code=202)
     async def execute_task(task_id: str, request: Request) -> dict[str, Any]:
         store = _get_store(request)
