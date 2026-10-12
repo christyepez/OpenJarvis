@@ -398,8 +398,14 @@ class ManagedAutonomyRunner:
         if record is None or record.status not in {"completed", "failed", "cancelled"}:
             return
         try:
-            notify_result(record)
+            delivered = notify_result(record)
+            if delivered:
+                context = dict(record.context)
+                context["resultCallbackDelivered"] = True
+                context.pop("resultCallbackError", None)
+                self.store.update(task_id, context=context)
         except ResultCallbackError as exc:
             context = dict(record.context)
+            context["resultCallbackDelivered"] = False
             context["resultCallbackError"] = str(exc)
             self.store.update(task_id, context=context)
