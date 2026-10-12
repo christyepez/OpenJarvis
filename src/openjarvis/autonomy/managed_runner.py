@@ -207,7 +207,7 @@ class ManagedAutonomyRunner:
                 "active_objective": record.goal,
                 "objective_token": uuid4().hex,
                 "external_task_id": record.task_id,
-                "completion_evidence_requirements": [],
+                "completion_evidence_requirements": [str(x) for x in record.context.get("completionEvidenceRequirements", []) if str(x).strip()],
                 "completion_evidence_observed": [],
                 "completion_tool_evidence_seen": False,
                 "completion_followup_count": 0,
