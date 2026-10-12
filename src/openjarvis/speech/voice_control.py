@@ -2633,9 +2633,7 @@ def _queue_autonomy_v2(command: str) -> str | None:
     except (urllib.error.URLError, TimeoutError, OSError):
         return None
 
-    if not readiness.get("n8nConfigured"):
-        return None
-    if not readiness.get("managedRuntimeAvailable"):
+    if readiness.get("ready") is not True:
         return None
 
     grounded_command = _ground_autonomous_command(command)
