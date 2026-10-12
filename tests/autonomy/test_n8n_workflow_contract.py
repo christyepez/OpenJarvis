@@ -54,3 +54,21 @@ def test_n8n_workflow_accepts_request_before_long_running_execution() -> None:
 
     accept_targets = workflow["connections"]["Accept Task"]["main"][0]
     assert accept_targets[0]["node"] == "Callback OpenJarvis"
+
+
+def test_n8n_workflow_uses_explicit_normalized_task_references() -> None:
+    workflow = _workflow()
+    callback = next(
+        node
+        for node in workflow["nodes"]
+        if node["name"] == "Callback OpenJarvis"
+    )
+    execute = next(
+        node
+        for node in workflow["nodes"]
+        if node["name"] == "Start Managed Execution"
+    )
+
+    assert "$('Normalize Jarvis Task').item.json.callbackUrl" in callback["parameters"]["url"]
+    assert "$('Normalize Jarvis Task').item.json.taskId" in callback["parameters"]["body"]
+    assert "$('Normalize Jarvis Task').item.json.taskId" in execute["parameters"]["url"]

@@ -49,7 +49,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.callbackUrl }}",
+        "url": "={{ $('Normalize Jarvis Task').item.json.callbackUrl }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -62,7 +62,7 @@
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ taskId: $json.taskId, status: 'waiting', checkpoint: 'n8n-dispatcher-ready', executionId: $json.executionId, context: { n8nDispatcher: true } }) }}",
+        "body": "={{ JSON.stringify({ taskId: $('Normalize Jarvis Task').item.json.taskId, status: 'waiting', checkpoint: 'n8n-dispatcher-ready', executionId: $('Normalize Jarvis Task').item.json.executionId, context: { n8nDispatcher: true } }) }}",
         "options": {}
       },
       "id": "4",
@@ -77,7 +77,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.OPENJARVIS_BASE_URL + '/v1/autonomy/tasks/' + $json.taskId + '/execute' }}",
+        "url": "={{ $env.OPENJARVIS_BASE_URL + '/v1/autonomy/tasks/' + $('Normalize Jarvis Task').item.json.taskId + '/execute' }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -150,7 +150,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "00000000-0000-4000-8000-000000000002",
+  "versionId": "00000000-0000-4000-8000-000000000003",
   "meta": {
     "templateCredsSetupCompleted": true
   },
