@@ -2624,6 +2624,20 @@ def _autonomous_legacy(command: str) -> str:
 
 def _queue_autonomy_v2(command: str) -> str | None:
     """Queue the objective through the persistent Autonomy V2 plane."""
+    try:
+        readiness = api("/v1/autonomy/status", timeout=5)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+    if not readiness.get("n8nConfigured"):
+        return None
+    if not readiness.get("managedRuntimeAvailable"):
+        return None
+
     grounded_command = _ground_autonomous_command(command)
     tool_allowlist = _autonomy_tool_allowlist(command)
     evidence_requirements = _autonomy_completion_requirements(command)
