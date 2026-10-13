@@ -77,7 +77,12 @@ try {
     }
 
     Write-Host '[promote] All stable gates passed; updating version to 2.0.0'
-    Set-Content -Path $versionFile -Value 'AUTONOMY_V2_VERSION = "2.0.0"' -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText(
+        $versionFile,
+        'AUTONOMY_V2_VERSION = "2.0.0"' + [Environment]::NewLine,
+        $utf8NoBom
+    )
 
     git diff --check
     if ($LASTEXITCODE -ne 0) {

@@ -52,3 +52,14 @@ def test_stable_promotion_supports_node_n8n_fallback() -> None:
     assert "Docker unavailable; validating local Node n8n fallback" in script
     assert ".openjarvis\\n8n-runtime\\node_modules\\n8n\\bin\\n8n" in script
     assert "ConvertFrom-Json" in script
+
+
+def test_stable_promotion_writes_version_without_bom() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "deploy" / "n8n" / "promote-autonomy-v2.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UTF8Encoding($false)" in script
+    assert "[System.IO.File]::WriteAllText" in script
+    assert "Set-Content -Path $versionFile" not in script
