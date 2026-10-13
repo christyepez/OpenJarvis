@@ -82,6 +82,45 @@ class _DefaultParamsTool:
         return getattr(self._wrapped, name)
 
 
+class _WorkspaceRestrictedTool:
+    """Delegate a path tool while enforcing the configured workspace boundary."""
+
+    def __init__(self, wrapped: Any, workspace: str) -> None:
+        self._wrapped = wrapped
+        self._workspace = Path(workspace).expanduser().resolve()
+
+    @property
+    def spec(self) -> Any:
+        return self._wrapped.spec
+
+    def execute(self, **params: Any) -> Any:
+        from openjarvis.core.types import ToolResult
+
+        raw_path = str(params.get("path") or self._workspace).strip()
+        candidate = Path(raw_path).expanduser().resolve()
+        if not (
+            candidate == self._workspace
+            or candidate.is_relative_to(self._workspace)
+        ):
+            return ToolResult(
+                tool_name=_tool_name(self._wrapped),
+                content=(
+                    f"Access denied: {candidate} is outside authorized workspace "
+                    f"{self._workspace}."
+                ),
+                success=False,
+            )
+        merged = dict(params)
+        merged["path"] = str(candidate)
+        return self._wrapped.execute(**merged)
+
+    def to_openai_function(self) -> dict[str, Any]:
+        return _openai_spec(self._wrapped)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._wrapped, name)
+
+
 class _SpecOverrideTool:
     """Delegate execution while exposing an agent-configured OpenAI schema."""
 
@@ -412,6 +451,8 @@ def resolve_agent_tools(
         name = _tool_name(tool)
         if name == "shell_exec":
             return _DefaultParamsTool(tool, {"working_dir": workspace})
+        if name == "list_directory":
+            return _WorkspaceRestrictedTool(tool, workspace)
         if name in {"git_status", "git_diff", "git_commit", "git_log"}:
             return _DefaultParamsTool(tool, {"repo_path": workspace})
         return tool

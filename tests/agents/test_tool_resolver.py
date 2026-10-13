@@ -514,3 +514,34 @@ def test_project_advance_receives_manager_and_executor():
 
     assert tool._manager is manager
     assert tool._executor is executor
+
+
+def test_list_directory_is_restricted_to_agent_workspace(tmp_path) -> None:
+    from openjarvis.tools.directory_list import ListDirectoryTool
+
+    ToolRegistry.register_value("list_directory", ListDirectoryTool)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "src").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    resolved = tool_resolver.resolve_agent_tools(
+        {
+            "agent_type": "operative",
+            "config": {
+                "workspace": str(workspace),
+                "tools": ["list_directory"],
+            },
+        },
+        engine=object(),
+        model="test-model",
+    )
+
+    inside = resolved.by_name["list_directory"].execute(path=str(workspace))
+    blocked = resolved.by_name["list_directory"].execute(path=str(outside))
+
+    assert inside.success is True
+    assert "[DIR] src" in inside.content
+    assert blocked.success is False
+    assert "outside authorized workspace" in blocked.content

@@ -194,9 +194,13 @@ class ManagedAutonomyRunner:
         )
         context_allowlist = record.context.get("mcpToolAllowlist")
         if isinstance(context_allowlist, list) and context_allowlist:
-            config["mcp_tool_allowlist"] = [
+            normalized_allowlist = [
                 str(name) for name in context_allowlist if str(name).strip()
             ]
+            config["mcp_tool_allowlist"] = normalized_allowlist
+            # Prefer native registry tools when available, while preserving
+            # MCP adapters as an alternate backend for the same allowlist.
+            config["tools"] = normalized_allowlist
 
         evidence_requirements = record.context.get("completionEvidenceRequirements")
         if not isinstance(evidence_requirements, list):
