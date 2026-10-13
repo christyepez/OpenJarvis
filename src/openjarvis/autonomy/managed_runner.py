@@ -9,7 +9,6 @@ from .result_callback import ResultCallbackError, notify_result
 from .runtime_config import build_autonomy_runtime_config
 from .task_store import TaskRecord, TaskStore
 
-
 TERMINAL_AGENT_FAILURES = {"error", "needs_attention", "budget_exceeded"}
 
 
@@ -208,9 +207,7 @@ class ManagedAutonomyRunner:
                 str(name) for name in context_allowlist if str(name).strip()
             ]
 
-        evidence_requirements = record.context.get(
-            "completionEvidenceRequirements"
-        )
+        evidence_requirements = record.context.get("completionEvidenceRequirements")
         if not isinstance(evidence_requirements, list):
             evidence_requirements = []
 
@@ -220,9 +217,7 @@ class ManagedAutonomyRunner:
                 "objective_token": uuid4().hex,
                 "external_task_id": record.task_id,
                 "completion_evidence_requirements": [
-                    str(item)
-                    for item in evidence_requirements
-                    if str(item).strip()
+                    str(item) for item in evidence_requirements if str(item).strip()
                 ],
                 "completion_evidence_observed": [],
                 "completion_tool_evidence_seen": False,
@@ -407,7 +402,6 @@ class ManagedAutonomyRunner:
                 )
             except Exception:
                 pass
-
 
     def _notify_terminal_best_effort(self, task_id: str) -> None:
         record = self.store.get(task_id)

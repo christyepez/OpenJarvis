@@ -47,10 +47,7 @@ def test_result_callback_prefers_task_context(tmp_path, monkeypatch) -> None:
     )
     record = _record(
         tmp_path,
-        context={
-            "autonomyResultCallbackUrl":
-            "http://127.0.0.1:5678/task-result"
-        },
+        context={"autonomyResultCallbackUrl": "http://127.0.0.1:5678/task-result"},
     )
 
     assert configured_result_callback_url(record).endswith("/task-result")
@@ -59,10 +56,7 @@ def test_result_callback_prefers_task_context(tmp_path, monkeypatch) -> None:
 def test_notify_result_posts_terminal_payload(tmp_path, monkeypatch) -> None:
     record = _record(
         tmp_path,
-        context={
-            "autonomyResultCallbackUrl":
-            "http://127.0.0.1:5678/jarvis/result"
-        },
+        context={"autonomyResultCallbackUrl": "http://127.0.0.1:5678/jarvis/result"},
     )
     captured = {}
 
@@ -98,10 +92,7 @@ def test_notify_result_is_noop_when_unconfigured(tmp_path, monkeypatch) -> None:
 def test_notify_result_wraps_http_failure(tmp_path, monkeypatch) -> None:
     record = _record(
         tmp_path,
-        context={
-            "autonomyResultCallbackUrl":
-            "http://127.0.0.1:5678/jarvis/result"
-        },
+        context={"autonomyResultCallbackUrl": "http://127.0.0.1:5678/jarvis/result"},
     )
     request = httpx.Request(
         "POST",

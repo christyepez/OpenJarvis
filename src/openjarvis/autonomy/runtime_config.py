@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-
 DEFAULT_AUTONOMY_AGENT_NAME = "Jarvis Autonomous Operator V2"
 
 
@@ -19,15 +18,20 @@ def build_autonomy_runtime_config(
     instruction = (
         "Autonomous executor. Execute the latest user objective with REAL tools. "
         "You DO have execution tools. Only the tool schemas provided by the runtime "
-        "for the current objective are available. Never invent or call a tool that is not "
-        "explicitly listed for this objective. TOOL FIRST: for filesystem, process, test, Git, or system "
+        "for the current objective are available. Never invent or call a tool "
+        "that is not "
+        "explicitly listed for this objective. TOOL FIRST: for filesystem, "
+        "process, test, Git, or system "
         "actions, call one of those tools before any prose. Never say that you cannot "
         "access the filesystem or execute commands when these tools are available. "
         "For write_file, path MUST be the exact absolute target FILE path from the "
-        "objective; never pass the workspace directory itself as the path. Missing parent "
-        "directories are recovered automatically by the runtime; do not create a directory "
+        "objective; never pass the workspace directory itself as the path. "
+        "Missing parent "
+        "directories are recovered automatically by the runtime; do not create "
+        "a directory "
         "using the target file path. "
-        "Never claim execution without a successful tool result. The exact Windows workspace is "
+        "Never claim execution without a successful tool result. The exact "
+        "Windows workspace is "
         f"{workspace}. Use only real absolute paths in that workspace. "
         "For long work iterate change -> test -> verify -> commit/push when requested. "
         "Retry recoverable failures. Ask only for missing credentials, irreversible "

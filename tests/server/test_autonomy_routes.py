@@ -144,9 +144,7 @@ def test_list_tasks_returns_only_resumable(tmp_path: Path, monkeypatch) -> None:
     response = client.get("/v1/autonomy/tasks")
 
     assert response.status_code == 200
-    assert [task["taskId"] for task in response.json()["tasks"]] == [
-        first["taskId"]
-    ]
+    assert [task["taskId"] for task in response.json()["tasks"]] == [first["taskId"]]
 
 
 def test_create_task_requires_goal(tmp_path: Path, monkeypatch) -> None:
@@ -175,9 +173,7 @@ def test_execute_task_starts_managed_runner(tmp_path: Path, monkeypatch) -> None
         json={"goal": "execute autonomously"},
     ).json()
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/execute"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/execute")
 
     assert response.status_code == 202
     body = response.json()
@@ -201,9 +197,7 @@ def test_execute_task_rejects_terminal_task(tmp_path: Path, monkeypatch) -> None
         json={"taskId": created["taskId"], "status": "completed"},
     )
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/execute"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/execute")
 
     assert response.status_code == 409
 
@@ -216,9 +210,7 @@ def test_execute_task_requires_managed_runtime(tmp_path: Path, monkeypatch) -> N
     ).json()
 
     client.app.state.agent_manager = None
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/execute"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/execute")
 
     assert response.status_code == 503
 
@@ -287,9 +279,7 @@ def test_approve_releases_high_risk_task_to_n8n(
         json={"goal": "Haz merge a main"},
     ).json()
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/approve"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/approve")
 
     assert response.status_code == 202
     body = response.json()
@@ -308,9 +298,7 @@ def test_execute_cannot_bypass_pending_approval(
         json={"goal": "Elimina los archivos temporales"},
     ).json()
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/execute"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/execute")
 
     assert response.status_code == 409
     assert "requires approval" in response.json()["detail"]
@@ -426,9 +414,7 @@ def test_cancel_task_marks_terminal_and_pauses_managed_agent(
     manager = PauseManager()
     client.app.state.agent_manager = manager
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/cancel"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/cancel")
 
     assert response.status_code == 200
     body = response.json()
@@ -477,9 +463,7 @@ def test_resume_task_reuses_managed_runner(
         ResumeRunner,
     )
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/resume"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/resume")
 
     assert response.status_code == 202
     body = response.json()
@@ -500,8 +484,6 @@ def test_resume_task_rejects_cancelled_task(
     store = client.app.state.autonomy_task_store
     store.update(created["taskId"], status="cancelled")
 
-    response = client.post(
-        f"/v1/autonomy/tasks/{created['taskId']}/resume"
-    )
+    response = client.post(f"/v1/autonomy/tasks/{created['taskId']}/resume")
 
     assert response.status_code == 409

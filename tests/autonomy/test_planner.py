@@ -29,9 +29,7 @@ def test_data_goal_gets_data_validation_stage() -> None:
 
 
 def test_deploy_goal_adds_deploy_and_smoke_stage() -> None:
-    plan = build_autonomy_plan(
-        "Actualiza el repo y luego despliega con Docker"
-    )
+    plan = build_autonomy_plan("Actualiza el repo y luego despliega con Docker")
 
     ids = [step.id for step in plan.steps]
     assert plan.kind == "code"

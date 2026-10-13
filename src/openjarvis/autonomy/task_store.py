@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+
 def default_task_store_path() -> Path:
     configured = os.getenv("OPENJARVIS_AUTONOMY_DB", "").strip()
     if configured:

@@ -38,9 +38,7 @@ def test_n8n_workflow_starts_managed_execution_after_callback() -> None:
     ]
 
     execute_node = next(
-        node
-        for node in workflow["nodes"]
-        if node["name"] == "Start Managed Execution"
+        node for node in workflow["nodes"] if node["name"] == "Start Managed Execution"
     )
     url = execute_node["parameters"]["url"]
     assert "OPENJARVIS_BASE_URL" in url
@@ -61,14 +59,10 @@ def test_n8n_workflow_accepts_request_before_long_running_execution() -> None:
 def test_n8n_workflow_uses_explicit_normalized_task_references() -> None:
     workflow = _workflow()
     callback = next(
-        node
-        for node in workflow["nodes"]
-        if node["name"] == "Callback OpenJarvis"
+        node for node in workflow["nodes"] if node["name"] == "Callback OpenJarvis"
     )
     execute = next(
-        node
-        for node in workflow["nodes"]
-        if node["name"] == "Start Managed Execution"
+        node for node in workflow["nodes"] if node["name"] == "Start Managed Execution"
     )
 
     callback_url = callback["parameters"]["url"]
@@ -85,9 +79,7 @@ def test_n8n_workflow_uses_explicit_normalized_task_references() -> None:
 def test_n8n_workflow_exposes_result_webhook() -> None:
     workflow = _workflow()
     result_node = next(
-        node
-        for node in workflow["nodes"]
-        if node["name"] == "Jarvis Result Webhook"
+        node for node in workflow["nodes"] if node["name"] == "Jarvis Result Webhook"
     )
     assert result_node["parameters"]["path"] == "jarvis/result"
 
@@ -104,9 +96,7 @@ def test_n8n_workflow_exposes_result_webhook() -> None:
 def test_n8n_workflow_exposes_health_webhook() -> None:
     workflow = _workflow()
     health_node = next(
-        node
-        for node in workflow["nodes"]
-        if node["name"] == "Jarvis Health Webhook"
+        node for node in workflow["nodes"] if node["name"] == "Jarvis Health Webhook"
     )
     assert health_node["parameters"]["httpMethod"] == "GET"
     assert health_node["parameters"]["path"] == "jarvis/health"
