@@ -40,3 +40,15 @@ def test_stable_promotion_commit_is_opt_in() -> None:
 
     assert "[switch]$CreateCommit" in script
     assert "release: promote Autonomy V2 to 2.0.0" in script
+
+
+def test_stable_promotion_supports_node_n8n_fallback() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "deploy" / "n8n" / "promote-autonomy-v2.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "if (-not $?)" in script
+    assert "Docker unavailable; validating local Node n8n fallback" in script
+    assert ".openjarvis\\n8n-runtime\\node_modules\\n8n\\bin\\n8n" in script
+    assert "ConvertFrom-Json" in script
