@@ -42,3 +42,16 @@ def test_runtime_config_returns_fresh_mutable_lists() -> None:
 
     assert "extra" not in second["mcp_tool_allowlist"]
     assert "extra" not in second["runtime_machine_candidates"]
+
+
+def test_runtime_config_declares_authorized_scope() -> None:
+    config = build_autonomy_runtime_config(
+        model="llama3.2:1b",
+        workspace=r"C:\repo\OpenJarvis",
+    )
+
+    instruction = config["instruction"].lower()
+    assert "explicitly authorized" in instruction
+    assert "provided allowlist" in instruction
+    assert "approval policy" in instruction
+    assert "never broaden scope" in instruction
