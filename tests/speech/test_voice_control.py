@@ -6,7 +6,10 @@ from pathlib import Path
 
 from openjarvis.speech.voice_control import (
     AUTONOMY_MODEL,
+    _autonomous_legacy,
     _autonomy_completion_requirements,
+    _autonomy_tool_allowlist,
+    _autonomy_tool_specs,
     _direct_explicit_file_delete,
     _direct_explicit_file_edit,
     _direct_explicit_file_write,
@@ -18,16 +21,13 @@ from openjarvis.speech.voice_control import (
     _direct_explicit_pr_merge,
     _direct_explicit_pr_ready,
     _direct_explicit_pytest,
-    _direct_prepare_branch_pr,
     _direct_finalize_current_pr,
-    _autonomy_tool_allowlist,
-    _autonomy_tool_specs,
+    _direct_prepare_branch_pr,
+    _ensure_api_available,
     _ground_autonomous_command,
     _is_autonomous_objective,
-    _autonomous_legacy,
-    _queue_autonomy_v2,
-    _ensure_api_available,
     _prepare_autonomy_models,
+    _queue_autonomy_v2,
     _requires_tool_evidence,
     _summarize_list_directory_result,
     _wait_for_autonomy_idle,
@@ -126,7 +126,10 @@ def test_action_commands_require_real_tool_evidence() -> None:
 def test_autonomous_objective_requires_explicit_action() -> None:
     assert _is_autonomous_objective("implementa el ajuste completo del panel") is True
     assert _is_autonomous_objective("continua con la implementacion de Jarvis") is True
-    assert _is_autonomous_objective("lista el contenido del directorio del proyecto") is True
+    assert (
+        _is_autonomous_objective("lista el contenido del directorio del proyecto")
+        is True
+    )
     assert _is_autonomous_objective("que va a hacer una cosa") is False
     assert _is_autonomous_objective("estado autonomo") is False
 
@@ -419,7 +422,6 @@ def test_wait_for_wake_retries_next_device(monkeypatch) -> None:
     assert attempts == [3, 0]
 
 
-
 def test_direct_finalize_current_pr_runs_ready_then_merge(
     monkeypatch,
 ) -> None:
@@ -476,9 +478,7 @@ def test_direct_finalize_current_pr_stops_before_merge(
         fake_merge,
     )
 
-    answer = _direct_finalize_current_pr(
-        "finaliza el pull request actual"
-    )
+    answer = _direct_finalize_current_pr("finaliza el pull request actual")
 
     assert answer == (
         "Detuve el flujo antes del merge. "
@@ -531,9 +531,7 @@ def test_direct_prepare_branch_pr_orchestrates_safe_flow(
         ),
     )
 
-    answer = _direct_prepare_branch_pr(
-        "prepara la rama actual para pull request"
-    )
+    answer = _direct_prepare_branch_pr("prepara la rama actual para pull request")
 
     assert answer is not None
     assert answer.startswith("Rama feature/workflow preparada para revision.")
@@ -572,9 +570,7 @@ def test_direct_prepare_branch_pr_stops_on_failed_tests(
         lambda command: pushed.__setitem__("value", True),
     )
 
-    answer = _direct_prepare_branch_pr(
-        "finaliza la rama actual para pr"
-    )
+    answer = _direct_prepare_branch_pr("finaliza la rama actual para pr")
 
     assert answer == (
         "Detuve el flujo porque las pruebas no pasaron. "
@@ -609,9 +605,7 @@ def test_direct_prepare_branch_pr_refuses_dirty_tracked_changes(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_prepare_branch_pr(
-        "prepara la rama actual para pr"
-    )
+    answer = _direct_prepare_branch_pr("prepara la rama actual para pr")
 
     assert answer == (
         "Hay cambios versionados sin commit. No prepare el pull request; "
@@ -668,13 +662,10 @@ def test_direct_explicit_pr_ready_marks_draft_ready(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_explicit_pr_ready(
-        "marca el pr actual listo para revision"
-    )
+    answer = _direct_explicit_pr_ready("marca el pr actual listo para revision")
 
     assert answer == (
-        "Pull request #42 listo para revision: "
-        "https://github.com/example/repo/pull/42"
+        "Pull request #42 listo para revision: https://github.com/example/repo/pull/42"
     )
 
 
@@ -744,12 +735,12 @@ def test_direct_explicit_pr_merge_requires_clean_checks(
     )
     monkeypatch.setattr(
         "openjarvis.speech.voice_control._direct_explicit_main_sync",
-        lambda command: "Rama main activa y actualizada por fast-forward. HEAD cafefeed.",
+        lambda command: (
+            "Rama main activa y actualizada por fast-forward. HEAD cafefeed."
+        ),
     )
 
-    answer = _direct_explicit_pr_merge(
-        "fusiona el pr actual con squash"
-    )
+    answer = _direct_explicit_pr_merge("fusiona el pr actual con squash")
 
     assert answer == (
         "Pull request #42 fusionado con squash y verificado: "
@@ -814,9 +805,7 @@ def test_direct_explicit_pr_merge_refuses_pending_checks(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_explicit_pr_merge(
-        "fusiona el pull request actual con squash"
-    )
+    answer = _direct_explicit_pr_merge("fusiona el pull request actual con squash")
 
     assert answer == "El pull request tiene checks pendientes: tests."
 
@@ -862,9 +851,7 @@ def test_direct_explicit_pr_merge_refuses_draft(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_explicit_pr_merge(
-        "fusiona el pr actual con squash"
-    )
+    answer = _direct_explicit_pr_merge("fusiona el pr actual con squash")
 
     assert answer == (
         "El pull request sigue en draft. Marcalo listo para revision primero."
@@ -990,8 +977,7 @@ def test_direct_explicit_pr_create_refuses_unsynced_branch(
     )
 
     answer = _direct_explicit_pr_create(
-        "crear pull request con titulo Pendiente "
-        "y descripcion Falta push"
+        "crear pull request con titulo Pendiente y descripcion Falta push"
     )
 
     assert answer == (
@@ -1040,9 +1026,7 @@ def test_direct_explicit_main_sync_switches_and_fast_forwards(
 
     answer = _direct_explicit_main_sync("vuelve a main y actualiza")
 
-    assert answer == (
-        "Rama main activa y actualizada por fast-forward. HEAD abc1234."
-    )
+    assert answer == ("Rama main activa y actualizada por fast-forward. HEAD abc1234.")
     assert ["git", "switch", "main"] in calls
     assert ["git", "merge", "--ff-only", "origin/main"] in calls
 
@@ -1110,9 +1094,7 @@ def test_direct_explicit_git_branch_creates_feature_from_main(
         fake_run,
     )
 
-    answer = _direct_explicit_git_branch(
-        "crea una rama feature/smoke desde main"
-    )
+    answer = _direct_explicit_git_branch("crea una rama feature/smoke desde main")
 
     assert answer == "Rama creada y verificada: feature/smoke."
     assert ["git", "switch", "-c", "feature/smoke"] in calls
@@ -1137,9 +1119,7 @@ def test_direct_explicit_git_branch_refuses_non_main_base(
         lambda *args, **kwargs: Result(),
     )
 
-    answer = _direct_explicit_git_branch(
-        "crea rama feature/new-one"
-    )
+    answer = _direct_explicit_git_branch("crea rama feature/new-one")
 
     assert answer == (
         "Solo creo ramas nuevas desde main o master. "
@@ -1168,9 +1148,7 @@ def test_direct_explicit_git_branch_refuses_dirty_tracked_worktree(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_explicit_git_branch(
-        "crear rama fix/safe-branch"
-    )
+    answer = _direct_explicit_git_branch("crear rama fix/safe-branch")
 
     assert answer == (
         "Hay cambios versionados pendientes. No cree la rama para evitar "
@@ -1318,12 +1296,8 @@ def test_direct_explicit_git_commit_stages_only_tracked_changes(
         "No agregue archivos no rastreados. Commit abc1234."
     )
     assert calls[0] == ["git", "diff", "--cached", "--name-only"]
-    assert calls[1] == [
-        "git", "diff", "--name-only", "--diff-filter=ACDMRTUXB"
-    ]
-    assert calls[2] == [
-        "git", "add", "-u", "--", "src/app.py", "tests/test_app.py"
-    ]
+    assert calls[1] == ["git", "diff", "--name-only", "--diff-filter=ACDMRTUXB"]
+    assert calls[2] == ["git", "add", "-u", "--", "src/app.py", "tests/test_app.py"]
     assert calls[3] == ["git", "commit", "-m", "mejora segura"]
     assert calls[4] == ["git", "rev-parse", "--short", "HEAD"]
 
@@ -1347,9 +1321,7 @@ def test_direct_explicit_git_commit_refuses_existing_staged_changes(
         lambda *args, **kwargs: Result(),
     )
 
-    answer = _direct_explicit_git_commit(
-        "crea un commit con mensaje no mezclar"
-    )
+    answer = _direct_explicit_git_commit("crea un commit con mensaje no mezclar")
 
     assert answer == (
         "Hay cambios staged previos. No cree el commit para evitar "
@@ -1378,9 +1350,7 @@ def test_direct_explicit_git_commit_ignores_untracked_only_repo(
         lambda *args, **kwargs: next(responses),
     )
 
-    answer = _direct_explicit_git_commit(
-        "haz commit con mensaje solo untracked"
-    )
+    answer = _direct_explicit_git_commit("haz commit con mensaje solo untracked")
 
     assert answer == "No hay cambios versionados pendientes para crear un commit."
 
@@ -1417,14 +1387,10 @@ def test_direct_explicit_pytest_runs_only_inside_tests(
         fake_run,
     )
 
-    answer = _direct_explicit_pytest(
-        "ejecuta pytest tests/test_example.py -q"
-    )
+    answer = _direct_explicit_pytest("ejecuta pytest tests/test_example.py -q")
 
     assert answer == "Pruebas completadas correctamente. 1 passed in 0.01s."
-    assert calls == [
-        [str(python), "-m", "pytest", str(test_file.resolve()), "-q"]
-    ]
+    assert calls == [[str(python), "-m", "pytest", str(test_file.resolve()), "-q"]]
 
 
 def test_direct_explicit_pytest_rejects_target_outside_tests(
@@ -1439,9 +1405,7 @@ def test_direct_explicit_pytest_rejects_target_outside_tests(
         lambda: tmp_path,
     )
 
-    answer = _direct_explicit_pytest(
-        "ejecuta pytest src/app.py"
-    )
+    answer = _direct_explicit_pytest("ejecuta pytest src/app.py")
 
     assert answer == "Solo puedo ejecutar pytest sobre rutas dentro de tests."
 
@@ -1468,9 +1432,7 @@ def test_direct_explicit_pytest_reports_failure(
         lambda *args, **kwargs: Result(),
     )
 
-    answer = _direct_explicit_pytest(
-        "ejecuta pytest tests/test_bad.py"
-    )
+    answer = _direct_explicit_pytest("ejecuta pytest tests/test_bad.py")
 
     assert answer == "Las pruebas fallaron. 1 failed in 0.02s."
 
@@ -1502,7 +1464,10 @@ def test_direct_explicit_file_delete_removes_untracked_file(
         "y no cambies ningun otro archivo"
     )
 
-    assert answer == "Archivo eliminado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert (
+        answer
+        == "Archivo eliminado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    )
     assert not target.exists()
 
 
@@ -1527,9 +1492,7 @@ def test_direct_explicit_file_delete_refuses_tracked_file(
         lambda *args, **kwargs: Result(),
     )
 
-    answer = _direct_explicit_file_delete(
-        "borra el archivo README.md"
-    )
+    answer = _direct_explicit_file_delete("borra el archivo README.md")
 
     assert answer == "El archivo README.md esta versionado por Git. No lo elimine."
     assert target.read_text(encoding="utf-8") == "tracked"
@@ -1547,9 +1510,7 @@ def test_direct_explicit_file_delete_rejects_workspace_escape(
     )
 
     try:
-        answer = _direct_explicit_file_delete(
-            f"elimina el archivo ../{outside.name}"
-        )
+        answer = _direct_explicit_file_delete(f"elimina el archivo ../{outside.name}")
         assert answer == "No puedo eliminar archivos fuera del workspace de OpenJarvis."
         assert outside.read_text(encoding="utf-8") == "keep"
     finally:
@@ -1574,7 +1535,9 @@ def test_direct_explicit_file_edit_updates_existing_file(
         "y no cambies ningun otro archivo"
     )
 
-    assert answer == "Archivo editado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert (
+        answer == "Archivo editado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    )
     assert target.read_text(encoding="utf-8") == "JARVIS_EDIT_OK"
 
 
@@ -1631,7 +1594,9 @@ def test_direct_explicit_file_write_creates_inside_workspace(
     )
 
     target = tmp_path / ".openjarvis-smoke" / "autonomy-write.txt"
-    assert answer == "Archivo creado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    assert (
+        answer == "Archivo creado y verificado: .openjarvis-smoke/autonomy-write.txt."
+    )
     assert target.read_text(encoding="utf-8") == "JARVIS_WRITE_OK"
 
 
@@ -1756,7 +1721,9 @@ def test_direct_can_open_windows_explorer(monkeypatch) -> None:
     assert launched == [["explorer.exe"]]
 
 
-def test_direct_verifies_current_repository_directory(monkeypatch, tmp_path: Path) -> None:
+def test_direct_verifies_current_repository_directory(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         "openjarvis.speech.voice_control._repo_root",
         lambda: tmp_path,
@@ -1948,12 +1915,7 @@ def test_agent_lookup_ignores_archived_entries(monkeypatch) -> None:
 
 
 def test_summarize_list_directory_result_counts_entries() -> None:
-    listing = (
-        "[DIR] src\n"
-        "[FILE] README.md\n"
-        "[DIR] tests\n"
-        "[FILE] pyproject.toml\n"
-    )
+    listing = "[DIR] src\n[FILE] README.md\n[DIR] tests\n[FILE] pyproject.toml\n"
 
     assert _summarize_list_directory_result(listing) == (
         "Verifiqué el workspace. Encontré 2 carpetas y 2 archivos."
@@ -2141,7 +2103,9 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["agent_type"] == "operative"
     assert calls[0][1]["summary_memory"] == ""
     assert calls[0][1]["config"]["schedule_type"] == "interval"
-    assert calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
+    assert (
+        calls[0][1]["config"]["system_prompt"] == calls[0][1]["config"]["instruction"]
+    )
     assert calls[0][1]["config"]["model"] == AUTONOMY_MODEL
     assert calls[0][1]["config"]["max_output_tokens"] == 256
     assert "max_tokens" not in calls[0][1]["config"]
@@ -2153,7 +2117,10 @@ def test_existing_autonomy_agent_is_reconciled(monkeypatch) -> None:
     assert calls[0][1]["config"]["tools"] == []
     assert calls[0][1]["config"]["workspace"] in calls[0][1]["config"]["instruction"]
     assert "real absolute paths" in calls[0][1]["config"]["instruction"]
-    assert "Only the tool schemas provided by the runtime" in calls[0][1]["config"]["instruction"]
+    assert (
+        "Only the tool schemas provided by the runtime"
+        in calls[0][1]["config"]["instruction"]
+    )
 
 
 def test_queue_autonomy_v2_dispatches_persistent_voice_task(monkeypatch) -> None:
@@ -2227,6 +2194,7 @@ def test_queue_autonomy_v2_reports_approval_required(monkeypatch) -> None:
         "openjarvis.speech.voice_control._runtime_device_id",
         lambda: "",
     )
+
     def fake_api(path, payload=None, timeout=120, method=None):
         if path == "/v1/autonomy/status":
             return {

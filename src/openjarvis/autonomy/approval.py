@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import re
+from dataclasses import asdict, dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,10 +17,22 @@ class ApprovalAssessment:
 _HIGH_RISK_PATTERNS: tuple[tuple[str, str], ...] = (
     (r"\b(producci[oó]n|production|prod)\b", "production-change"),
     (r"\b(delete|remove|drop|truncate|elimina|borrar|borra)\b", "destructive-change"),
-    (r"\b(send|email|correo|publica|publish|postea|mensaje externo)\b", "external-communication"),
-    (r"\b(pay|payment|pago|transfer|transferencia|compra|purchase)\b", "financial-action"),
-    (r"\b(merge|fusiona|fusionar)\b.*\b(main|master|release)\b", "protected-branch-merge"),
-    (r"\b(secret|secreto|credential|credencial|token|password|contrase[nñ]a)\b", "credential-change"),
+    (
+        r"\b(send|email|correo|publica|publish|postea|mensaje externo)\b",
+        "external-communication",
+    ),
+    (
+        r"\b(pay|payment|pago|transfer|transferencia|compra|purchase)\b",
+        "financial-action",
+    ),
+    (
+        r"\b(merge|fusiona|fusionar)\b.*\b(main|master|release)\b",
+        "protected-branch-merge",
+    ),
+    (
+        r"\b(secret|secreto|credential|credencial|token|password|contrase[nñ]a)\b",
+        "credential-change",
+    ),
 )
 
 

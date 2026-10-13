@@ -52,7 +52,9 @@ class N8nDispatcher:
         api_key: str | None = None,
         timeout_seconds: float = 10.0,
     ) -> None:
-        self.webhook_url = (webhook_url or os.getenv("OPENJARVIS_N8N_WEBHOOK_URL", "")).strip()
+        self.webhook_url = (
+            webhook_url or os.getenv("OPENJARVIS_N8N_WEBHOOK_URL", "")
+        ).strip()
         self.api_key = api_key or os.getenv("OPENJARVIS_N8N_API_KEY")
         self.timeout_seconds = timeout_seconds
 
@@ -94,7 +96,9 @@ class N8nDispatcher:
         if task_id != request.task_id:
             raise N8nDispatchError("n8n response taskId does not match request")
         if status not in {"accepted", "queued", "running"}:
-            raise N8nDispatchError(f"n8n did not accept task: status={status or 'missing'}")
+            raise N8nDispatchError(
+                f"n8n did not accept task: status={status or 'missing'}"
+            )
 
         return N8nTaskResponse(
             task_id=task_id,

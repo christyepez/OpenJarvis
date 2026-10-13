@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import re
+from dataclasses import asdict, dataclass
 from typing import Any
 
 
@@ -79,14 +79,19 @@ def build_autonomy_plan(goal: str) -> AutonomyPlan:
         PlanStep(
             id="inspect",
             title="Inspect current state",
-            objective="Collect real state, constraints, files, services and prior checkpoints.",
+            objective=(
+                "Collect real state, constraints, files, services "
+                "and prior checkpoints."
+            ),
             verification="Current state is supported by tool evidence.",
         ),
         PlanStep(
             id="plan",
             title="Derive safe actions",
             objective="Translate the objective into bounded actions and dependencies.",
-            verification="Actions cover the requested outcome without unrelated changes.",
+            verification=(
+                "Actions cover the requested outcome without unrelated changes."
+            ),
         ),
     ]
 
@@ -97,19 +102,29 @@ def build_autonomy_plan(goal: str) -> AutonomyPlan:
                     id="implement",
                     title="Implement bounded change",
                     objective="Apply the smallest coherent code/configuration changes.",
-                    verification="Only intended files changed and diff is internally consistent.",
+                    verification=(
+                        "Only intended files changed and diff is internally consistent."
+                    ),
                 ),
                 PlanStep(
                     id="test",
                     title="Run directed tests",
-                    objective="Execute focused automated tests for the changed behavior.",
+                    objective=(
+                        "Execute focused automated tests for the changed behavior."
+                    ),
                     verification="Directed tests pass with real command output.",
                 ),
                 PlanStep(
                     id="quality",
                     title="Run quality gate",
-                    objective="Check formatting, static issues, regression risk and diff hygiene.",
-                    verification="Quality checks pass or every remaining issue is explicitly recorded.",
+                    objective=(
+                        "Check formatting, static issues, regression risk "
+                        "and diff hygiene."
+                    ),
+                    verification=(
+                        "Quality checks pass or every remaining issue "
+                        "is explicitly recorded."
+                    ),
                 ),
             ]
         )
@@ -119,8 +134,13 @@ def build_autonomy_plan(goal: str) -> AutonomyPlan:
                 PlanStep(
                     id="validate-data",
                     title="Validate source and model",
-                    objective="Verify source totals, mappings, relationships, filters and temporal logic.",
-                    verification="Control totals and requested business rules reconcile.",
+                    objective=(
+                        "Verify source totals, mappings, relationships, filters "
+                        "and temporal logic."
+                    ),
+                    verification=(
+                        "Control totals and requested business rules reconcile."
+                    ),
                 ),
                 PlanStep(
                     id="apply",
@@ -145,7 +165,9 @@ def build_autonomy_plan(goal: str) -> AutonomyPlan:
             PlanStep(
                 id="deploy",
                 title="Deploy and smoke test",
-                objective="Deploy to the requested environment and verify service health.",
+                objective=(
+                    "Deploy to the requested environment and verify service health."
+                ),
                 verification="Deployment and smoke/health checks succeed.",
             )
         )
@@ -155,14 +177,22 @@ def build_autonomy_plan(goal: str) -> AutonomyPlan:
             PlanStep(
                 id="repair",
                 title="Repair recoverable failures",
-                objective="Retry or correct recoverable failures without broadening scope.",
-                verification="Retries converge or the task is blocked with a concrete reason.",
+                objective=(
+                    "Retry or correct recoverable failures without broadening scope."
+                ),
+                verification=(
+                    "Retries converge or the task is blocked with a concrete reason."
+                ),
             ),
             PlanStep(
                 id="complete",
                 title="Verify completion",
-                objective="Confirm the user objective is fully satisfied and record evidence.",
-                verification="Completion criteria are met before AUTONOMY_DONE is emitted.",
+                objective=(
+                    "Confirm the user objective is fully satisfied and record evidence."
+                ),
+                verification=(
+                    "Completion criteria are met before AUTONOMY_DONE is emitted."
+                ),
             ),
         ]
     )

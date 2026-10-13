@@ -156,9 +156,7 @@ def test_runner_starts_isolated_agent_and_completes(
     assert agent["config"]["external_task_id"] == record.task_id
     assert agent["config"]["runtime_device_id"] == "device-1"
     assert agent["config"]["mcp_tool_allowlist"] == ["list_directory"]
-    assert agent["config"]["completion_evidence_requirements"] == [
-        "directory-listed"
-    ]
+    assert agent["config"]["completion_evidence_requirements"] == ["directory-listed"]
     assert agent["config"]["schedule_type"] == "manual"
 
 

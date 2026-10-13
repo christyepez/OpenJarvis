@@ -14,9 +14,7 @@ class ResultCallbackError(RuntimeError):
 
 def configured_result_callback_url(record: TaskRecord | None = None) -> str:
     if record is not None:
-        context_url = str(
-            record.context.get("autonomyResultCallbackUrl") or ""
-        ).strip()
+        context_url = str(record.context.get("autonomyResultCallbackUrl") or "").strip()
         if context_url:
             return context_url
     return os.getenv("OPENJARVIS_N8N_RESULT_WEBHOOK_URL", "").strip()
@@ -58,8 +56,6 @@ def notify_result(
         )
         response.raise_for_status()
     except httpx.HTTPError as exc:
-        raise ResultCallbackError(
-            f"autonomy result callback failed: {exc}"
-        ) from exc
+        raise ResultCallbackError(f"autonomy result callback failed: {exc}") from exc
 
     return True

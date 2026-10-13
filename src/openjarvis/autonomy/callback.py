@@ -63,9 +63,7 @@ def parse_n8n_callback(payload: object) -> N8nCallbackEvent:
         context=context,
         result=result,
         error=str(error) if error is not None else None,
-        execution_id=(
-            str(execution_id) if execution_id is not None else None
-        ),
+        execution_id=(str(execution_id) if execution_id is not None else None),
     )
 
 

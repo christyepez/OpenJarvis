@@ -35,6 +35,7 @@ def resolve_input_sample_rate(*args, **kwargs):
 
     return _resolve(*args, **kwargs)
 
+
 LOG_PATH = HOME / "voice-control.log"
 STATE_PATH = HOME / "voice-control.json"
 STOP_PATH = HOME / "voice-control.stop"
@@ -569,7 +570,9 @@ def _direct_explicit_file_write(command: str) -> str | None:
 
     repo = _repo_root().resolve()
     candidate = Path(raw_path)
-    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    target = (
+        candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    )
 
     try:
         relative = target.relative_to(repo)
@@ -613,7 +616,9 @@ def _direct_explicit_file_edit(command: str) -> str | None:
 
     repo = _repo_root().resolve()
     candidate = Path(raw_path)
-    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    target = (
+        candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    )
 
     try:
         relative = target.relative_to(repo)
@@ -647,18 +652,24 @@ def _direct_explicit_file_delete(command: str) -> str | None:
         return None
 
     raw_path = match.group(1).strip()
-    raw_path = re.sub(
-        r"(?is)\s+y\s+no\s+cambies\s+ningun\s+otro\s+archivo\s*$",
-        "",
-        raw_path,
-    ).strip().strip("\"'")
+    raw_path = (
+        re.sub(
+            r"(?is)\s+y\s+no\s+cambies\s+ningun\s+otro\s+archivo\s*$",
+            "",
+            raw_path,
+        )
+        .strip()
+        .strip("\"'")
+    )
 
     if not raw_path:
         return "Necesito una ruta explicita para eliminar el archivo."
 
     repo = _repo_root().resolve()
     candidate = Path(raw_path)
-    target = candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    target = (
+        candidate.resolve() if candidate.is_absolute() else (repo / candidate).resolve()
+    )
 
     try:
         relative = target.relative_to(repo)
@@ -683,8 +694,7 @@ def _direct_explicit_file_delete(command: str) -> str | None:
     )
     if proc.returncode == 0:
         return (
-            f"El archivo {relative.as_posix()} esta versionado por Git. "
-            "No lo elimine."
+            f"El archivo {relative.as_posix()} esta versionado por Git. No lo elimine."
         )
     if proc.returncode != 1:
         return (
@@ -752,9 +762,7 @@ def _direct_explicit_pytest(command: str) -> str | None:
         return "Pytest excedio el tiempo maximo de ejecucion."
 
     output = "\n".join(
-        part.strip()
-        for part in (proc.stdout, proc.stderr)
-        if part and part.strip()
+        part.strip() for part in (proc.stdout, proc.stderr) if part and part.strip()
     )
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     summary = lines[-1] if lines else "sin resumen disponible"
@@ -895,11 +903,7 @@ def _direct_explicit_git_branch(command: str) -> str | None:
         ["git", "branch", "--show-current"],
         **common,
     )
-    current = (
-        current_proc.stdout.strip()
-        if current_proc.returncode == 0
-        else ""
-    )
+    current = current_proc.stdout.strip() if current_proc.returncode == 0 else ""
     if current.lower() not in {"main", "master"}:
         return (
             "Solo creo ramas nuevas desde main o master. "
@@ -947,9 +951,7 @@ def _direct_explicit_git_branch(command: str) -> str | None:
     )
     created = verify.stdout.strip() if verify.returncode == 0 else ""
     if created != branch:
-        return (
-            f"Git intento crear {branch}, pero no pude verificar la rama activa."
-        )
+        return f"Git intento crear {branch}, pero no pude verificar la rama activa."
 
     return f"Rama creada y verificada: {branch}."
 
@@ -968,9 +970,14 @@ def _direct_explicit_pr_create(command: str) -> str | None:
     if not title or not body:
         return "Necesito titulo y descripcion explicitos para crear el pull request."
     if len(title) > 200:
-        return "El titulo del pull request es demasiado largo; usa hasta 200 caracteres."
+        return (
+            "El titulo del pull request es demasiado largo; usa hasta 200 caracteres."
+        )
     if len(body) > 2000:
-        return "La descripcion del pull request es demasiado larga; usa hasta 2000 caracteres."
+        return (
+            "La descripcion del pull request es demasiado larga; "
+            "usa hasta 2000 caracteres."
+        )
 
     repo = _repo_root().resolve()
     common = {
@@ -1010,13 +1017,12 @@ def _direct_explicit_pr_create(command: str) -> str | None:
         ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
         **common,
     )
-    upstream = (
-        upstream_proc.stdout.strip()
-        if upstream_proc.returncode == 0
-        else ""
-    )
+    upstream = upstream_proc.stdout.strip() if upstream_proc.returncode == 0 else ""
     if not upstream:
-        return "La rama no tiene upstream. Haz push de la rama antes de crear el pull request."
+        return (
+            "La rama no tiene upstream. Haz push de la rama antes "
+            "de crear el pull request."
+        )
 
     fetch = subprocess.run(
         ["git", "fetch", "origin", branch],
@@ -1112,7 +1118,9 @@ def _direct_explicit_pr_create(command: str) -> str | None:
 
     if create.returncode != 0:
         detail = (create.stderr or create.stdout).strip().splitlines()
-        reason = detail[-1] if detail else "GitHub rechazo la creacion del pull request."
+        reason = (
+            detail[-1] if detail else "GitHub rechazo la creacion del pull request."
+        )
         return f"No pude crear el pull request. {reason}"
 
     url = create.stdout.strip().splitlines()[-1] if create.stdout.strip() else ""
@@ -1162,7 +1170,9 @@ def _direct_explicit_pr_ready(command: str) -> str | None:
     if dirty.returncode != 0:
         return "No pude verificar el estado de Git antes de preparar el pull request."
     if dirty.stdout.strip():
-        return "Hay cambios versionados sin commit. No marque el pull request como listo."
+        return (
+            "Hay cambios versionados sin commit. No marque el pull request como listo."
+        )
 
     view = subprocess.run(
         [
@@ -1381,10 +1391,7 @@ def _direct_explicit_pr_merge(command: str) -> str | None:
     sync = _direct_explicit_main_sync("vuelve a main y actualiza")
     if sync is None:
         sync = "No pude iniciar la sincronizacion local a main."
-    return (
-        f"Pull request #{number} fusionado con squash y verificado: {url}. "
-        f"{sync}"
-    )
+    return f"Pull request #{number} fusionado con squash y verificado: {url}. {sync}"
 
 
 def _direct_explicit_main_sync(command: str) -> str | None:
@@ -1604,11 +1611,17 @@ def _direct_prepare_branch_pr(command: str) -> str | None:
 
     tests = _direct_explicit_pytest("pytest tests/speech/test_voice_control.py")
     if tests is None or not tests.startswith("Pruebas completadas correctamente."):
-        return f"Detuve el flujo porque las pruebas no pasaron. {tests or 'Sin resultado de pytest.'}"
+        return (
+            "Detuve el flujo porque las pruebas no pasaron. "
+            f"{tests or 'Sin resultado de pytest.'}"
+        )
 
     push = _direct_explicit_git_push("haz push de la rama actual")
     if push is None or not push.startswith("Push completado y verificado"):
-        return f"Detuve el flujo porque el push no se completo. {push or 'Sin resultado del push.'}"
+        return (
+            "Detuve el flujo porque el push no se completo. "
+            f"{push or 'Sin resultado del push.'}"
+        )
 
     subject = subprocess.run(
         ["git", "log", "-1", "--pretty=%s"],
@@ -1634,10 +1647,7 @@ def _direct_prepare_branch_pr(command: str) -> str | None:
     ):
         return f"Detuve el flujo porque el pull request no quedo verificado. {pr}"
 
-    return (
-        f"Rama {branch} preparada para revision. "
-        f"{tests} {push} {pr}"
-    )
+    return f"Rama {branch} preparada para revision. {tests} {push} {pr}"
 
 
 def _direct_finalize_current_pr(command: str) -> str | None:
@@ -1653,20 +1663,15 @@ def _direct_finalize_current_pr(command: str) -> str | None:
     ):
         return None
 
-    ready = _direct_explicit_pr_ready(
-        "marca el pr actual listo para revision"
-    )
+    ready = _direct_explicit_pr_ready("marca el pr actual listo para revision")
     if ready is None:
         return "No pude iniciar la preparacion final del pull request."
     if not (
-        ready.startswith("Pull request #")
-        or ready.startswith("El pull request #")
+        ready.startswith("Pull request #") or ready.startswith("El pull request #")
     ):
         return f"Detuve el flujo antes del merge. {ready}"
 
-    merged = _direct_explicit_pr_merge(
-        "fusiona el pr actual con squash"
-    )
+    merged = _direct_explicit_pr_merge("fusiona el pr actual con squash")
     if merged is None:
         return "No pude iniciar el merge seguro del pull request."
     if not merged.startswith("Pull request #"):
@@ -1817,18 +1822,25 @@ def direct(command: str) -> str | None:
         tracked = [line for line in changes if not line.startswith("??")]
         untracked = [line for line in changes if line.startswith("??")]
         pending_names = [
-            line[3:].strip() if len(line) > 3 else line.strip()
-            for line in changes
+            line[3:].strip() if len(line) > 3 else line.strip() for line in changes
         ]
         preview = ", ".join(pending_names[:6])
         suffix = "" if len(pending_names) <= 6 else f", y {len(pending_names) - 6} mas"
 
         parts: list[str] = []
         if tracked:
-            noun = "archivo versionado modificado" if len(tracked) == 1 else "archivos versionados modificados"
+            noun = (
+                "archivo versionado modificado"
+                if len(tracked) == 1
+                else "archivos versionados modificados"
+            )
             parts.append(f"{len(tracked)} {noun}")
         if untracked:
-            noun = "archivo no rastreado" if len(untracked) == 1 else "archivos no rastreados"
+            noun = (
+                "archivo no rastreado"
+                if len(untracked) == 1
+                else "archivos no rastreados"
+            )
             parts.append(f"{len(untracked)} {noun}")
 
         return (
@@ -1964,10 +1976,13 @@ def direct(command: str) -> str | None:
     ):
         return (
             "Puedo abrir aplicaciones y consultar Git, archivos, Docker y el sistema. "
-            "Tambien puedo crear ramas seguras, ejecutar pruebas, hacer commits y push, "
-            "preparar una rama para pull request y finalizar el pull request con squash "
+            "Tambien puedo crear ramas seguras, ejecutar pruebas, "
+            "hacer commits y push, "
+            "preparar una rama para pull request y finalizar el pull request "
+            "con squash "
             "y sincronizacion automatica a main. Para el flujo completo di: "
-            "prepara la rama actual para pull request; y despues: finaliza el pr actual."
+            "prepara la rama actual para pull request; y despues: "
+            "finaliza el pr actual."
         )
     if "ultimo commit" in n or "ultimo cambio git" in n or "git log" in n:
         repo = _repo_root()
@@ -2197,8 +2212,7 @@ def _ground_autonomous_command(command: str) -> str:
     return (
         f"EXACT WINDOWS WORKSPACE: {workspace}. "
         "Use exact absolute Windows paths from this instruction and never use "
-        "placeholder paths. "
-        + grounded
+        "placeholder paths. " + grounded
     )
 
 
@@ -2297,7 +2311,6 @@ def _autonomy_tool_allowlist(command: str) -> list[str]:
         add("start_process", "read_process_output", "read_file", "list_directory")
 
     return selected
-
 
 
 _AUTONOMY_COMPACT_TOOL_SPECS: dict[str, dict[str, Any]] = {
@@ -2403,7 +2416,21 @@ def _autonomy_completion_requirements(command: str) -> list[str]:
     n = normalize(command)
     requirements: list[str] = []
 
-    if any(term in n for term in ("crea ", "crear ", "modifica ", "modificar ", "edita ", "editar ", "escribe ", "escribir ", "implementa ", "implementar ")):
+    if any(
+        term in n
+        for term in (
+            "crea ",
+            "crear ",
+            "modifica ",
+            "modificar ",
+            "edita ",
+            "editar ",
+            "escribe ",
+            "escribir ",
+            "implementa ",
+            "implementar ",
+        )
+    ):
         requirements.append("write")
     if any(term in n for term in ("pytest", "prueba", "pruebas", "test ", "tests/")):
         requirements.append("pytest")
@@ -2564,7 +2591,9 @@ def _autonomous_legacy(command: str) -> str:
     config["system_prompt"] = config["instruction"]
     config["mcp_tool_allowlist"] = tool_allowlist
     config["tools"] = _autonomy_tool_specs(tool_allowlist)
-    config["completion_evidence_requirements"] = _autonomy_completion_requirements(command)
+    config["completion_evidence_requirements"] = _autonomy_completion_requirements(
+        command
+    )
     config["completion_evidence_observed"] = []
     config["completion_tool_evidence_seen"] = False
     config["completion_followup_count"] = 0
@@ -2887,6 +2916,7 @@ def wait_for_wake(detector) -> float | None:
     if last_error is not None:
         raise last_error
     return None
+
 
 def capture_command(backend) -> str:
     state("awake", wake_word="Hey Jarvis")

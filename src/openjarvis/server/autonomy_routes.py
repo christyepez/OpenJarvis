@@ -15,12 +15,12 @@ from openjarvis.autonomy import (
 )
 from openjarvis.autonomy.approval import assess_approval
 from openjarvis.autonomy.planner import build_autonomy_plan
-from openjarvis.autonomy.task_store import default_task_store_path
 from openjarvis.autonomy.result_callback import (
     ResultCallbackError,
     configured_result_callback_url,
     notify_result,
 )
+from openjarvis.autonomy.task_store import default_task_store_path
 from openjarvis.autonomy.version import AUTONOMY_V2_VERSION
 
 
@@ -187,9 +187,7 @@ def create_autonomy_router() -> APIRouter:
         context.setdefault("autonomyPlan", plan.as_dict())
         context["autonomyCallbackUrl"] = callback_url
         if payload.get("resultCallbackUrl"):
-            context["autonomyResultCallbackUrl"] = str(
-                payload.get("resultCallbackUrl")
-            )
+            context["autonomyResultCallbackUrl"] = str(payload.get("resultCallbackUrl"))
         context["autonomyApproval"] = {
             **assessment.as_dict(),
             "policy": approval_policy,
@@ -236,7 +234,9 @@ def create_autonomy_router() -> APIRouter:
             raise HTTPException(status_code=404, detail="task not found")
         approval = record.context.get("autonomyApproval")
         if not isinstance(approval, dict) or approval.get("required") is not True:
-            raise HTTPException(status_code=409, detail="task does not require approval")
+            raise HTTPException(
+                status_code=409, detail="task does not require approval"
+            )
         if approval.get("state") == "approved":
             raise HTTPException(status_code=409, detail="task is already approved")
 
