@@ -72,6 +72,7 @@ jobs:
               "Jarvis Task Webhook",
               "Start Managed Execution",
               "Jarvis Result Webhook",
+              "Jarvis Health Webhook",
           }
           missing = required - names
           assert not missing, f"Missing n8n nodes: {sorted(missing)}"
