@@ -30,7 +30,7 @@ Assert-ReleaseCandidate
 if (-not $SkipBootstrap) {
     Write-Host '[promote] Running real Autonomy V2 bootstrap + smoke gate'
     & $bootstrap -RuntimeDeviceId $RuntimeDeviceId
-    if ($LASTEXITCODE -ne 0) {
+    if (-not $?) {
         throw 'Autonomy V2 bootstrap gate failed.'
     }
 }
@@ -48,9 +48,32 @@ try {
         throw 'Autonomy V2 lint gate failed.'
     }
 
-    docker compose -f deploy/n8n/docker-compose.yml config | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw 'n8n compose validation failed.'
+    $dockerAvailable = $false
+    try {
+        docker info *> $null
+        $dockerAvailable = ($LASTEXITCODE -eq 0)
+    }
+    catch {
+        $dockerAvailable = $false
+    }
+
+    if ($dockerAvailable) {
+        docker compose -f deploy/n8n/docker-compose.yml config | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw 'n8n compose validation failed.'
+        }
+    }
+    else {
+        Write-Host '[promote] Docker unavailable; validating local Node n8n fallback'
+        $nodeRuntime = Join-Path $env:USERPROFILE '.openjarvis\n8n-runtime\node_modules\n8n\bin\n8n'
+        $workflow = Join-Path $RepoRoot 'deploy\n8n\workflows\jarvis-task-dispatcher.json'
+        if (-not (Test-Path $nodeRuntime)) {
+            throw 'Local Node n8n runtime is not installed.'
+        }
+        if (-not (Test-Path $workflow)) {
+            throw 'Jarvis n8n workflow JSON was not found.'
+        }
+        Get-Content $workflow -Raw | ConvertFrom-Json | Out-Null
     }
 
     Write-Host '[promote] All stable gates passed; updating version to 2.0.0'
