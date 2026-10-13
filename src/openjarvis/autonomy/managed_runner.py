@@ -120,16 +120,7 @@ class ManagedAutonomyRunner:
         agent = self.manager.get_agent(agent_id) or {}
         status = str(agent.get("status") or "idle")
         if status == "paused":
-            messages = self.manager.list_messages(agent_id, limit=20)
-            latest = next(
-                (
-                    message
-                    for message in messages
-                    if message.get("direction") == "agent_to_user"
-                ),
-                None,
-            )
-            if latest and "AUTONOMY_DONE" in str(latest.get("content") or ""):
+            if self._completion_is_verified(agent_id):
                 self._mark_completed(
                     record.task_id,
                     agent_id,
@@ -292,7 +283,21 @@ class ManagedAutonomyRunner:
                 agent = self.manager.get_agent(agent_id) or {}
                 status = str(agent.get("status") or "idle")
                 if status == "paused":
-                    self._mark_completed(task_id, agent_id, cycle)
+                    if self._completion_is_verified(agent_id):
+                        self._mark_completed(task_id, agent_id, cycle)
+                    else:
+                        latest = self._latest_agent_message(agent_id)
+                        detail = str(
+                            (latest or {}).get("content")
+                            or "Agent paused without verified completion."
+                        ).strip()
+                        self.store.update(
+                            task_id,
+                            status="failed",
+                            checkpoint="managed-agent-paused-unverified",
+                            error=detail[:1000],
+                        )
+                        self._notify_terminal_best_effort(task_id)
                     return
                 if status in TERMINAL_AGENT_FAILURES:
                     self.store.update(
@@ -358,6 +363,55 @@ class ManagedAutonomyRunner:
         context = dict(record.context if record is not None else {})
         context["managedCycle"] = cycle
         return context
+
+    def _latest_agent_message(self, agent_id: str) -> dict[str, Any] | None:
+        messages = self.manager.list_messages(agent_id, limit=20)
+        return next(
+            (
+                message
+                for message in messages
+                if message.get("direction") == "agent_to_user"
+            ),
+            None,
+        )
+
+    def _completion_is_verified(self, agent_id: str) -> bool:
+        agent = self.manager.get_agent(agent_id) or {}
+        config = dict(agent.get("config") or {})
+        latest = self._latest_agent_message(agent_id)
+        if latest is None:
+            return False
+
+        marker = str(config.get("completion_marker") or "AUTONOMY_DONE").strip()
+        content = str(latest.get("content") or "")
+        if not marker or marker not in content:
+            return False
+
+        requires_tool_evidence = (
+            config.get("completion_requires_tool_evidence") is True
+        )
+        tool_calls = latest.get("tool_calls") or []
+        latest_has_tool_evidence = any(
+            isinstance(call, dict) and call.get("success") is True
+            for call in tool_calls
+        )
+        tool_evidence_seen = bool(
+            config.get("completion_tool_evidence_seen", False)
+        ) or latest_has_tool_evidence
+        if requires_tool_evidence and not tool_evidence_seen:
+            return False
+
+        requirements = {
+            str(item)
+            for item in config.get("completion_evidence_requirements", []) or []
+            if str(item)
+        }
+        observed = {
+            str(item)
+            for item in config.get("completion_evidence_observed", []) or []
+            if str(item)
+        }
+        return requirements.issubset(observed)
 
     def _mark_completed(self, task_id: str, agent_id: str, cycle: int) -> None:
         messages = self.manager.list_messages(agent_id, limit=20)

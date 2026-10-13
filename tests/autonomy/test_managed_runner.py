@@ -114,6 +114,12 @@ def test_runner_starts_isolated_agent_and_completes(
                 "tool_calls": [{"tool": "list_directory", "success": True}],
             }
         )
+        manager.agents[agent_id]["config"][
+            "completion_evidence_observed"
+        ] = ["directory-listed"]
+        manager.agents[agent_id]["config"][
+            "completion_tool_evidence_seen"
+        ] = True
         manager.agents[agent_id]["status"] = "paused"
 
     runner, store, _ = _runner(tmp_path, manager, tick)
@@ -223,10 +229,22 @@ def test_runner_recovers_existing_failed_agent(
     monkeypatch,
 ) -> None:
     manager = FakeManager()
+
+    def recovered_tick(agent_id: str) -> None:
+        manager.messages[agent_id].append(
+            {
+                "id": "answer-recovered",
+                "direction": "agent_to_user",
+                "content": "AUTONOMY_DONE recovered",
+                "tool_calls": [{"tool": "list_directory", "success": True}],
+            }
+        )
+        manager.agents[agent_id]["status"] = "paused"
+
     runner, store, _ = _runner(
         tmp_path,
         manager,
-        lambda agent_id: manager.agents[agent_id].update(status="paused"),
+        recovered_tick,
     )
     record = store.create(
         task_id="abcdef12-aaaa-bbbb-cccc-1234567890ab",
@@ -330,3 +348,47 @@ def test_runner_stops_when_task_is_cancelled_before_next_cycle(
     persisted = store.get(record.task_id)
     assert persisted is not None
     assert persisted.status == "cancelled"
+
+
+def test_runner_rejects_paused_refusal_without_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = FakeManager()
+
+    def tick(agent_id: str) -> None:
+        manager.messages[agent_id].append(
+            {
+                "id": "answer-refusal",
+                "direction": "agent_to_user",
+                "content": (
+                    "I cannot perform filesystem actions without authorization."
+                ),
+                "tool_calls": None,
+            }
+        )
+        manager.agents[agent_id]["status"] = "paused"
+
+    runner, store, _ = _runner(tmp_path, manager, tick)
+    record = store.create(
+        task_id="task-refusal",
+        goal="inspect the authorized workspace",
+    )
+
+    monkeypatch.setattr(
+        "openjarvis.server.agent_manager_routes._start_managed_worker",
+        lambda app_state, target, name: target(),
+    )
+    monkeypatch.setattr(
+        "openjarvis.autonomy.managed_runner.notify_result",
+        lambda record: True,
+    )
+
+    runner.start(record)
+
+    persisted = store.get(record.task_id)
+    assert persisted is not None
+    assert persisted.status == "failed"
+    assert persisted.checkpoint == "managed-agent-paused-unverified"
+    assert "without authorization" in persisted.error
+    assert persisted.context["resultCallbackDelivered"] is True
