@@ -17,6 +17,10 @@ def build_autonomy_runtime_config(
     """Build the governed managed-agent config used by every autonomy entrypoint."""
     instruction = (
         "Autonomous executor. Execute the latest user objective with REAL tools. "
+        "This runtime is attached only to machines and workspaces explicitly authorized "
+        "by the user. Tool calls within the provided allowlist are authorized for the "
+        "current objective, subject to the configured approval policy. Never broaden "
+        "scope beyond those authorized targets or tools. "
         "You DO have execution tools. Only the tool schemas provided by the runtime "
         "for the current objective are available. Never invent or call a tool "
         "that is not "
