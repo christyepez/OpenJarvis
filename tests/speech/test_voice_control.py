@@ -2000,6 +2000,10 @@ def test_wait_for_verified_autonomy_reply_requires_success(monkeypatch) -> None:
 
 def test_autonomous_returns_verified_list_directory_summary(monkeypatch) -> None:
     monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ensure_api_available",
+        lambda: True,
+    )
+    monkeypatch.setattr(
         "openjarvis.speech.voice_control._prepare_autonomy_models",
         lambda: None,
     )
@@ -2055,6 +2059,10 @@ def test_autonomous_returns_verified_list_directory_summary(monkeypatch) -> None
 
 
 def test_autonomous_waits_before_reconciling_existing_agent(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "openjarvis.speech.voice_control._ensure_api_available",
+        lambda: True,
+    )
     order: list[str] = []
 
     monkeypatch.setattr(
